@@ -94,11 +94,14 @@ def _vote_gemini(prompt: str, system: str) -> Optional[EnsembleVote]:
     if not os.getenv("GOOGLE_API_KEY"):
         return None
     # Try new google-genai SDK first (recommended in 2026)
+    client = None
     try:
         from google import genai
         from google.genai import types
         client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
         model_name = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+        # Build request (hold `client` in a local — chained calls close the
+        # underlying httpx client before the response arrives).
         resp = client.models.generate_content(
             model=model_name,
             contents=prompt,
