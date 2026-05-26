@@ -69,28 +69,42 @@ curl https://<your-railway-domain>/api/v1/health
 
 ---
 
-## Frontend → Vercel (already deployed)
+## Frontend → Vercel
 
-### 1. Set the API URL env var
+### A. Landing (public site, already live as circles-ai.ai)
 
-In Vercel → both projects (landing + dashboard) → **Settings → Environment Variables**:
+1. In the Vercel project that points at the repo, **Settings → Environments → Production → Environment Variables → Add**:
+   ```
+   NEXT_PUBLIC_API_URL=https://<your-railway-domain>
+   ```
+   Mark Production + Preview + Development.
 
-```
-NEXT_PUBLIC_API_URL=https://<your-railway-domain>
-```
+2. **Deployments → ⋯ → Redeploy** (NEXT_PUBLIC_* requires a rebuild).
 
-Apply to **Production** + **Preview** + **Development**.
+3. Verify: open `https://circles-ai.ai/f/techpulse-latam`, fill form, see Railway log `lead captured slug=techpulse-latam email=...`.
 
-### 2. Re-deploy
+### B. Dashboard (admin panel)
 
-In Vercel, trigger a new deployment so the env var bakes in (Next.js needs a rebuild for `NEXT_PUBLIC_*`).
+The dashboard lives in `dashboard/` and is a **separate Vercel project**.
 
-### 3. Verify lead capture end-to-end
+1. **https://vercel.com/new** → Import the same `circles-ai-fof/circle-llc` repo
+2. In the import wizard, set **Root Directory** to `dashboard`
+3. Framework: Next.js (auto)
+4. Add env var (same as landing):
+   ```
+   NEXT_PUBLIC_API_URL=https://<your-railway-domain>
+   ```
+5. Deploy
+6. Optionally assign a domain like `dashboard.circles-ai.ai`
 
-1. Open `https://circles-ai.ai/f/techpulse-latam` in an incognito window
-2. Fill the form, submit
-3. In Railway logs, you should see `lead captured slug=techpulse-latam email=...`
-4. Hit your API: `GET https://<railway>/api/v1/leads` (TODO — not yet exposed; query SQLite directly via `sqlite3 /data/circle_llc.db "SELECT * FROM leads"`)
+### Verify lead capture end-to-end
+
+After both deploys + Railway has the env vars + landing has NEXT_PUBLIC_API_URL:
+
+1. Submit a lead at `circles-ai.ai/f/techpulse-latam`
+2. Open `dashboard.circles-ai.ai/leads` (or the dashboard URL)
+3. The lead should appear in the list (email masked)
+4. Paste the `GATE_RUN_SECRET` in the admin input → emails become visible
 
 ---
 

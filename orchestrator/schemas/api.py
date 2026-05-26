@@ -138,6 +138,39 @@ class LeadCaptureResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Leads viewer (admin)
+# ---------------------------------------------------------------------------
+
+
+class LeadItem(BaseModel):
+    """One stored lead. Emails are masked for any unprivileged caller."""
+    slug: str
+    email: str  # full email only when caller provides X-Gate-Secret
+    name: Optional[str] = None
+    ts: int  # unix epoch seconds
+    ip_masked: Optional[str] = None  # always masked (last octet hidden)
+
+
+class LeadsListResponse(BaseModel):
+    slug: str
+    count: int
+    leads: List[LeadItem]
+    masked: bool = Field(
+        description="True when caller did not provide admin secret; emails partially redacted",
+    )
+
+
+class LeadsStatsBySlug(BaseModel):
+    slug: str
+    count: int
+
+
+class LeadsStatsResponse(BaseModel):
+    total_leads: int
+    by_slug: List[LeadsStatsBySlug]
+
+
+# ---------------------------------------------------------------------------
 # Response — agent info
 # ---------------------------------------------------------------------------
 

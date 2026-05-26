@@ -35,6 +35,10 @@ from .schemas.api import (
     HumanOverrideResponse,
     LeadCaptureRequest,
     LeadCaptureResponse,
+    LeadItem,
+    LeadsListResponse,
+    LeadsStatsBySlug,
+    LeadsStatsResponse,
     PendingReviewItem,
     PendingReviewResponse,
     RunGateRequest,
@@ -591,6 +595,129 @@ def capture_lead(
         accepted=True,
         slug=body.slug,
         message="Recibido. Te avisaremos en máximo 14 días si seguimos adelante con esta fábrica.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Leads viewer (admin) — protected by X-Gate-Secret when configured
+# ---------------------------------------------------------------------------
+
+
+def _mask_email(email: str) -> str:
+    """Privacy: when no admin secret, expose only first 2 chars and domain."""
+    if "@" not in email:
+        return "***"
+    local, domain = email.split("@", 1)
+    if len(local) <= 2:
+        return f"{local[:1]}***@{domain}"
+    return f"{local[:2]}***@{domain}"
+
+
+def _mask_ip(ip: Optional[str]) -> Optional[str]:
+    """Privacy: zero the last octet for IPv4, last segment for IPv6."""
+    if not ip:
+        return None
+    if "." in ip:
+        parts = ip.split(".")
+        if len(parts) == 4:
+            return ".".join(parts[:3] + ["xxx"])
+    if ":" in ip:
+        parts = ip.split(":")
+        return ":".join(parts[:-1] + ["xxxx"])
+    return "***"
+
+
+def _is_admin(request: Request) -> bool:
+    """A request is 'admin' if it provides the correct X-Gate-Secret header.
+    When GATE_RUN_SECRET is not configured, no caller is admin (always masked)."""
+    secret = os.getenv("GATE_RUN_SECRET", "")
+    if not secret:
+        return False
+    return request.headers.get("X-Gate-Secret") == secret
+
+
+@app.get(
+    "/api/v1/leads/stats",
+    response_model=LeadsStatsResponse,
+    summary="Aggregate lead counts per factory slug",
+    tags=["leads"],
+)
+def leads_stats(request: Request) -> LeadsStatsResponse:
+    """
+    Public aggregate counts — no PII exposed.
+    Returns total leads and breakdown per slug.
+    """
+    rl = check_rate_limit(_client_ip(request), tier="public_form")
+    if not rl.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=rl.reason or "Rate limit exceeded",
+            headers={"Retry-After": str(rl.retry_after_s or 60)},
+        )
+    # Stream-friendly: iterate known slugs via factories catalog OR just use
+    # the SQLite COUNT GROUP BY. For now we scan in-memory via list_by_slug
+    # for the few known factories. Production would use a single SQL query.
+    from .core.storage import leads_store
+    # Known slugs come from the landing's factories catalog; for M2 we hard-code
+    # the active ones. M3 reads them from the Outcome DB.
+    known_slugs = ["techpulse-latam", "opscore-ai"]
+    items: List[LeadsStatsBySlug] = []
+    total = 0
+    for slug in known_slugs:
+        n = len(leads_store.list_by_slug(slug))
+        items.append(LeadsStatsBySlug(slug=slug, count=n))
+        total += n
+    items.sort(key=lambda x: x.count, reverse=True)
+    return LeadsStatsResponse(total_leads=total, by_slug=items)
+
+
+@app.get(
+    "/api/v1/leads/{slug}",
+    response_model=LeadsListResponse,
+    summary="List leads for one factory slug",
+    tags=["leads"],
+    responses={
+        404: {"model": ErrorDetail, "description": "Slug has no leads (or doesn't exist)"},
+    },
+)
+def list_leads(slug: str, request: Request, limit: int = 100) -> LeadsListResponse:
+    """
+    Returns the most recent `limit` leads for the given factory slug.
+
+    When called WITHOUT a valid X-Gate-Secret header, emails are masked
+    (`fo***@domain.com`). With the header, full emails are returned.
+    """
+    rl = check_rate_limit(_client_ip(request), tier="public_form")
+    if not rl.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=rl.reason or "Rate limit exceeded",
+            headers={"Retry-After": str(rl.retry_after_s or 60)},
+        )
+    if limit < 1 or limit > 500:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="limit must be between 1 and 500",
+        )
+    from .core.storage import leads_store
+    raw = leads_store.list_by_slug(slug)
+    is_admin = _is_admin(request)
+    items: List[LeadItem] = []
+    for r in raw[:limit]:
+        items.append(
+            LeadItem(
+                slug=slug,
+                email=r["email"] if is_admin else _mask_email(r["email"]),
+                name=r.get("name"),
+                ts=int(r["ts"]),
+                ip_masked=_mask_ip(r.get("ip")),
+            )
+        )
+    return LeadsListResponse(
+        slug=slug,
+        count=len(raw),
+        leads=items,
+        masked=not is_admin,
     )
 
 
