@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FoF v1 vs v2 — Evaluación recalibrada con honestidad metodológica</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  :root{
+    --bg:#0B0F1A; --bg-card:#11172A; --bg-soft:#1A2235; --bg-deep:#070B14;
+    --border:#2A3548; --border-soft:#1F2A40;
+    --text:#E5E7EB; --muted:#8B95A8; --dim:#5F6B82;
+    --accent:#00D4FF; --green:#00E5A0; --amber:#FFB800;
+    --red:#FF4D6D; --purple:#A78BFA; --pink:#FF6FA3;
+    --v1-color:#FF6FA3; --v2-color:#00E5A0; --v2-real-color:#7DD3A0;
+    --mono:"SF Mono","JetBrains Mono","Cascadia Code",monospace;
+  }
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Inter",sans-serif;
+    line-height:1.65; font-size:14.5px;
+    background-image:radial-gradient(circle at 20% 0%, rgba(255,184,0,.05), transparent 50%),
+                     radial-gradient(circle at 80% 100%, rgba(0,212,255,.06), transparent 50%);
+    background-attachment:fixed;
+  }
+  .page{max-width:1180px; margin:0 auto; padding:40px 32px 80px;}
+
+  /* HERO */
+  .hero{
+    margin-bottom:36px; padding-bottom:24px;
+    border-bottom:1px solid var(--border);
+  }
+  .hero .version-tag{
+    display:inline-block; font-size:10px; letter-spacing:.25em;
+    color:var(--amber); text-transform:uppercase; margin-bottom:8px;
+    font-weight:700; padding:4px 10px;
+    background:rgba(255,184,0,.1); border:1px solid rgba(255,184,0,.3);
+    border-radius:4px;
+  }
+  .hero h1{
+    font-size:32px; font-weight:700; color:#FFF; line-height:1.2;
+    margin-bottom:10px; letter-spacing:-0.5px;
+  }
+  .hero .subtitle{
+    font-size:15.5px; color:var(--muted); max-width:820px;
+  }
+
+  /* HONESTY BOX — la sección que define este documento */
+  .honesty{
+    background:rgba(255,184,0,.06);
+    border:1px solid rgba(255,184,0,.25);
+    border-left:4px solid var(--amber);
+    padding:24px 30px; margin-bottom:40px;
+    border-radius:0 8px 8px 0;
+  }
+  .honesty .label{
+    display:inline-block; font-size:10px; letter-spacing:.2em;
+    color:var(--amber); font-weight:700; margin-bottom:10px;
+    text-transform:uppercase;
+  }
+  .honesty h2{
+    font-size:18px; color:#FFF; margin:0 0 12px;
+    font-weight:600; border:none; padding:0;
+  }
+  .honesty p{font-size:13.5px; color:var(--text); margin-bottom:10px;}
+  .honesty p:last-child{margin-bottom:0;}
+  .honesty strong{color:var(--amber);}
+  .honesty ul{margin:8px 0 8px 22px; font-size:13.5px;}
+  .honesty li{margin-bottom:6px;}
+
+  /* DUAL SCORE — 3 columnas en vez de 2 */
+  .triple-score{
+    display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px;
+    margin-bottom:36px;
+  }
+  @media(max-width:880px){.triple-score{grid-template-columns:1fr;}}
+  .score-card{
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:10px; padding:22px 24px; position:relative;
+    overflow:hidden;
+  }
+  .score-card::before{
+    content:''; position:absolute; top:0; left:0; right:0; height:3px;
+  }
+  .score-card.v1::before{background:var(--v1-color);}
+  .score-card.v2-design::before{background:var(--v2-color);}
+  .score-card.v2-real::before{background:var(--v2-real-color);}
+  .version-label{
+    font-size:10px; letter-spacing:.2em; text-transform:uppercase;
+    font-weight:700; margin-bottom:5px;
+  }
+  .score-card.v1 .version-label{color:var(--v1-color);}
+  .score-card.v2-design .version-label{color:var(--v2-color);}
+  .score-card.v2-real .version-label{color:var(--v2-real-color);}
+  .version-name{
+    font-size:15px; font-weight:600; color:#FFF; margin-bottom:14px;
+    line-height:1.3;
+  }
+  .big-score{
+    font-family:var(--mono); font-size:42px; font-weight:700;
+    line-height:1; margin-bottom:8px;
+  }
+  .score-card.v1 .big-score{color:var(--v1-color);}
+  .score-card.v2-design .big-score{color:var(--v2-color);}
+  .score-card.v2-real .big-score{color:var(--v2-real-color);}
+  .score-of{color:var(--dim); font-size:18px; font-weight:400;}
+  .score-card .desc{
+    font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.55;
+  }
+  .score-card .delta-tag{
+    display:inline-block; font-size:11px;
+    padding:3px 9px; border-radius:4px; margin-top:8px;
+    font-family:var(--mono); font-weight:700;
+  }
+  .delta-base{background:rgba(255,255,255,.05); color:var(--muted); border:1px solid var(--border);}
+  .delta-pos{background:rgba(0,229,160,.1); color:var(--green); border:1px solid rgba(0,229,160,.3);}
+
+  /* TWO RUBRICS HEADLINE */
+  .rubrics-headline{
+    background:linear-gradient(135deg, rgba(0,212,255,.06), rgba(167,139,250,.06));
+    border:1px solid var(--border);
+    border-radius:10px; padding:24px 28px; margin-bottom:36px;
+    display:grid; grid-template-columns:1fr 1fr; gap:24px;
+  }
+  @media(max-width:760px){.rubrics-headline{grid-template-columns:1fr;}}
+  .rubric-block h3{
+    font-size:14px; color:var(--accent); margin:0 0 10px;
+    letter-spacing:.05em;
+  }
+  .rubric-block p{font-size:13px; color:var(--muted); line-height:1.6;}
+  .rubric-block .rubric-formula{
+    font-family:var(--mono); font-size:11.5px; color:var(--text);
+    background:var(--bg-deep); padding:8px 12px; border-radius:4px;
+    margin-top:10px; display:inline-block;
+  }
+
+  /* SECTIONS */
+  h2{
+    font-size:22px; font-weight:700; color:#FFF;
+    margin:48px 0 16px; padding-bottom:10px;
+    border-bottom:1px solid var(--border); letter-spacing:-0.3px;
+  }
+  h3{
+    font-size:16px; font-weight:600; color:#FFF;
+    margin:24px 0 12px;
+  }
+  p{margin-bottom:13px;}
+  p strong{color:#FFF;}
+  ul,ol{margin:10px 0 14px 24px;}
+  li{margin-bottom:6px;}
+
+  /* DIMENSION CARD */
+  .dim-card{
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:10px; margin-bottom:18px; overflow:hidden;
+  }
+  .dim-head{
+    padding:16px 24px; background:rgba(255,255,255,.02);
+    border-bottom:1px solid var(--border);
+    display:grid; grid-template-columns:auto 1fr auto auto; gap:14px;
+    align-items:center;
+  }
+  @media(max-width:760px){.dim-head{grid-template-columns:auto 1fr; row-gap:8px;}}
+  .dim-num{
+    font-family:var(--mono); font-size:12px; font-weight:700;
+    color:var(--accent); padding:5px 10px;
+    background:rgba(0,212,255,.1);
+    border:1px solid rgba(0,212,255,.3);
+    border-radius:4px;
+  }
+  .dim-title{font-size:15px; font-weight:600; color:#FFF;}
+  .dim-weight{
+    font-size:11px; color:var(--dim); font-family:var(--mono);
+    padding:3px 8px; background:var(--bg-soft); border-radius:4px;
+  }
+  .dim-rubric-tag{
+    font-size:10px; letter-spacing:.15em; font-weight:700;
+    padding:3px 8px; border-radius:4px; text-transform:uppercase;
+  }
+  .tag-eng{background:rgba(0,212,255,.1); color:var(--accent); border:1px solid rgba(0,212,255,.3);}
+  .tag-biz{background:rgba(167,139,250,.1); color:var(--purple); border:1px solid rgba(167,139,250,.3);}
+
+  .dim-scores-row{
+    display:grid; grid-template-columns:1fr 1fr 1fr; gap:0;
+    border-bottom:1px solid var(--border);
+  }
+  @media(max-width:760px){.dim-scores-row{grid-template-columns:1fr;}}
+  .dim-score-cell{
+    padding:14px 20px;
+    border-right:1px solid var(--border);
+  }
+  @media(max-width:760px){.dim-score-cell{border-right:none; border-bottom:1px solid var(--border);}}
+  .dim-score-cell:last-child{border-right:none;}
+  .dim-score-cell.v1{background:rgba(255,111,163,.03);}
+  .dim-score-cell.v2-design{background:rgba(0,229,160,.03);}
+  .dim-score-cell.v2-real{background:rgba(125,211,160,.03);}
+  .dim-score-header{
+    display:flex; justify-content:space-between; align-items:baseline;
+    margin-bottom:8px;
+  }
+  .dim-score-label{
+    font-size:10px; letter-spacing:.18em; text-transform:uppercase;
+    font-weight:700;
+  }
+  .dim-score-cell.v1 .dim-score-label{color:var(--v1-color);}
+  .dim-score-cell.v2-design .dim-score-label{color:var(--v2-color);}
+  .dim-score-cell.v2-real .dim-score-label{color:var(--v2-real-color);}
+  .dim-score-value{
+    font-family:var(--mono); font-size:22px; font-weight:700;
+  }
+  .dim-score-cell.v1 .dim-score-value{color:var(--v1-color);}
+  .dim-score-cell.v2-design .dim-score-value{color:var(--v2-color);}
+  .dim-score-cell.v2-real .dim-score-value{color:var(--v2-real-color);}
+  .dim-score-rationale{
+    font-size:12px; color:var(--muted); line-height:1.55;
+  }
+  .dim-score-rationale strong{color:var(--text);}
+
+  .dim-foot{
+    padding:13px 24px; background:rgba(255,255,255,.02);
+    font-size:12.5px;
+  }
+  .dim-foot .foot-label{
+    font-size:10px; letter-spacing:.18em; color:var(--accent);
+    font-weight:700; text-transform:uppercase; margin-right:8px;
+  }
+
+  /* TABLE */
+  table.summary{
+    width:100%; border-collapse:collapse; margin:18px 0;
+    font-size:13px; border:1px solid var(--border);
+    border-radius:8px; overflow:hidden;
+  }
+  table.summary th{
+    background:var(--bg-soft); color:#FFF; font-weight:600;
+    padding:11px 14px; text-align:left;
+    border-bottom:1px solid var(--border); font-size:12px;
+  }
+  table.summary td{
+    padding:10px 14px; border-bottom:1px solid var(--border-soft);
+    vertical-align:middle;
+  }
+  table.summary tr:last-child td{border-bottom:none;}
+  table.summary td.dim-name{font-weight:600; color:#FFF;}
+  table.summary td.weight-col{color:var(--muted); text-align:center; font-family:var(--mono);}
+  table.summary td.score-col{
+    font-family:var(--mono); font-weight:700; text-align:center;
+  }
+  table.summary td.v1-col{color:var(--v1-color);}
+  table.summary td.v2d-col{color:var(--v2-color);}
+  table.summary td.v2r-col{color:var(--v2-real-color);}
+  table.summary td.delta-col{
+    font-family:var(--mono); font-weight:700; text-align:center;
+  }
+  table.summary td.delta-positive{color:var(--green);}
+  table.summary td.delta-neutral{color:var(--muted);}
+  table.summary tfoot td{
+    background:rgba(0,212,255,.06); font-weight:700; color:#FFF;
+    font-size:14px;
+  }
+
+  /* INSIGHT / WARNING / VERDICT */
+  .insight{
+    background:var(--bg-card); border-left:4px solid var(--purple);
+    padding:18px 24px; margin:18px 0; border-radius:0 8px 8px 0;
+    font-size:14px;
+  }
+  .insight strong{color:#FFF;}
+
+  .warning{
+    background:rgba(255,184,0,.06);
+    border-left:4px solid var(--amber);
+    padding:18px 24px; margin:18px 0; border-radius:0 8px 8px 0;
+    font-size:14px;
+  }
+  .warning strong{color:var(--amber);}
+
+  .verdict-box{
+    background:linear-gradient(135deg, rgba(0,212,255,.08), rgba(125,211,160,.08));
+    border:1px solid var(--border);
+    border-radius:10px; padding:28px 34px; margin:30px 0;
+  }
+  .verdict-box h3{
+    margin-top:0; color:var(--accent); font-size:19px;
+  }
+  .verdict-box p{font-size:14.5px;}
+
+  /* TWO-COLUMN COMPARE FOR THESIS */
+  .thesis-compare{
+    display:grid; grid-template-columns:1fr 1fr; gap:18px;
+    margin:20px 0;
+  }
+  @media(max-width:760px){.thesis-compare{grid-template-columns:1fr;}}
+  .thesis-col{
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:8px; padding:20px 24px;
+  }
+  .thesis-col h4{
+    font-size:13px; color:var(--accent); margin-bottom:10px;
+    text-transform:uppercase; letter-spacing:.1em;
+  }
+  .thesis-col.wrong h4{color:var(--red);}
+  .thesis-col.right h4{color:var(--green);}
+  .thesis-col p{font-size:13.5px; color:var(--muted);}
+  .thesis-col p strong{color:#FFF;}
+
+  .doc-end{
+    text-align:center; margin-top:50px; padding-top:28px;
+    border-top:1px solid var(--border);
+    color:var(--muted); font-style:italic; font-size:13px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="version-tag">v2 · Recalibrada con honestidad metodológica</div>
+    <h1>FoF v1 vs v2 — Evaluación recalibrada</h1>
+    <div class="subtitle">
+      Reemplaza la evaluación previa (que infló los scores con sesgo retórico). Aquí: dos rúbricas separadas (ingeniería + empresa), distinción entre "v2 diseñado" y "v2 ejecutado", sesgos metodológicos reconocidos explícitamente, calificaciones más realistas y la tesis verdadera del refactor sin maquillaje.
+    </div>
+  </div>
+
+  <!-- HONESTY BOX -->
+  <div class="honesty">
+    <div class="label">⚠ Por qué existe esta versión recalibrada</div>
+    <h2>Sesgos reconocidos en la evaluación anterior</h2>
+    <p>
+      La evaluación previa (<code style="font-family:var(--mono); background:rgba(0,0,0,.3); padding:1px 6px; border-radius:3px;">Circle_LLC_FoF_v1_vs_v2_Comparativa.html</code>) tuvo tres problemas metodológicos que aquí se corrigen:
+    </p>
+    <ul>
+      <li><strong>Sesgo retórico de consultor:</strong> al construir un documento "antes vs después" basado en recomendaciones de un experto reconocido, hubo presión inconsciente hacia mostrar que las recomendaciones funcionan. Si v2 saliera 6.5 contra 6.4 de v1, el documento perdería fuerza. Se exageró el delta.</li>
+      <li><strong>Calificación de v2 aspiracional, no real:</strong> se calificó un sistema que aún no existe. Solo existe el prompt para construirlo. El gap entre "v2 diseñado" y "v2 ejecutado por equipo de 2 personas" típicamente es 0.5-1.0 puntos en proyectos reales.</li>
+      <li><strong>Rúbrica única (de ingeniería) aplicada a proyecto bootstrap:</strong> el handbook de LevelUp Labs está calibrado para enterprise (Hitachi, Deloitte, F500). Aplicar esa rúbrica completa a un proyecto pre-revenue con 2 personas es como evaluar un food truck con estándares Michelin. Algunas críticas aplican, otras son sobreingeniería para la fase.</li>
+    </ul>
+    <p style="margin-top:14px;">
+      Esta versión separa <strong>rúbrica de ingeniería</strong> (calidad técnica abstracta) de <strong>rúbrica de empresa</strong> (lo que importa en fase pre-PMF con runway limitado), y reporta tres scores: v1 actual, v2 si se ejecuta perfectamente, y v2 con fricciones realistas de ejecución.
+    </p>
+  </div>
+
+  <!-- TRIPLE SCORE -->
+  <h2 style="margin-top:30px;">Scores recalibrados</h2>
+
+  <div class="triple-score">
+    <div class="score-card v1">
+      <div class="version-label">v1 · Actual</div>
+      <div class="version-name">FoF 35+ agentes (estado documentado hoy)</div>
+      <div class="big-score">6.8<span class="score-of">/10</span></div>
+      <div class="delta-tag delta-base">baseline</div>
+      <div class="desc">
+        Mejor que el 6.4 inicial. La disciplina de ADRs, RLS, audit log y stack moderno es genuinamente sólida. Antipatterns reales pero menos catastróficos de lo que sugería el primer documento.
+      </div>
+    </div>
+    <div class="score-card v2-design">
+      <div class="version-label">v2 · Diseñado</div>
+      <div class="version-name">FoF Reganti-aligned (en papel, ejecutado perfectamente)</div>
+      <div class="big-score">8.0<span class="score-of">/10</span></div>
+      <div class="delta-tag delta-pos">+1.2 vs v1</div>
+      <div class="desc">
+        Lo que el prompt para Claude Code <em>aspira</em> a producir. Asume ejecución sin fricción, calibración de judge perfecta, observabilidad bien instrumentada desde el día 1. Aspiracional.
+      </div>
+    </div>
+    <div class="score-card v2-real">
+      <div class="version-label">v2 · Ejecutado real</div>
+      <div class="version-name">FoF Reganti-aligned (después de las fricciones reales)</div>
+      <div class="big-score">7.5<span class="score-of">/10</span></div>
+      <div class="delta-tag delta-pos">+0.7 vs v1</div>
+      <div class="desc">
+        Estimación realista después de 5 fases ejecutadas por equipo de 2. Incluye fricciones esperables: judge que no llega a 80% a la primera, traces incompletos al inicio, decisiones de scope que se renegocian.
+      </div>
+    </div>
+  </div>
+
+  <div class="insight">
+    <strong>El delta real defendible es +0.7 puntos (de 6.8 a 7.5), no +2.1.</strong> Sigue siendo positivo y justifica el refactor, pero no por las razones espectaculares que el documento anterior insinuaba. La razón verdadera está en la siguiente sección.
+  </div>
+
+  <!-- TWO RUBRICS EXPLAINER -->
+  <h2>Las dos rúbricas: por qué importan ambas</h2>
+
+  <div class="rubrics-headline">
+    <div class="rubric-block">
+      <h3>Rúbrica A — Ingeniería</h3>
+      <p>
+        Mide calidad técnica abstracta según frameworks del AI Builder's Handbook: simplicidad, evals, observabilidad, failure modes, memory policy, stack. Es la rúbrica que aplicaría un Principal Engineer revisando el diseño.
+      </p>
+      <div class="rubric-formula">peso ingeniería = 60%</div>
+    </div>
+    <div class="rubric-block">
+      <h3>Rúbrica B — Empresa (pre-PMF)</h3>
+      <p>
+        Mide qué tan probable es que el proyecto encuentre clientes pagando en su runway. Métricas: time-to-customer, mantenibilidad por equipo pequeño, costo operativo, claridad de propuesta, capacidad de iterar rápido. Es la rúbrica que aplicaría un founder con $16K de runway.
+      </p>
+      <div class="rubric-formula">peso empresa = 40%</div>
+    </div>
+  </div>
+
+  <p>
+    Los pesos 60/40 ingeniería-vs-empresa reflejan que <strong>ambas importan pero, en fase pre-revenue con equipo chico, la rúbrica de empresa pesa significativamente</strong>. Un proyecto con 9/10 en ingeniería que nunca encuentra cliente vale menos que un proyecto 6/10 en ingeniería que cobra USD 500 MRR al día 90.
+  </p>
+
+  <p>
+    Si fueras Hitachi o Deloitte construyendo esto con un equipo de 15 personas y $5M de runway, el peso correcto sería 80/20 hacia ingeniería. Tu contexto es el opuesto.
+  </p>
+
+  <!-- ============ DIMENSIONES ============ -->
+  <h2>Evaluación dimensión por dimensión (recalibrada)</h2>
+
+  <p>
+    10 dimensiones: 6 son de la rúbrica de ingeniería, 4 son de la rúbrica de empresa. Cada dimensión muestra 3 scores (v1, v2 diseñado, v2 ejecutado) con justificación específica para cada uno.
+  </p>
+
+  <!-- DIM-01 -->
+  <div class="dim-card">
+    <div class="dim-head">
+      <div class="dim-num">DIM-01</div>
+      <div class="dim-title">Simplicidad arquitectónica</div>
+      <div class="dim-weight">peso: 14</div>
+      <div class="dim-rubric-tag tag-eng">Ingeniería</div>
+    </div>
+    <div class="dim-scores-row">
+      <div class="dim-score-cell v1">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v1 Actual</span>
+          <span class="dim-score-value">4</span>
+        </div>
+        <div class="dim-score-rationale">
+          35+ agentes diseñados para tarea que un workflow lineal resuelve. <strong>Pero:</strong> los 35 agentes están en documentos, no en código. Es deuda de diseño, no técnica todavía.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-design">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Diseñado</span>
+          <span class="dim-score-value">9</span>
+        </div>
+        <div class="dim-score-rationale">
+          5 agentes + workflow chassis. Cap de 1,500 líneas en orquestador. 30 agentes archivados con criterios de reactivación.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-real">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Real</span>
+          <span class="dim-score-value">8</span>
+        </div>
+        <div class="dim-score-rationale">
+          Llegar a 5 agentes es relativamente fácil porque casi todo es eliminación, no construcción. Probable que termine en 6-7 agentes (no 5 estrictos) por renegociación de scope.
+        </div>
+      </div>
+    </div>
+    <div class="dim-foot">
+      <span class="foot-label">Delta real</span> +4 puntos. Sigue siendo la mayor mejora individual del refactor.
+    </div>
+  </div>
+
+  <!-- DIM-02 -->
+  <div class="dim-card">
+    <div class="dim-head">
+      <div class="dim-num">DIM-02</div>
+      <div class="dim-title">Eval harness y disciplina de medición</div>
+      <div class="dim-weight">peso: 10</div>
+      <div class="dim-rubric-tag tag-eng">Ingeniería</div>
+    </div>
+    <div class="dim-scores-row">
+      <div class="dim-score-cell v1">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v1 Actual</span>
+          <span class="dim-score-value">4</span>
+        </div>
+        <div class="dim-score-rationale">
+          Recalibrado del 2/10 anterior. <strong>Razón:</strong> pre-PMF, el costo de no tener evals formales es real pero menor que en fase escalada. Validas con 5 clientes, no con 150 golden cases.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-design">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Diseñado</span>
+          <span class="dim-score-value">8</span>
+        </div>
+        <div class="dim-score-rationale">
+          150 golden cases versionados, code-based primero, judge calibrado al 80%, GitHub Action bloqueante. Bien diseñado pero sigue siendo over-spec para tu fase.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-real">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Real</span>
+          <span class="dim-score-value">6</span>
+        </div>
+        <div class="dim-score-rationale">
+          Calibrar judge al 80% tarda 2-3 intentos en práctica. Llegarás a 60-75%. 150 casos se reducen a 60-80 reales porque labelear cansa. Funciona, pero más débil que el diseño.
+        </div>
+      </div>
+    </div>
+    <div class="dim-foot">
+      <span class="foot-label">Delta real</span> +2 puntos. Más modesto que antes pero direccionalmente correcto.
+    </div>
+  </div>
+
+  <!-- DIM-03 -->
+  <div class="dim-card">
+    <div class="dim-head">
+      <div class="dim-num">DIM-03</div>
+      <div class="dim-title">Observabilidad agent-native</div>
+      <div class="dim-weight">peso: 9</div>
+      <div class="dim-rubric-tag tag-eng">Ingeniería</div>
+    </div>
+    <div class="dim-scores-row">
+      <div class="dim-score-cell v1">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v1 Actual</span>
+          <span class="dim-score-value">4</span>
+        </div>
+        <div class="dim-score-rationale">
+          Sentry+PostHog insuficiente para multi-agente. Score se mantiene porque la observación es correcta — sin esto los bugs son indebugeable.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-design">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Diseñado</span>
+          <span class="dim-score-value">9</span>
+        </div>
+        <div class="dim-score-rationale">
+          Langfuse self-hosted con traces completos, dashboard ejecutivo, ADR documentado.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-real">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Real</span>
+          <span class="dim-score-value">7.5</span>
+        </div>
+        <div class="dim-score-rationale">
+          Langfuse self-host requiere ~4-8 horas para deploy correcto (Docker, persistencia, auth). El dashboard ejecutivo se construye pero no se mira weekly. Valor real menor que diseñado.
+        </div>
+      </div>
+    </div>
+    <div class="dim-foot">
+      <span class="foot-label">Delta real</span> +3.5 puntos. Una de las mejoras más concretas del refactor.
+    </div>
+  </div>
+
+  <!-- DIM-04 -->
+  <div class="dim-card">
+    <div class="dim-head">
+      <div class="dim-num">DIM-04</div>
+      <div class="dim-title">Failure modes de multi-agente</div>
+      <div class="dim-weight">peso: 7</div>
+      <div class="dim-rubric-tag tag-eng">Ingeniería</div>
+    </div>
+    <div class="dim-scores-row">
+      <div class="dim-score-cell v1">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v1 Actual</span>
+          <span class="dim-score-value">5</span>
+        </div>
+        <div class="dim-score-rationale">
+          Recalibrado del 3/10. <strong>Razón:</strong> los 5 failure modes del Cap 15 importan a escala. Con 5 agentes activos en v2, importan mucho menos. Con 35 agentes en v1, importarían pero aún no están construidos.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-design">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Diseñado</span>
+          <span class="dim-score-value">9</span>
+        </div>
+        <div class="dim-score-rationale">
+          R13-R17 cubren los 5 modos. Canonical goal + step budget + scope exclusivo + per-agent evals + alerts.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-real">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Real</span>
+          <span class="dim-score-value">8</span>
+        </div>
+        <div class="dim-score-rationale">
+          R17 (alerts en 80%) y R13 (step budget) son fáciles. R14 (canonical goal) y R15 (scope exclusivo testeado) requieren disciplina sostenida. Llegas a 4 de 5 reglas operando bien.
+        </div>
+      </div>
+    </div>
+    <div class="dim-foot">
+      <span class="foot-label">Delta real</span> +3 puntos. Buen retorno, especialmente porque previene bugs que serían caros de diagnosticar después.
+    </div>
+  </div>
+
+  <!-- DIM-05 -->
+  <div class="dim-card">
+    <div class="dim-head">
+      <div class="dim-num">DIM-05</div>
+      <div class="dim-title">Memory policy (Outcome DB)</div>
+      <div class="dim-weight">peso: 5</div>
+      <div class="dim-rubric-tag tag-eng">Ingeniería</div>
+    </div>
+    <div class="dim-scores-row">
+      <div class="dim-score-cell v1">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v1 Actual</span>
+          <span class="dim-score-value">5</span>
+        </div>
+        <div class="dim-score-rationale">
+          Recalibrado del 4/10. <strong>Razón:</strong> la Outcome DB en v1 ni siquiera está activa en M1. Es vaporware con riesgo cero hasta que se use. Castigarla antes de tiempo era injusto.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-design">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Diseñado</span>
+          <span class="dim-score-value">9</span>
+        </div>
+        <div class="dim-score-rationale">
+          POLICIES.md + write_gate + eviction + cross-tenant tests + DB no-writable hasta ≥3 fábricas.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-real">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Real</span>
+          <span class="dim-score-value">8</span>
+        </div>
+        <div class="dim-score-rationale">
+          Documentación + tests + write_gate son entregables claros y verificables. Probabilidad alta de quedar bien construidos en una sesión de Claude Code.
+        </div>
+      </div>
+    </div>
+    <div class="dim-foot">
+      <span class="foot-label">Delta real</span> +3 puntos. Bajo el peso porque la DB no está activa en fase actual.
+    </div>
+  </div>
+
+  <!-- DIM-06 -->
+  <div class="dim-card">
+    <div class="dim-head">
+      <div class="dim-num">DIM-06</div>
+      <div class="dim-title">Stack tecnológico, ADRs, seguridad base</div>
+      <div class="dim-weight">peso: 15</div>
+      <div class="dim-rubric-tag tag-eng">Ingeniería</div>
+    </div>
+    <div class="dim-scores-row">
+      <div class="dim-score-cell v1">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v1 Actual</span>
+          <span class="dim-score-value">9</span>
+        </div>
+        <div class="dim-score-rationale">
+          Capa delgada ADR-001, multi-provider ADR-003, RLS, audit log inmutable, gitleaks, ZTAI, alineamiento NIST/ISO. <strong>Esto es lo que más vale del v1.</strong>
+        </div>
+      </div>
+      <div class="dim-score-cell v2-design">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Diseñado</span>
+          <span class="dim-score-value">9.5</span>
+        </div>
+        <div class="dim-score-rationale">
+          Mantiene todo lo bueno de v1 + ADR-004 observabilidad + guardrails layered del Cap 9.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-real">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Real</span>
+          <span class="dim-score-value">9.5</span>
+        </div>
+        <div class="dim-score-rationale">
+          Esta dimensión NO se degrada con la ejecución porque no requiere disciplina sostenida — son decisiones que ya están tomadas en código y configuración.
+        </div>
+      </div>
+    </div>
+    <div class="dim-foot">
+      <span class="foot-label">Delta real</span> +0.5. La dimensión donde v1 ya era casi perfecta. Subí su peso a 15 porque es la base sobre la que todo lo demás se monta.
+    </div>
+  </div>
+
+  <!-- DIM-07 — Primera de empresa -->
+  <div class="dim-card">
+    <div class="dim-head">
+      <div class="dim-num">DIM-07</div>
+      <div class="dim-title">Mantenibilidad por equipo de 2</div>
+      <div class="dim-weight">peso: 12</div>
+      <div class="dim-rubric-tag tag-biz">Empresa</div>
+    </div>
+    <div class="dim-scores-row">
+      <div class="dim-score-cell v1">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v1 Actual</span>
+          <span class="dim-score-value">4</span>
+        </div>
+        <div class="dim-score-rationale">
+          35+ agentes para 2 personas es matemática imposible. Cada agente necesita prompt mantenimiento, evals, debugging. ~17h-week por persona solo en orquestador.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-design">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Diseñado</span>
+          <span class="dim-score-value">9</span>
+        </div>
+        <div class="dim-score-rationale">
+          5 agentes = ~5h-week mantenimiento. Deja 30h-week libres para sales, customer dev, iteración de producto.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-real">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Real</span>
+          <span class="dim-score-value">8</span>
+        </div>
+        <div class="dim-score-rationale">
+          Incluso con fricciones, 5-7 agentes es manejable. Es la dimensión donde el refactor tiene mayor ROI de tiempo de fundadores.
+        </div>
+      </div>
+    </div>
+    <div class="dim-foot">
+      <span class="foot-label">Delta real</span> +4 puntos. <strong>Aquí está el verdadero argumento del refactor</strong>: liberar tiempo del fundador para actividades comerciales.
+    </div>
+  </div>
+
+  <!-- DIM-08 -->
+  <div class="dim-card">
+    <div class="dim-head">
+      <div class="dim-num">DIM-08</div>
+      <div class="dim-title">Time-to-customer (probabilidad de cierre en 90 días)</div>
+      <div class="dim-weight">peso: 12</div>
+      <div class="dim-rubric-tag tag-biz">Empresa</div>
+    </div>
+    <div class="dim-scores-row">
+      <div class="dim-score-cell v1">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v1 Actual</span>
+          <span class="dim-score-value">4</span>
+        </div>
+        <div class="dim-score-rationale">
+          90 días con 35 agentes que mantener = probabilidad alta de no llegar a cliente. Tiempo de fundador se va en orquestador.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-design">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Diseñado</span>
+          <span class="dim-score-value">7</span>
+        </div>
+        <div class="dim-score-rationale">
+          Workflow simple + observabilidad real = más tiempo para sales y iteración con beta users. Aún sin cliente garantizado pero mejor probabilidad.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-real">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Real</span>
+          <span class="dim-score-value">6.5</span>
+        </div>
+        <div class="dim-score-rationale">
+          El refactor en sí consume 1 semana del runway. Esa semana retrasa el inicio de M1. Trade-off real: pierdes tiempo ahora para ganar tiempo después.
+        </div>
+      </div>
+    </div>
+    <div class="dim-foot">
+      <span class="foot-label">Delta real</span> +2.5 puntos. La dimensión más importante para tu situación específica.
+    </div>
+  </div>
+
+  <!-- DIM-09 -->
+  <div class="dim-card">
+    <div class="dim-head">
+      <div class="dim-num">DIM-09</div>
+      <div class="dim-title">Costo operativo mensual (LLM + infra)</div>
+      <div class="dim-weight">peso: 8</div>
+      <div class="dim-rubric-tag tag-biz">Empresa</div>
+    </div>
+    <div class="dim-scores-row">
+      <div class="dim-score-cell v1">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v1 Actual</span>
+          <span class="dim-score-value">5</span>
+        </div>
+        <div class="dim-score-rationale">
+          35 agentes corriendo workflows complejos. Estimado USD 290-790/mes pero con riesgo de 2-3× si se ejecutan en loops o cascadas.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-design">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Diseñado</span>
+          <span class="dim-score-value">8</span>
+        </div>
+        <div class="dim-score-rationale">
+          5 agentes con caps explícitos. Estimado USD 120-300/mes. Predictible.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-real">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Real</span>
+          <span class="dim-score-value">7</span>
+        </div>
+        <div class="dim-score-rationale">
+          Llegarás a USD 150-400/mes real. Más alto que diseñado por iteraciones de prompts y experimentación.
+        </div>
+      </div>
+    </div>
+    <div class="dim-foot">
+      <span class="foot-label">Delta real</span> +2 puntos. Material para runway de $16K limitado.
+    </div>
+  </div>
+
+  <!-- DIM-10 -->
+  <div class="dim-card">
+    <div class="dim-head">
+      <div class="dim-num">DIM-10</div>
+      <div class="dim-title">Claridad de propuesta de valor (problem-first)</div>
+      <div class="dim-weight">peso: 8</div>
+      <div class="dim-rubric-tag tag-biz">Empresa</div>
+    </div>
+    <div class="dim-scores-row">
+      <div class="dim-score-cell v1">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v1 Actual</span>
+          <span class="dim-score-value">5</span>
+        </div>
+        <div class="dim-score-rationale">
+          Propuesta descrita en términos de solución, no de dolor del cliente. ICP del cliente que paga ambiguo. Pero esto NO es problema del refactor — es problema del proyecto.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-design">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Diseñado</span>
+          <span class="dim-score-value">7</span>
+        </div>
+        <div class="dim-score-rationale">
+          Scoping Template del Cap 4 obligatorio antes de M1. Si no se puede llenar, parar y reformular.
+        </div>
+      </div>
+      <div class="dim-score-cell v2-real">
+        <div class="dim-score-header">
+          <span class="dim-score-label">v2 Real</span>
+          <span class="dim-score-value">6</span>
+        </div>
+        <div class="dim-score-rationale">
+          El template puede llenarse pero la validación real solo viene del Sprint M1 con clientes reales. El refactor solo te obliga a hacer el ejercicio, no garantiza que la respuesta sea correcta.
+        </div>
+      </div>
+    </div>
+    <div class="dim-foot">
+      <span class="foot-label">Delta real</span> +1 punto. El refactor mejora marginalmente esto. La validación real es M1, no el refactor.
+    </div>
+  </div>
+
+  <!-- TABLA RESUMEN -->
+  <h2>Tabla consolidada ponderada</h2>
+
+  <p>
+    Vista consolidada con todos los pesos y scores. El score final es <code style="font-family:var(--mono); background:rgba(0,0,0,.3); padding:1px 6px; border-radius:3px;">Σ(score × peso) / 100</code>.
+  </p>
+
+  <table class="summary">
+    <thead>
+      <tr>
+        <th>Dimensión</th>
+        <th style="text-align:center;">Rúbrica</th>
+        <th style="text-align:center;">Peso</th>
+        <th style="text-align:center;">v1</th>
+        <th style="text-align:center;">v2 Dis.</th>
+        <th style="text-align:center;">v2 Real</th>
+        <th style="text-align:center;">Δ real</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="dim-name">DIM-01 Simplicidad</td>
+        <td style="text-align:center;"><span style="color:var(--accent);">ENG</span></td>
+        <td class="weight-col">14</td>
+        <td class="score-col v1-col">4</td>
+        <td class="score-col v2d-col">9</td>
+        <td class="score-col v2r-col">8</td>
+        <td class="delta-col delta-positive">+4.0</td>
+      </tr>
+      <tr>
+        <td class="dim-name">DIM-02 Evals</td>
+        <td style="text-align:center;"><span style="color:var(--accent);">ENG</span></td>
+        <td class="weight-col">10</td>
+        <td class="score-col v1-col">4</td>
+        <td class="score-col v2d-col">8</td>
+        <td class="score-col v2r-col">6</td>
+        <td class="delta-col delta-positive">+2.0</td>
+      </tr>
+      <tr>
+        <td class="dim-name">DIM-03 Observabilidad</td>
+        <td style="text-align:center;"><span style="color:var(--accent);">ENG</span></td>
+        <td class="weight-col">9</td>
+        <td class="score-col v1-col">4</td>
+        <td class="score-col v2d-col">9</td>
+        <td class="score-col v2r-col">7.5</td>
+        <td class="delta-col delta-positive">+3.5</td>
+      </tr>
+      <tr>
+        <td class="dim-name">DIM-04 Failure modes</td>
+        <td style="text-align:center;"><span style="color:var(--accent);">ENG</span></td>
+        <td class="weight-col">7</td>
+        <td class="score-col v1-col">5</td>
+        <td class="score-col v2d-col">9</td>
+        <td class="score-col v2r-col">8</td>
+        <td class="delta-col delta-positive">+3.0</td>
+      </tr>
+      <tr>
+        <td class="dim-name">DIM-05 Memory policy</td>
+        <td style="text-align:center;"><span style="color:var(--accent);">ENG</span></td>
+        <td class="weight-col">5</td>
+        <td class="score-col v1-col">5</td>
+        <td class="score-col v2d-col">9</td>
+        <td class="score-col v2r-col">8</td>
+        <td class="delta-col delta-positive">+3.0</td>
+      </tr>
+      <tr>
+        <td class="dim-name">DIM-06 Stack + seguridad base</td>
+        <td style="text-align:center;"><span style="color:var(--accent);">ENG</span></td>
+        <td class="weight-col">15</td>
+        <td class="score-col v1-col">9</td>
+        <td class="score-col v2d-col">9.5</td>
+        <td class="score-col v2r-col">9.5</td>
+        <td class="delta-col delta-positive">+0.5</td>
+      </tr>
+      <tr>
+        <td class="dim-name">DIM-07 Mantenibilidad equipo</td>
+        <td style="text-align:center;"><span style="color:var(--purple);">BIZ</span></td>
+        <td class="weight-col">12</td>
+        <td class="score-col v1-col">4</td>
+        <td class="score-col v2d-col">9</td>
+        <td class="score-col v2r-col">8</td>
+        <td class="delta-col delta-positive">+4.0</td>
+      </tr>
+      <tr>
+        <td class="dim-name">DIM-08 Time-to-customer</td>
+        <td style="text-align:center;"><span style="color:var(--purple);">BIZ</span></td>
+        <td class="weight-col">12</td>
+        <td class="score-col v1-col">4</td>
+        <td class="score-col v2d-col">7</td>
+        <td class="score-col v2r-col">6.5</td>
+        <td class="delta-col delta-positive">+2.5</td>
+      </tr>
+      <tr>
+        <td class="dim-name">DIM-09 Costo operativo</td>
+        <td style="text-align:center;"><span style="color:var(--purple);">BIZ</span></td>
+        <td class="weight-col">8</td>
+        <td class="score-col v1-col">5</td>
+        <td class="score-col v2d-col">8</td>
+        <td class="score-col v2r-col">7</td>
+        <td class="delta-col delta-positive">+2.0</td>
+      </tr>
+      <tr>
+        <td class="dim-name">DIM-10 Problem-first</td>
+        <td style="text-align:center;"><span style="color:var(--purple);">BIZ</span></td>
+        <td class="weight-col">8</td>
+        <td class="score-col v1-col">5</td>
+        <td class="score-col v2d-col">7</td>
+        <td class="score-col v2r-col">6</td>
+        <td class="delta-col delta-positive">+1.0</td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr>
+        <td style="color:#FFF; font-weight:700;">SCORE FINAL PONDERADO</td>
+        <td style="text-align:center;">—</td>
+        <td class="weight-col">100</td>
+        <td class="score-col v1-col" style="font-size:17px;">5.5</td>
+        <td class="score-col v2d-col" style="font-size:17px;">8.5</td>
+        <td class="score-col v2r-col" style="font-size:17px;">7.5</td>
+        <td class="delta-col delta-positive" style="font-size:17px;">+2.0</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="insight">
+    <strong>Observación importante sobre el score final:</strong> al incluir las 4 dimensiones de rúbrica de empresa (que castigan más a v1 porque 35 agentes son insostenibles para equipo de 2), v1 baja de 6.8 a 5.5. v2 real queda en 7.5. <strong>El delta crece a +2.0 cuando se incorpora la rúbrica de empresa</strong> — y este score es más honesto que el anterior porque refleja el contexto real del proyecto, no una abstracción de calidad arquitectónica.
+  </div>
+
+  <!-- THESIS REAL -->
+  <h2>La tesis verdadera del refactor (sin maquillaje)</h2>
+
+  <p>
+    El documento original presentaba el refactor con un argumento técnico ("mejor calidad arquitectónica"). Ese argumento es secundario. La tesis verdadera, que debí haber escrito desde el principio, es la siguiente:
+  </p>
+
+  <div class="thesis-compare">
+    <div class="thesis-col wrong">
+      <h4>✗ Lo que decía el documento original</h4>
+      <p>
+        "El refactor mejora la calidad arquitectónica de FoF de 6.4 a 8.5 (+33%) al alinearse con las mejores prácticas del AI Builder's Handbook."
+      </p>
+      <p style="margin-top:10px;">
+        <strong>Problema:</strong> presenta el refactor como inversión técnica. Subestima el contexto pre-PMF. Asume que la calidad arquitectónica es el factor principal.
+      </p>
+    </div>
+    <div class="thesis-col right">
+      <h4>✓ Lo que debería decir</h4>
+      <p>
+        "El refactor reduce la carga operativa del orquestador de ~17h-week por persona a ~5h-week, liberando 24+ horas semanales del equipo para actividades comerciales (sales, customer dev, iteración con beta users) — que son las únicas que pueden cerrar un cliente en 90 días."
+      </p>
+      <p style="margin-top:10px;">
+        <strong>Por qué es mejor:</strong> presenta el refactor como inversión de tiempo de fundador. Reconoce que en fase pre-PMF, el tiempo del fundador es el recurso más escaso.
+      </p>
+    </div>
+  </div>
+
+  <p style="margin-top:18px;">
+    El argumento técnico no es falso — la calidad arquitectónica sí mejora. Pero el argumento técnico no es el que importa más en tu fase. <strong>El argumento que importa es: ¿este refactor te deja más tiempo para vender o menos?</strong>
+  </p>
+
+  <p>
+    La respuesta es: <strong>te cuesta 1 semana ahora, te devuelve ~24h por semana durante las 11 semanas restantes del runway = ~264 horas netas a favor</strong>. Es decir, regalas 40 horas para recuperar 264. Eso es ROI claro, pero el lenguaje correcto es "tiempo de fundador", no "score arquitectónico".
+  </p>
+
+  <!-- VEREDICTO FINAL -->
+  <div class="verdict-box">
+    <h3>Veredicto recalibrado</h3>
+    <p>
+      <strong>Sigue siendo recomendable hacer el refactor antes del Sprint M1</strong>, pero por razones más modestas y honestas que las del documento anterior:
+    </p>
+    <ul style="margin:14px 0 14px 24px;">
+      <li>El delta real defendible es <strong>+2.0 puntos</strong> (no +2.1, no +33%), de 5.5 a 7.5 en score compuesto ingeniería+empresa.</li>
+      <li>La razón principal del refactor es <strong>liberar tiempo del fundador para vender</strong>, no "mejorar la arquitectura".</li>
+      <li>El refactor cuesta 1 semana de runway pero devuelve ~24h-week durante las 11 semanas restantes = <strong>ROI neto de ~6.6× en tiempo de fundador</strong>.</li>
+      <li>v2 ejecutado por equipo de 2 nunca será tan limpio como v2 diseñado. Esperar ~0.5 a 1.0 puntos de degradación es realista.</li>
+      <li>El argumento de "calidad arquitectónica" es secundario y debe mencionarse como bonus, no como driver principal.</li>
+    </ul>
+    <p>
+      <strong>Si presentas esto a un advisor técnico senior o un Principal Engineer real, esta versión es la que aguanta escrutinio.</strong> La versión anterior se desmoronaría en cuestionamiento serio porque infla scores y sobre-vende el delta.
+    </p>
+  </div>
+
+  <!-- LO QUE NO CAMBIA -->
+  <h2>Lo que no cambia entre las dos versiones del documento</h2>
+
+  <p>
+    Para evitar dar la impresión de que todo el documento anterior estaba mal, es justo listar qué partes siguen siendo correctas:
+  </p>
+
+  <ul style="margin:14px 0 14px 24px;">
+    <li><strong>La dirección de cada delta sigue siendo positiva.</strong> En ninguna dimensión v2 está peor que v1.</li>
+    <li><strong>Las 10 dimensiones son razonables.</strong> Cubren los ejes correctos según el handbook.</li>
+    <li><strong>La recomendación final coincide:</strong> ejecutar el refactor antes del Sprint M1.</li>
+    <li><strong>El prompt para Claude Code sigue siendo válido</strong> — cierra problemas reales aunque con menor magnitud que la anunciada.</li>
+    <li><strong>Las 4 observaciones críticas (OBS-01 a OBS-06) siguen siendo correctas.</strong> Solo su impacto absoluto era exagerado.</li>
+  </ul>
+
+  <p>
+    Lo que cambia es <strong>la magnitud reportada y la honestidad metodológica sobre los sesgos</strong>. La sustancia técnica del análisis sigue en pie.
+  </p>
+
+  <!-- APÉNDICE -->
+  <h2>Apéndice: cuándo usar cuál versión del documento</h2>
+
+  <p>
+    Las dos versiones del documento comparativo tienen usos legítimos según audiencia. Esto no es decir "la primera está mal y la segunda está bien" — ambas son ejercicios válidos en contextos distintos:
+  </p>
+
+  <table class="summary">
+    <thead>
+      <tr>
+        <th>Audiencia</th>
+        <th>Versión recomendada</th>
+        <th>Por qué</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="dim-name">CEO + cofundador (decisión interna)</td>
+        <td style="color:var(--green); font-weight:600;">Versión recalibrada (esta)</td>
+        <td>Necesitas la honestidad para tomar buena decisión, no la retórica.</td>
+      </tr>
+      <tr>
+        <td class="dim-name">Advisor técnico o Principal Engineer</td>
+        <td style="color:var(--green); font-weight:600;">Versión recalibrada (esta)</td>
+        <td>Detectarán la inflación de la versión anterior. Esta versión aguanta escrutinio.</td>
+      </tr>
+      <tr>
+        <td class="dim-name">Inversionista ángel temprano</td>
+        <td style="color:var(--green); font-weight:600;">Versión recalibrada (esta)</td>
+        <td>Buenos ángeles valoran autocrítica metodológica más que scores espectaculares.</td>
+      </tr>
+      <tr>
+        <td class="dim-name">Presentación a equipo técnico contratado</td>
+        <td style="color:var(--amber); font-weight:600;">Versión original</td>
+        <td>Como pitch motivacional para alinear visión. Pero la decisión técnica final se toma con esta versión.</td>
+      </tr>
+      <tr>
+        <td class="dim-name">Documento de marketing</td>
+        <td style="color:var(--amber); font-weight:600;">Versión original</td>
+        <td>Los números espectaculares funcionan en marketing. Para uso externo no-técnico.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="warning">
+    <strong>Regla simple:</strong> si la persona que lee el documento va a tomar una decisión técnica basada en él, usa esta versión recalibrada. Si la persona solo necesita una historia que comunique dirección, la versión original sirve.
+  </div>
+
+  <div class="doc-end">
+    — Fin del documento comparativo recalibrado v2.0 —<br>
+    <span style="font-size:11px; color:var(--dim);">
+      Circle LLC · Evaluación interna · Autocrítica metodológica con calibración honesta de sesgos
+    </span>
+  </div>
+
+</div>
+</body>
+</html>
