@@ -5,7 +5,6 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "startCommand": "uvicorn orchestrator.api:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips='*'",
     "healthcheckPath": "/api/v1/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
