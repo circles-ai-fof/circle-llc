@@ -104,6 +104,40 @@ class PendingReviewResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Lead capture (anti-bot protected)
+# ---------------------------------------------------------------------------
+
+
+class LeadCaptureRequest(BaseModel):
+    slug: str = Field(min_length=1, max_length=80, description="Factory slug the lead came from")
+    email: str = Field(min_length=5, max_length=200)
+    name: Optional[str] = Field(default=None, max_length=120)
+    # Anti-bot fields
+    company_website: Optional[str] = Field(
+        default=None,
+        description="HONEYPOT — humans never fill this; if set, the lead is rejected.",
+        max_length=200,
+    )
+    dwell_ms: Optional[int] = Field(
+        default=None,
+        description="Milliseconds between first paint and submit; humans take >3000ms.",
+        ge=0,
+        le=86_400_000,
+    )
+    turnstile_token: Optional[str] = Field(
+        default=None,
+        description="Cloudflare Turnstile token (when widget is on the page).",
+        max_length=4000,
+    )
+
+
+class LeadCaptureResponse(BaseModel):
+    accepted: bool
+    slug: str
+    message: str
+
+
+# ---------------------------------------------------------------------------
 # Response — agent info
 # ---------------------------------------------------------------------------
 

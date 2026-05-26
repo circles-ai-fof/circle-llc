@@ -33,10 +33,22 @@ from .schemas.api import (
     HealthResponse,
     HumanOverrideRequest,
     HumanOverrideResponse,
+    LeadCaptureRequest,
+    LeadCaptureResponse,
     PendingReviewItem,
     PendingReviewResponse,
     RunGateRequest,
     RunGateResponse,
+)
+from .core.anti_bot import (
+    check_dwell,
+    check_gate_run_secret,
+    check_honeypot,
+    check_rate_limit,
+    gate_run_secret_required,
+    is_disposable_email,
+    turnstile_required,
+    verify_turnstile_token,
 )
 from .core.models import GateVerdict, HumanOverride
 from .workflows.evidence_gate import EvidenceGateWorkflow
@@ -287,12 +299,32 @@ def run_gate(
     """
     Launch an EvidenceGateWorkflow for the given topic.
 
-    - Instantiates idea_hunter → idea_maturer → market_validator →
-      landing_generator → gate_decider in sequence.
-    - Returns the full gate result including verdict, landing copy, and test design.
-    - Run result is stored in memory and retrievable via GET /api/v1/gate/runs/{run_id}.
+    Each call costs ~$0.06 in real LLM mode. Multiple layers of anti-bot
+    protection apply (R26):
+      1. Optional X-Gate-Secret shared header (if GATE_RUN_SECRET env set)
+      2. Per-IP burst + daily quotas (expensive_llm tier)
+      3. Legacy 10/60s in-process limit (kept for compatibility)
     """
     ip = _client_ip(request)
+
+    # Layer 6: shared-secret header — strongest, opt-in for private deployments
+    secret_check = check_gate_run_secret(request.headers.get("X-Gate-Secret"))
+    if not secret_check.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=secret_check.reason or "Authentication required",
+        )
+
+    # Layer 1+2: per-IP burst + daily quotas (tier: expensive_llm)
+    rl = check_rate_limit(ip, tier="expensive_llm")
+    if not rl.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=rl.reason or "Rate limit exceeded",
+            headers={"Retry-After": str(rl.retry_after_s or 60)},
+        )
+
+    # Legacy global rate limit (for compatibility with older clients/tests)
     _check_rate_limit(ip)
 
     try:
@@ -453,6 +485,107 @@ def post_human_override(
         decided_by=body.decided_by,
         decided_at=override.decided_at.isoformat(),
         reason=body.reason,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Lead capture (anti-bot protected) — receives form submissions from /f/[slug]
+# ---------------------------------------------------------------------------
+
+# In-memory lead store; M3 persists to Outcome DB.
+# Shape: {slug: [{email, name, ts, ip}]}
+_leads_store: Dict[str, List[Dict]] = defaultdict(list)
+
+
+@app.post(
+    "/api/v1/leads",
+    response_model=LeadCaptureResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Capture a lead from a factory landing page",
+    tags=["leads"],
+    responses={
+        400: {"model": ErrorDetail, "description": "Honeypot / disposable email / dwell rejected"},
+        401: {"model": ErrorDetail, "description": "Turnstile token missing or invalid"},
+        429: {"model": ErrorDetail, "description": "Rate limit exceeded"},
+        422: {"model": ErrorDetail, "description": "Validation error"},
+    },
+)
+def capture_lead(
+    body: LeadCaptureRequest,
+    request: Request,
+) -> LeadCaptureResponse:
+    """
+    Public form-submission endpoint for landing pages.
+
+    Anti-bot stack (R26):
+      Layer 1+2: per-IP burst + daily quotas (public_form tier)
+      Layer 3:   honeypot + dwell-time
+      Layer 4:   Cloudflare Turnstile token verify (opt-in)
+      Layer 5:   disposable-email blocklist
+    """
+    ip = _client_ip(request)
+
+    # Layer 1+2: rate limit
+    rl = check_rate_limit(ip, tier="public_form")
+    if not rl.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=rl.reason or "Rate limit exceeded",
+            headers={"Retry-After": str(rl.retry_after_s or 60)},
+        )
+
+    # Layer 3a: honeypot
+    hp = check_honeypot({"company_website": body.company_website})
+    if not hp.allowed:
+        # Don't reveal that we detected the honeypot — bots learn
+        logger.info("anti_bot: honeypot triggered ip=%s slug=%s", ip, body.slug)
+        return LeadCaptureResponse(
+            accepted=True,  # silent accept to throw off the bot
+            slug=body.slug,
+            message="Recibido.",
+        )
+
+    # Layer 3b: dwell
+    dwell = check_dwell(body.dwell_ms)
+    if not dwell.allowed:
+        logger.info("anti_bot: dwell-too-fast ip=%s dwell=%s", ip, body.dwell_ms)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please try again in a moment.",
+            headers={"Retry-After": str(dwell.retry_after_s or 5)},
+        )
+
+    # Layer 4: Turnstile (only enforced when configured)
+    if turnstile_required():
+        ts = verify_turnstile_token(body.turnstile_token, ip)
+        if not ts.allowed:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Bot-check failed — please reload and try again.",
+            )
+
+    # Layer 5: disposable email
+    if is_disposable_email(body.email):
+        logger.info("anti_bot: disposable-email rejected ip=%s email_domain=%s", ip, body.email.split('@')[-1])
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Disposable email domains are not accepted.",
+        )
+
+    # All checks passed -> store
+    _leads_store[body.slug].append(
+        {
+            "email": body.email,
+            "name": body.name,
+            "ts": time.time(),
+            "ip": ip,
+        }
+    )
+    logger.info("lead captured slug=%s email=%s", body.slug, body.email)
+    return LeadCaptureResponse(
+        accepted=True,
+        slug=body.slug,
+        message="Recibido. Te avisaremos en máximo 14 días si seguimos adelante con esta fábrica.",
     )
 
 

@@ -129,3 +129,15 @@ Verdicts: SUPPORTED | UNSUPPORTED | NEEDS_VERIFICATION.
 Cada UNSUPPORTED baja specificity_score en 0.5, puede re-disparar refinement loop.
 Activación: FACT_CHECK_ENABLED=true + GOOGLE_API_KEY.
 NO es debate: es fact-check single-shot binario.
+
+## R26 — Layered Anti-Bot Defenses (ADR-009)
+Endpoints públicos tienen 6 capas defensivas compuestas:
+  L1: per-IP burst rate limit (always-on)
+  L2: per-IP daily quota (always-on, tier expensive_llm más estricto)
+  L3: honeypot field + dwell time (always-on en /leads)
+  L4: Cloudflare Turnstile (opt-in via TURNSTILE_SECRET_KEY)
+  L5: disposable-email blocklist (always-on en /leads)
+  L6: shared-secret header X-Gate-Secret (opt-in via GATE_RUN_SECRET)
+Honeypot trip = silent accept (no responder al bot).
+Tiers cuantificados: public_form vs expensive_llm separados.
+Overridable runtime via env vars (sin deploy). Detalle en ADR-009.
