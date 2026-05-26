@@ -125,21 +125,40 @@ class EvidenceGateWorkflow:
         # R13 — Step Budget per Trajectory
         tracker = BudgetTracker()
 
-        # Step 1 — Idea generation
-        logger.info("[1/5] idea_hunter: topic=%r", topic)
-        idea = self._idea_hunter.generate(topic)
-        tracker.record_step(cost_usd=0.01)
-        logger.info("[1/5] done: idea.title=%r", idea.title)
+        # Step 1 + 1.5 — Idea generation + enrichment with refinement loop (ADR-007)
+        # Bounded: up to MAX_REFINEMENT_ATTEMPTS, stops early on score >= 3.5
+        MAX_REFINEMENT_ATTEMPTS = 3
+        feedback: Optional[str] = None
+        enrichment_meta: dict = {}
+        idea: Optional[IdeaSpec] = None
+        attempt = 0
+        for attempt in range(1, MAX_REFINEMENT_ATTEMPTS + 1):
+            logger.info("[1/5] idea_hunter attempt=%d", attempt)
+            idea = self._idea_hunter.generate(topic, feedback=feedback)
+            tracker.record_step(cost_usd=0.01)
+            logger.info("[1/5] done: idea.title=%r", idea.title)
 
-        # Step 1.5 — Idea enrichment (specificity gate)
-        logger.info("[1.5/5] idea_enricher")
-        idea, enrichment_meta = self._idea_enricher.enrich(idea)
-        tracker.record_step(cost_usd=0.01)
-        logger.info(
-            "[1.5/5] done: score=%.2f refined=%s",
-            enrichment_meta["specificity_score"],
-            enrichment_meta["needs_refinement"],
-        )
+            logger.info("[1.5/5] idea_enricher attempt=%d", attempt)
+            idea, enrichment_meta = self._idea_enricher.enrich(idea)
+            tracker.record_step(cost_usd=0.01)
+            score = enrichment_meta["specificity_score"]
+            logger.info(
+                "[1.5/5] done: score=%.2f refined=%s research=%s",
+                score,
+                enrichment_meta["needs_refinement"],
+                enrichment_meta.get("research_used", False),
+            )
+
+            if score >= 3.5:
+                logger.info("specificity gate PASS at attempt=%d", attempt)
+                break
+            feedback = enrichment_meta.get("refinement_notes") or (
+                "The idea remains too vague — quantify the problem with a "
+                "specific number, narrow the market to a concrete ICP, and "
+                "name a defensible mechanism."
+            )
+            logger.info("specificity gate FAIL at attempt=%d -> retry with feedback", attempt)
+        enrichment_meta["attempts_used"] = attempt
 
         # Step 2 — ICP + value proposition
         logger.info("[2/5] idea_maturer")

@@ -104,3 +104,28 @@ Triplica costo solo en decisión final crítica — no en pasos creativos.
 No agregar routers, governors, ni selectors dinámicos sin N>=10 outcomes medidos.
 Cualquier decisión "auto-X" (tool selection, model selection, channel selection) requiere ADR
 con evidencia empírica de >=10 casos antes de codificarse en el chassis.
+
+## R22 — Human-in-the-Loop on Ensemble Disagreement
+Cuando gate_decider corre en ensemble y agreement_pct < 0.67, el run se marca
+`needs_human_review=True` y NO se finaliza el verdict automáticamente.
+Dashboard `/revision` lista runs pendientes. Override humano se loggea con
+{decided_by, reason, original_verdict, override_verdict} para calibración futura.
+NO se hace debate multi-round entre IAs (anti-pattern para clasificación).
+
+## R23 — Tool-Use Limitado a idea_enricher (ADR-006)
+Solo idea_enricher puede invocar tools (web_search) — el resto del chassis es one-shot.
+Activación: IDEA_ENRICHER_RESEARCH=true. Hard cap: max_uses=3 por enrichment.
+Falla graciosamente al path parametrico si el tool errors.
+
+## R24 — Refinement Loop con Hard Cap N=3 (ADR-007)
+hunter ↔ enricher pueden iterar hasta specificity_score >= 3.5 o N=3 attempts.
+Nunca loops infinitos. BudgetTracker (R13) sigue siendo el cap absoluto.
+Esto NO es debate (ADR-005 anti-pattern): son agentes con scopes distintos
+cooperando con criterio de terminación claro.
+
+## R25 — Cross-LLM Fact-Check, no Debate (ADR-008)
+Claims numéricos del enricher se verifican con Gemini (corpus distinto).
+Verdicts: SUPPORTED | UNSUPPORTED | NEEDS_VERIFICATION.
+Cada UNSUPPORTED baja specificity_score en 0.5, puede re-disparar refinement loop.
+Activación: FACT_CHECK_ENABLED=true + GOOGLE_API_KEY.
+NO es debate: es fact-check single-shot binario.

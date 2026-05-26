@@ -54,12 +54,24 @@ class IdeaHunterAgent(BaseAgent):
     def system_prompt(self) -> str:
         return _SYSTEM
 
-    def generate(self, topic: str) -> IdeaSpec:
+    def generate(self, topic: str, feedback: str | None = None) -> IdeaSpec:
+        """
+        Generate one startup idea from a topic.
+        Optional `feedback` (ADR-007) tells the model what to fix from a prior attempt
+        when the specificity refinement loop re-invokes hunter.
+        """
         if self._mock_mode:
             return self._mock_generate(topic)
-        raw = self._call(
-            f"Generate a startup idea for this topic/trend: {topic}\n\nRespond with JSON only."
-        )
+        prompt = f"Generate a startup idea for this topic/trend: {topic}"
+        if feedback:
+            prompt += (
+                f"\n\nPrevious attempt was flagged as not specific enough. "
+                f"Address this in particular:\n{feedback}\n\n"
+                f"Produce a SHARPER idea: quantified problem, specific ICP, "
+                f"concrete mechanism."
+            )
+        prompt += "\n\nRespond with JSON only."
+        raw = self._call(prompt)
         data = self._extract_json(raw)
         return IdeaSpec(**data)
 

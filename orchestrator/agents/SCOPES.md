@@ -6,7 +6,7 @@ Fuente: AI Builder's Handbook Cap 15 §15.5 — "responsibility fuzziness" failu
 | Agente | Lo que SÍ hace | Lo que NO hace |
 |---|---|---|
 | `idea_hunter` | Genera UNA IdeaSpec desde un topic/trend | NO valida, NO define ICP, NO diseña tests, NO hace copy, NO toma decisiones |
-| `idea_enricher` | Puntúa especificidad y sharpens IdeaSpec vagas (gate de calidad) | NO genera ideas nuevas, NO define ICP, NO pivota la idea |
+| `idea_enricher` | Puntúa especificidad, sharpens IdeaSpec vagas, opcionalmente usa web_search para grounding y cross-LLM fact-check | NO genera ideas nuevas, NO define ICP, NO pivota la idea, NO debate con otras IAs |
 | `idea_maturer` | Define ICP + value proposition + riesgos para una IdeaSpec dada | NO genera ideas, NO diseña tests, NO escribe copy, NO toma decisiones |
 | `market_validator` | Diseña el test de mercado (hipótesis, métricas, presupuesto, duración) | NO genera ideas, NO define ICP, NO escribe copy, NO toma decisiones |
 | `landing_generator` | Escribe el copy de la landing page (headline, value props, CTA) | NO genera ideas, NO diseña tests, NO define ICP, NO toma decisiones |
