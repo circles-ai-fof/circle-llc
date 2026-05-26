@@ -60,7 +60,7 @@ class BaseAgent(ABC):
     def model(self) -> str:
         return DEFAULT_MODEL
 
-    def _call(self, user_message: str, *, max_tokens: int = 4096) -> str:
+    def _call(self, user_message: str, *, max_tokens: int = 4096, _retry: int = 1) -> str:
         assert self._client is not None, "client required in non-mock mode"
         response = self._client.messages.create(
             model=self.model,
@@ -74,7 +74,10 @@ class BaseAgent(ABC):
             ],
             messages=[{"role": "user", "content": user_message}],
         )
-        output_text = response.content[0].text
+        output_text = response.content[0].text if response.content else ""
+        # Retry once on empty response (R06-adjacent: never silently fail)
+        if not output_text.strip() and _retry > 0:
+            return self._call(user_message, max_tokens=max_tokens, _retry=_retry - 1)
 
         # --- Langfuse tracing (opt-in, never breaks the agent) ---
         if _LANGFUSE_ENABLED and _langfuse_client is not None:
