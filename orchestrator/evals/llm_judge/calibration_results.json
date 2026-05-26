@@ -1,0 +1,64 @@
+{
+  "agreement_pct": 82.0,
+  "agree": 41,
+  "total": 50,
+  "target_met": true,
+  "gate_method": "deterministic_python",
+  "idea_method": "llm_sonnet_few_shot",
+  "mismatches": [
+    {
+      "id": "cal-027",
+      "human": "good",
+      "llm": "ok",
+      "agent": "idea_hunter"
+    },
+    {
+      "id": "cal-033",
+      "human": "good",
+      "llm": "ok",
+      "agent": "idea_hunter"
+    },
+    {
+      "id": "cal-038",
+      "human": "good",
+      "llm": "ok",
+      "agent": "idea_maturer"
+    },
+    {
+      "id": "cal-039",
+      "human": "good",
+      "llm": "ok",
+      "agent": "idea_maturer"
+    },
+    {
+      "id": "cal-041",
+      "human": "ok",
+      "llm": "bad",
+      "agent": "idea_maturer"
+    },
+    {
+      "id": "cal-042",
+      "human": "good",
+      "llm": "ok",
+      "agent": "idea_maturer"
+    },
+    {
+      "id": "cal-043",
+      "human": "good",
+      "llm": "ok",
+      "agent": "idea_maturer"
+    },
+    {
+      "id": "cal-045",
+      "human": "good",
+      "llm": "ok",
+      "agent": "idea_maturer"
+    },
+    {
+      "id": "cal-046",
+      "human": "good",
+      "llm": "ok",
+      "agent": "idea_hunter"
+    }
+  ]
+}

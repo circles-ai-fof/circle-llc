@@ -47,7 +47,7 @@ class IdeaHunterAgent(BaseAgent):
         raw = self._call(
             f"Generate a startup idea for this topic/trend: {topic}\n\nRespond with JSON only."
         )
-        data = json.loads(raw)
+        data = self._extract_json(raw)
         return IdeaSpec(**data)
 
     def _mock_generate(self, topic: str) -> IdeaSpec:

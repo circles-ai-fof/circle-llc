@@ -131,7 +131,7 @@ class GateDeciderAgent(BaseAgent):
             f"Respond with JSON only."
         )
         raw = self._call(prompt)
-        data = json.loads(raw)
+        data = self._extract_json(raw)
         return GateDecision(
             verdict=GateVerdict(data["verdict"]),
             confidence=data["confidence"],

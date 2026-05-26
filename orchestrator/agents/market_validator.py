@@ -54,7 +54,7 @@ class MarketValidatorAgent(BaseAgent):
             f"Respond with JSON only."
         )
         raw = self._call(prompt)
-        data = json.loads(raw)
+        data = self._extract_json(raw)
         return EvidenceTestDesign(**data)
 
     def _mock_design_test(self, mature: MatureIdeaSpec) -> EvidenceTestDesign:

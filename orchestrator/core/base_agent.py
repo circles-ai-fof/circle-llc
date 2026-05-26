@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
@@ -93,6 +95,35 @@ class BaseAgent(ABC):
                 pass
 
         return output_text
+
+    @staticmethod
+    def _extract_json(raw: str) -> dict:
+        """
+        Robustly extract a JSON object from LLM output.
+        Handles: raw JSON, ```json fences, leading/trailing prose.
+        Raises ValueError if no valid JSON object is found.
+        """
+        # 1. Direct parse
+        try:
+            return json.loads(raw.strip())
+        except json.JSONDecodeError:
+            pass
+        # 2. Strip ```json ... ``` fences
+        fenced = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", raw)
+        if fenced:
+            try:
+                return json.loads(fenced.group(1))
+            except json.JSONDecodeError:
+                pass
+        # 3. Find first { ... } block
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(raw[start : end + 1])
+            except json.JSONDecodeError:
+                pass
+        raise ValueError(f"No valid JSON object found in LLM output: {raw[:200]!r}")
 
     def _call_with_tools(
         self,

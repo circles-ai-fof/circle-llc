@@ -56,7 +56,7 @@ class IdeaMaturerAgent(BaseAgent):
             f"Respond with JSON only."
         )
         raw = self._call(prompt)
-        data = json.loads(raw)
+        data = self._extract_json(raw)
         icp = ICPProfile(**data["icp"])
         return MatureIdeaSpec(
             idea=idea,

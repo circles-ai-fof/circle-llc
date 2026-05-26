@@ -1,0 +1,38 @@
+# Langfuse self-hosted — circles-ai.ai observability
+# Usage: docker-compose -f docker-compose.langfuse.yml up -d
+# Docs: https://langfuse.com/docs/deployment/self-host
+version: "3.9"
+services:
+  langfuse-db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse_secret
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  langfuse:
+    image: langfuse/langfuse:2
+    restart: unless-stopped
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    ports:
+      - "3001:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse_secret@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: replace-with-random-32-char-secret
+      SALT: replace-with-random-32-char-salt
+      NEXTAUTH_URL: http://localhost:3001
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+
+volumes:
+  langfuse_db:
