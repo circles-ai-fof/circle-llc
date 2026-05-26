@@ -151,7 +151,33 @@ CREATE POLICY outcome_insights_tenant_isolation
         OR cross_vertical = TRUE
     );
 
--- Inserts/updates are only allowed via service role (bypasses RLS by default)
+-- Defense-in-depth: explicit INSERT/UPDATE/DELETE policies
+-- Inserts: only allowed if app.current_factory_id matches the inserted row
+-- (service role bypasses RLS via DEFAULT, but app role goes through this gate)
+CREATE POLICY outcome_insights_tenant_insert
+    ON outcome_insights
+    FOR INSERT
+    WITH CHECK (
+        factory_id::TEXT = current_setting('app.current_factory_id', TRUE)
+    );
+
+CREATE POLICY outcome_insights_tenant_update
+    ON outcome_insights
+    FOR UPDATE
+    USING (
+        factory_id::TEXT = current_setting('app.current_factory_id', TRUE)
+    )
+    WITH CHECK (
+        factory_id::TEXT = current_setting('app.current_factory_id', TRUE)
+    );
+
+CREATE POLICY outcome_insights_tenant_delete
+    ON outcome_insights
+    FOR DELETE
+    USING (
+        factory_id::TEXT = current_setting('app.current_factory_id', TRUE)
+    );
+
 -- Application layer (write_gate.py) enforces additional checks before reaching DB.
 
 -- Enable RLS on factory_access_log

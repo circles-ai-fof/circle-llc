@@ -11,6 +11,7 @@ from ..core.models import (
     MatureIdeaSpec,
     MetricsSnapshot,
 )
+from ..core.multi_llm import _ensemble_enabled, gate_ensemble_vote
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,6 @@ class GateDeciderAgent(BaseAgent):
             )
 
         # Stage 2: LLM judge for borderline cases
-        logger.info("gate_decider: borderline → LLM judge")
         prompt = (
             f"Evaluate evidence-gate for: {mature.idea.title}\n\n"
             f"Test design:\n"
@@ -130,6 +130,36 @@ class GateDeciderAgent(BaseAgent):
             f"  CPC: ${metrics.cost_per_conversion:.2f}\n\n"
             f"Respond with JSON only."
         )
+
+        # 2a. Optional multi-LLM ensemble (Claude + GPT + Gemini)
+        if _ensemble_enabled():
+            logger.info("gate_decider: borderline -> ensemble (multi-LLM)")
+            ensemble_system = (
+                "You are a startup gate judge. Respond with first line "
+                "'VERDICT: pass|kill|iterate' then 'confidence: 0.0-1.0' "
+                "then 1-2 sentences of rationale."
+            )
+            ensemble = gate_ensemble_vote(prompt, ensemble_system)
+            if ensemble.votes:
+                return GateDecision(
+                    verdict=GateVerdict(ensemble.final_verdict),
+                    confidence=ensemble.final_confidence,
+                    rationale=(
+                        f"Ensemble verdict: {ensemble.final_verdict} "
+                        f"({ensemble.agreement_pct:.0%} agreement, {len(ensemble.votes)} models). "
+                        f"{ensemble.votes[0].rationale[:200]}"
+                    ),
+                    key_evidence=[
+                        f"{v.provider}/{v.model}: {v.verdict} ({v.confidence:.2f})"
+                        for v in ensemble.votes
+                    ],
+                    next_steps=_next_steps(GateVerdict(ensemble.final_verdict), mature),
+                    metrics=metrics,
+                )
+            logger.warning("gate_decider: ensemble had 0 votes, falling back to single Claude")
+
+        # 2b. Single Claude (default path)
+        logger.info("gate_decider: borderline -> LLM judge")
         raw = self._call(prompt)
         data = self._extract_json(raw)
         return GateDecision(

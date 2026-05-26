@@ -100,18 +100,18 @@ def test_evidence_gate_run_has_budget_tracker():
     assert isinstance(run.budget_tracker, BudgetTracker)
 
 
-def test_evidence_gate_budget_tracker_records_5_steps():
-    """EvidenceGateWorkflow has 5 agent steps — tracker should show exactly 5."""
+def test_evidence_gate_budget_tracker_records_6_steps():
+    """EvidenceGateWorkflow has 6 agent steps (incl. idea_enricher) — tracker shows exactly 6."""
     wf = EvidenceGateWorkflow(mock_mode=True)
     run = wf.run("marketplace de servicios")
-    assert run.budget_tracker.steps_used == 5
+    assert run.budget_tracker.steps_used == 6
 
 
 def test_evidence_gate_budget_tracker_total_cost():
-    """5 steps at $0.01 each = $0.05 total in mock mode."""
+    """6 steps at $0.01 each = $0.06 total in mock mode."""
     wf = EvidenceGateWorkflow(mock_mode=True)
     run = wf.run("edtech para colegios")
-    assert run.budget_tracker.cost_used_usd == pytest.approx(0.05)
+    assert run.budget_tracker.cost_used_usd == pytest.approx(0.06)
 
 
 def test_budget_tracker_alert_threshold_constant():

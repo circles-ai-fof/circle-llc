@@ -26,6 +26,7 @@ from uuid import UUID, uuid4
 import anthropic
 
 from ..agents.gate_decider import GateDeciderAgent
+from ..agents.idea_enricher import IdeaEnricherAgent
 from ..agents.idea_hunter import IdeaHunterAgent
 from ..agents.idea_maturer import IdeaMaturerAgent
 from ..agents.landing_generator import LandingGeneratorAgent
@@ -84,6 +85,7 @@ class EvidenceGateWorkflow:
         _client = client or (None if mock_mode else anthropic.Anthropic())
 
         self._idea_hunter = IdeaHunterAgent(client=_client, mock_mode=mock_mode)
+        self._idea_enricher = IdeaEnricherAgent(client=_client, mock_mode=mock_mode)
         self._idea_maturer = IdeaMaturerAgent(client=_client, mock_mode=mock_mode)
         self._market_validator = MarketValidatorAgent(client=_client, mock_mode=mock_mode)
         self._landing_generator = LandingGeneratorAgent(client=_client, mock_mode=mock_mode)
@@ -124,13 +126,23 @@ class EvidenceGateWorkflow:
         tracker = BudgetTracker()
 
         # Step 1 — Idea generation
-        logger.info("[1/4] idea_hunter: topic=%r", topic)
+        logger.info("[1/5] idea_hunter: topic=%r", topic)
         idea = self._idea_hunter.generate(topic)
         tracker.record_step(cost_usd=0.01)
-        logger.info("[1/4] done: idea.title=%r", idea.title)
+        logger.info("[1/5] done: idea.title=%r", idea.title)
+
+        # Step 1.5 — Idea enrichment (specificity gate)
+        logger.info("[1.5/5] idea_enricher")
+        idea, enrichment_meta = self._idea_enricher.enrich(idea)
+        tracker.record_step(cost_usd=0.01)
+        logger.info(
+            "[1.5/5] done: score=%.2f refined=%s",
+            enrichment_meta["specificity_score"],
+            enrichment_meta["needs_refinement"],
+        )
 
         # Step 2 — ICP + value proposition
-        logger.info("[2/4] idea_maturer")
+        logger.info("[2/5] idea_maturer")
         mature = self._idea_maturer.mature(idea)
         tracker.record_step(cost_usd=0.01)
         logger.info("[2/4] done: value_prop=%r", mature.value_proposition[:60])

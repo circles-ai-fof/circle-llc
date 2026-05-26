@@ -119,7 +119,7 @@ class LandingGeneratorAgent(BaseAgent):
         else:
             final_text = next(b.text for b in response.content if hasattr(b, "text"))
 
-        data = json.loads(final_text)
+        data = self._extract_json(final_text)
         return LandingSpec(**data)
 
     def _mock_generate(self, mature: MatureIdeaSpec) -> LandingSpec:

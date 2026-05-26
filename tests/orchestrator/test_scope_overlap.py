@@ -11,6 +11,7 @@ SCOPES_MD = Path(__file__).parent.parent.parent / "orchestrator" / "agents" / "S
 
 ACTIVE_AGENTS = [
     "idea_hunter",
+    "idea_enricher",
     "idea_maturer",
     "market_validator",
     "landing_generator",
@@ -20,6 +21,7 @@ ACTIVE_AGENTS = [
 # Tasks that belong exclusively to each agent (parsed from SCOPES.md prose)
 AGENT_TASKS = {
     "idea_hunter": {"generate_idea", "topic_to_idea"},
+    "idea_enricher": {"score_specificity", "sharpen_idea", "refine_market", "quantify_problem"},
     "idea_maturer": {"define_icp", "value_proposition", "mature_idea"},
     "market_validator": {"design_test", "set_thresholds", "hypothesis"},
     "landing_generator": {"write_copy", "headline", "cta", "landing_page"},
@@ -65,7 +67,7 @@ def test_overlap_table_in_scopes_md_has_no_checkmarks():
 
 
 def test_five_active_agents_exactly():
-    assert len(ACTIVE_AGENTS) == 5, "Expected exactly 5 active agents in Sprint M1"
+    assert len(ACTIVE_AGENTS) == 6, "Expected exactly 6 active agents in Sprint M1 (incl. idea_enricher)"
 
 
 def test_deferred_readme_exists():

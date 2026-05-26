@@ -82,3 +82,25 @@ Code-based evals corren en CI antes de cualquier LLM-as-judge.
 Alert (no kill) cuando una corrida alcanza 80% del cost_cap_usd.
 Permite ajustar antes del kill duro en 100% (R02).
 Implementado en BudgetTracker._alert_fired — log warning en 80%, TrajectoryBudgetExceededError en 100%.
+
+## R18 — Specificity Gate (idea_enricher)
+Todo IdeaSpec recibido del idea_hunter pasa por idea_enricher ANTES de idea_maturer.
+- Score >= 3.5: passthrough
+- Score < 3.5: sharpening determinista (mock) o LLM-driven (live), preserva id original
+Bloquea la cascada de "vague-in vague-out" (Reganti Cap 5 §5.3).
+
+## R19 — Multi-LLM Ensemble Opt-in (gate_decider only)
+Solo el gate_decider puede operar en modo ensemble. NUNCA los agentes del workflow body.
+Activación: ENSEMBLE_GATE_ENABLED=true + al menos 1 provider key adicional.
+Degradación: si los providers extra fallan, retorna a single-Claude path.
+Triplica costo solo en decisión final crítica — no en pasos creativos.
+
+## R20 — Security Defaults
+- API: CORS allow-list estricto (no wildcards), security headers obligatorios (CSP, HSTS, X-Frame-Options, nosniff).
+- Landing/Dashboard: security headers en next.config.ts (CSP, HSTS, Referrer-Policy).
+- DB: RLS activo con políticas SELECT/INSERT/UPDATE/DELETE (defense-in-depth, no solo SELECT).
+
+## R21 — Defer Architectural Decisions Sin Datos (ADR-005)
+No agregar routers, governors, ni selectors dinámicos sin N>=10 outcomes medidos.
+Cualquier decisión "auto-X" (tool selection, model selection, channel selection) requiere ADR
+con evidencia empírica de >=10 casos antes de codificarse en el chassis.

@@ -149,21 +149,47 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS
+# CORS — strict allow-list, no wildcards
+_DEFAULT_ALLOWED_ORIGINS = [
+    "https://circles-ai.ai",
+    "https://www.circles-ai.ai",
+    "https://dashboard.circles-ai.ai",
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+]
+_extra_origins = [
+    o.strip()
+    for o in os.getenv("EXTRA_ALLOWED_ORIGINS", "").split(",")
+    if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://circles-ai.ai",
-        "https://www.circles-ai.ai",
-        "https://dashboard.circles-ai.ai",
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=_DEFAULT_ALLOWED_ORIGINS + _extra_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    expose_headers=["X-Request-Id"],
+    max_age=600,
 )
+
+
+# Security headers middleware (OWASP basic hardening)
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    # Defence-in-depth: prevent clickjacking, MIME sniffing, info leaks
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    # HSTS only meaningful over HTTPS; harmless otherwise
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    # API only serves JSON — disallow all script/img sources
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+    )
+    return response
 
 # ---------------------------------------------------------------------------
 # Helpers
