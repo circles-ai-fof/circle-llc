@@ -1,0 +1,38 @@
+name: Eval Suite + Tests
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    paths:
+      - 'orchestrator/**'
+      - 'tests/**'
+      - 'outcome-db/**'
+
+jobs:
+  code-evals:
+    name: Code-based evals + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps
+        run: pip install anthropic pydantic pytest fastapi httpx starlette
+      - name: Run full test suite (mock mode)
+        run: pytest tests/ orchestrator/evals/code_based/ -v --tb=short
+        env:
+          CI: "true"
+          # No ANTHROPIC_API_KEY → auto mock_mode (R06)
+
+  golden-case-count:
+    name: Verify 150 golden cases
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Count golden cases
+        run: |
+          total=$(cat orchestrator/evals/golden_cases/*.jsonl | wc -l)
+          echo "Golden cases: $total"
+          [ "$total" -ge 150 ] || (echo "FAIL: need ≥150 golden cases, found $total" && exit 1)
