@@ -93,16 +93,38 @@ def _vote_openai(prompt: str, system: str) -> Optional[EnsembleVote]:
 def _vote_gemini(prompt: str, system: str) -> Optional[EnsembleVote]:
     if not os.getenv("GOOGLE_API_KEY"):
         return None
+    # Try new google-genai SDK first (recommended in 2026)
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            system_instruction=system,
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+        model_name = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
+        resp = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=400,
+            ),
         )
-        resp = model.generate_content(prompt)
-        text = resp.text or ""
-        return _parse_vote("google", "gemini-1.5-flash", text)
+        text = (resp.text or "") if hasattr(resp, "text") else ""
+        return _parse_vote("google", model_name, text)
+    except ImportError:
+        # Fall back to legacy SDK
+        try:
+            import google.generativeai as legacy_genai
+            legacy_genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+            model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+            model = legacy_genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=system,
+            )
+            resp = model.generate_content(prompt)
+            text = resp.text or ""
+            return _parse_vote("google", model_name, text)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("ensemble: gemini vote failed (legacy): %s", e)
+            return None
     except Exception as e:  # noqa: BLE001
         logger.warning("ensemble: gemini vote failed: %s", e)
         return None
