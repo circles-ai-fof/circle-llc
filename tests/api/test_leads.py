@@ -40,8 +40,7 @@ def test_lead_accepted_happy_path(client):
     body = r.json()
     assert body["accepted"] is True
     assert body["slug"] == "techpulse-latam"
-    assert "techpulse-latam" in _leads_store
-    assert _leads_store["techpulse-latam"][0]["email"] == "founder@circles-ai.ai"
+    assert _leads_store.list_by_slug("techpulse-latam")[0]["email"] == "founder@circles-ai.ai"
 
 
 def test_lead_honeypot_silent_accept(client):
@@ -54,14 +53,14 @@ def test_lead_honeypot_silent_accept(client):
     # API returns 201 to throw off the bot
     assert r.status_code == 201
     # But nothing is stored
-    assert _leads_store["techpulse-latam"] == []
+    assert _leads_store.list_by_slug("techpulse-latam") == []
 
 
 def test_lead_dwell_too_fast_blocked(client):
     r = client.post("/api/v1/leads", json=_payload(dwell_ms=200))
     assert r.status_code == 400
     assert "Retry-After" in r.headers
-    assert _leads_store["techpulse-latam"] == []
+    assert _leads_store.list_by_slug("techpulse-latam") == []
 
 
 def test_lead_disposable_email_blocked(client):
@@ -71,7 +70,7 @@ def test_lead_disposable_email_blocked(client):
     )
     assert r.status_code == 400
     assert "Disposable" in r.json()["detail"]
-    assert _leads_store["techpulse-latam"] == []
+    assert _leads_store.list_by_slug("techpulse-latam") == []
 
 
 def test_lead_rate_limit_enforced(client):

@@ -1,0 +1,40 @@
+# Frontend (Vercel handles them)
+landing/
+dashboard/
+
+# Local dev
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+*.coverage
+
+# Tests (image size; CI runs them separately)
+tests/
+
+# Build outputs
+.next/
+node_modules/
+dist/
+
+# Misc
+.DS_Store
+*.log
+*.db
+*.sqlite
+.git/
+.github/
+docs/
+documentacion_proyecto/
+
+# Markdown / docs (don't change runtime behavior)
+*.md
+!orchestrator/rulebook.md
+!orchestrator/agents/SCOPES.md

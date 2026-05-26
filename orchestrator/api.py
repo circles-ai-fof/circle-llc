@@ -109,10 +109,16 @@ def _build_workflow() -> EvidenceGateWorkflow:
 _workflow: EvidenceGateWorkflow = _build_workflow()
 
 # ---------------------------------------------------------------------------
-# In-memory run store  (M1 — Outcome DB replaces this in M3)
+# Run + lead store
+# Backed by SQLite when DATABASE_PATH is set (M2 deploy), in-memory otherwise.
+# Outcome DB (Postgres) replaces both in M3.
 # ---------------------------------------------------------------------------
 
-_runs: Dict[str, RunGateResponse] = {}
+from .core.storage import leads_store as _leads_persistent_store
+from .core.storage import runs_store as _runs
+
+# Backward-compat name for human_review tests that import _runs directly.
+# The dict-like API of RunsStore makes this transparent.
 
 # ---------------------------------------------------------------------------
 # Agent catalogue (static, from SCOPES.md)
@@ -492,9 +498,9 @@ def post_human_override(
 # Lead capture (anti-bot protected) — receives form submissions from /f/[slug]
 # ---------------------------------------------------------------------------
 
-# In-memory lead store; M3 persists to Outcome DB.
-# Shape: {slug: [{email, name, ts, ip}]}
-_leads_store: Dict[str, List[Dict]] = defaultdict(list)
+# Lead store: SQLite-backed when DATABASE_PATH is set, in-memory otherwise.
+# `_leads_store` retained as a name so existing tests can patch/clear it.
+_leads_store = _leads_persistent_store
 
 
 @app.post(
@@ -572,14 +578,13 @@ def capture_lead(
             detail="Disposable email domains are not accepted.",
         )
 
-    # All checks passed -> store
-    _leads_store[body.slug].append(
-        {
-            "email": body.email,
-            "name": body.name,
-            "ts": time.time(),
-            "ip": ip,
-        }
+    # All checks passed -> store (SQLite or memory depending on env)
+    _leads_store.add(
+        slug=body.slug,
+        email=body.email,
+        name=body.name,
+        ip=ip,
+        user_agent=request.headers.get("user-agent", "")[:200] or None,
     )
     logger.info("lead captured slug=%s email=%s", body.slug, body.email)
     return LeadCaptureResponse(
