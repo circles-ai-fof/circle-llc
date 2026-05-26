@@ -78,17 +78,47 @@ export default function RunForm({ onClose }: RunFormProps) {
     setError(null);
     setResult(null);
 
-    // Simulate async API call (demo mode)
-    await new Promise((resolve) => setTimeout(resolve, 2200));
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+    // If no API URL configured, use demo mode (simulated 2.2s + keyword logic)
+    if (!apiUrl) {
+      await new Promise((resolve) => setTimeout(resolve, 2200));
+      setResult(simulateResult(topic.trim()));
+      setLoading(false);
+      return;
+    }
 
     try {
-      // In production, replace with:
-      // const res = await fetch('/api/v1/gate/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic }) });
-      // const data = await res.json();
-      const data = simulateResult(topic.trim());
-      setResult(data);
-    } catch {
-      setError("Error al conectar con el backend. Verifica que el servidor esté activo.");
+      const res = await fetch(`${apiUrl}/api/v1/gate/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: topic.trim() }),
+        // Worst case the workflow can take 40-60s with real LLMs
+        signal: AbortSignal.timeout(90000),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`API ${res.status}: ${txt.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      // Adapt API shape -> UI shape
+      setResult({
+        run_id: data.run_id,
+        idea_title: data.idea_title,
+        verdict: data.verdict.toUpperCase() as Verdict,
+        confidence: data.confidence,
+        rationale: data.rationale,
+        landing_headline: data.landing_headline,
+        landing_slug: data.landing_slug,
+        cost_usd_estimated: data.cost_usd_estimated,
+        steps_used: data.steps_used,
+      });
+    } catch (e) {
+      setError(
+        `Error: ${
+          e instanceof Error ? e.message : String(e)
+        }. Backend en ${apiUrl} — caí a demo mode (recarga sin NEXT_PUBLIC_API_URL para offline).`
+      );
     } finally {
       setLoading(false);
     }
