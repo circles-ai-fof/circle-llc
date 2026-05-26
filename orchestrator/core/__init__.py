@@ -1,4 +1,5 @@
 from .base_agent import BaseAgent
+from .canonical_goal import CanonicalGoal
 from .models import (
     EvidenceTestDesign,
     GateDecision,
@@ -10,9 +11,16 @@ from .models import (
     MetricsSnapshot,
     VerticalCategory,
 )
+from .step_budget import (
+    BudgetTracker,
+    TrajectoryBudgetExceededError,
+    trajectory_budget,
+)
 
 __all__ = [
     "BaseAgent",
+    "BudgetTracker",
+    "CanonicalGoal",
     "EvidenceTestDesign",
     "GateDecision",
     "GateVerdict",
@@ -21,5 +29,7 @@ __all__ = [
     "LandingSpec",
     "MatureIdeaSpec",
     "MetricsSnapshot",
+    "TrajectoryBudgetExceededError",
     "VerticalCategory",
+    "trajectory_budget",
 ]

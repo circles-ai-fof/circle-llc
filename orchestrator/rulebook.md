@@ -58,10 +58,27 @@ El eval suite del agente debe correr verde en CI.
 
 ---
 
-## Reglas pendientes para FASE 5 (Sprint M1 pre-launch)
+## R13 — Step Budget por Trayectoria
+Cada workflow del orquestador tiene un step_budget máximo configurado en BudgetTracker.
+Default: 20 steps, $5.00 USD. Si una trayectoria supera el budget, abort con TrajectoryBudgetExceededError.
+Override por workflow documentado en orchestrator/config.py con justificación.
 
-- R13 — Step Budget por Trayectoria
-- R14 — Canonical Goal Statement
-- R15 — Scope Exclusivo Documentado (implementado en SCOPES.md, pendiente en código)
-- R16 — Per-Agent Quality Evals
-- R17 — Cost Alert en 80% del Cap
+## R14 — Canonical Goal Statement
+Cada workflow crea un CanonicalGoal al inicio del run.
+El canonical_goal está disponible en EvidenceGateRun para cualquier agente que lo necesite.
+Previene drift from goal (Cap 15.5) — cada agente puede verificar que su output está dentro del scope.
+
+## R15 — Scope Exclusivo Documentado
+Cada agente tiene scope exclusivo documentado en SCOPES.md.
+Tests de overlap corren en CI (test_scope_overlap.py): si dos agentes pueden hacer la misma tarea, falla el build.
+Ver criterios de activación en _deferred/README.md.
+
+## R16 — Per-Agent Quality Evals
+Cada agente tiene su eval suite en orchestrator/evals/golden_cases/{agent_name}.jsonl.
+Antes de promover output de un agente como input del siguiente, el output pasa por schema validation (R07).
+Code-based evals corren en CI antes de cualquier LLM-as-judge.
+
+## R17 — Cost Alert en 80% del Cap
+Alert (no kill) cuando una corrida alcanza 80% del cost_cap_usd.
+Permite ajustar antes del kill duro en 100% (R02).
+Implementado en BudgetTracker._alert_fired — log warning en 80%, TrajectoryBudgetExceededError en 100%.

@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Circle LLC v2 — Arquitectura Tecnológica (Reganti-aligned)</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  :root{
+    --bg:#0B0F1A; --bg-card:#11172A; --bg-soft:#1A2235; --bg-deep:#070B14;
+    --border:#2A3548; --border-soft:#1F2A40;
+    --text:#E5E7EB; --muted:#8B95A8; --dim:#5F6B82;
+    --accent:#00D4FF; --green:#00E5A0; --amber:#FFB800;
+    --red:#FF4D6D; --purple:#A78BFA; --pink:#FF6FA3;
+    --mono:"SF Mono","JetBrains Mono","Cascadia Code",monospace;
+  }
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Inter",sans-serif;
+    line-height:1.65; font-size:14.5px;
+    background-image:radial-gradient(circle at 20% 0%, rgba(0,229,160,.06), transparent 50%),
+                     radial-gradient(circle at 80% 100%, rgba(0,212,255,.06), transparent 50%);
+    background-attachment:fixed;
+  }
+  .page{max-width:1100px; margin:0 auto; padding:40px 32px 80px;}
+
+  .hero{margin-bottom:36px; padding-bottom:24px; border-bottom:1px solid var(--border);}
+  .version-tag{
+    display:inline-block; font-size:10px; letter-spacing:.25em;
+    color:var(--green); text-transform:uppercase; margin-bottom:10px;
+    font-weight:700; padding:4px 10px;
+    background:rgba(0,229,160,.1); border:1px solid rgba(0,229,160,.3);
+    border-radius:4px;
+  }
+  .hero h1{font-size:34px; font-weight:700; color:#FFF; line-height:1.2; margin-bottom:10px; letter-spacing:-0.5px;}
+  .hero .subtitle{font-size:15.5px; color:var(--muted); max-width:820px;}
+
+  .v1-callout{
+    background:rgba(255,184,0,.06); border:1px solid rgba(255,184,0,.25);
+    border-left:4px solid var(--amber); padding:18px 24px;
+    margin-bottom:36px; border-radius:0 8px 8px 0; font-size:13.5px;
+  }
+  .v1-callout strong{color:var(--amber);}
+
+  .toc{background:var(--bg-card); border:1px solid var(--border); padding:22px 28px; margin-bottom:40px; border-radius:8px;}
+  .toc h2{font-size:14px; color:var(--accent); margin-bottom:12px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; border:none; padding:0;}
+  .toc ol{padding-left:24px; font-size:13.5px; margin:0;}
+  .toc li{margin:3px 0;}
+  .toc a{color:var(--text); text-decoration:none;}
+  .toc a:hover{color:var(--accent);}
+
+  h2{font-size:22px; font-weight:700; color:#FFF; margin:42px 0 16px; padding-bottom:10px; border-bottom:1px solid var(--border); letter-spacing:-0.3px;}
+  h3{font-size:17px; font-weight:600; color:#FFF; margin:24px 0 12px;}
+  h4{font-size:14px; font-weight:600; color:var(--accent); margin:18px 0 8px; text-transform:uppercase; letter-spacing:.08em;}
+  p{margin-bottom:13px;}
+  p strong{color:#FFF;}
+  ul,ol{margin:10px 0 14px 24px;}
+  li{margin-bottom:6px;}
+
+  code{font-family:var(--mono); background:var(--bg-soft); padding:2px 7px; border-radius:4px; font-size:12.5px; color:var(--accent);}
+  pre{background:var(--bg-deep); border:1px solid var(--border); padding:16px 20px; border-radius:8px; overflow-x:auto; font-family:var(--mono); font-size:12.5px; line-height:1.65; margin:14px 0;}
+  pre code{background:transparent; padding:0; color:var(--text);}
+
+  table{width:100%; border-collapse:collapse; margin:16px 0; font-size:13px; border:1px solid var(--border); border-radius:8px; overflow:hidden;}
+  th{background:var(--bg-soft); color:#FFF; font-weight:600; padding:10px 14px; text-align:left; border-bottom:1px solid var(--border); font-size:12px;}
+  td{padding:10px 14px; border-bottom:1px solid var(--border-soft); vertical-align:top;}
+  tr:last-child td{border-bottom:none;}
+  td.label{font-weight:600; color:#FFF; width:30%;}
+  tr:nth-child(even) td{background:rgba(255,255,255,.015);}
+
+  .delta-box{background:var(--bg-card); border:1px solid var(--border); border-left:4px solid var(--green); padding:16px 22px; margin:16px 0; border-radius:0 8px 8px 0;}
+  .delta-box h4{margin-top:0;}
+  .delta-box .v1-from{color:var(--pink); font-family:var(--mono); font-size:12px;}
+  .delta-box .v2-to{color:var(--green); font-family:var(--mono); font-size:12px;}
+  .delta-box .arrow{color:var(--muted); margin:0 8px;}
+
+  .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:18px 0;}
+  @media(max-width:780px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
+  .stat{background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:14px 18px;}
+  .stat .label{font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.15em; margin-bottom:4px;}
+  .stat .value{font-family:var(--mono); font-size:22px; font-weight:700; color:var(--green);}
+  .stat .sub{font-size:11px; color:var(--dim); margin-top:2px;}
+
+  .principle-card{background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:16px 20px; margin:10px 0;}
+  .principle-card .num{font-family:var(--mono); font-size:11px; color:var(--accent); font-weight:700; letter-spacing:.05em;}
+  .principle-card h4{margin:4px 0 8px; color:#FFF; text-transform:none; letter-spacing:0; font-size:14px;}
+  .principle-card p{font-size:13px; color:var(--muted); margin:0;}
+
+  .agent-card{background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:14px 18px; margin:8px 0;}
+  .agent-card .agent-name{font-family:var(--mono); font-size:13px; color:var(--accent); font-weight:700;}
+  .agent-card .agent-role{color:var(--text); font-size:13.5px; margin-top:3px;}
+  .agent-card .agent-scope{font-size:12px; color:var(--muted); margin-top:5px;}
+
+  .warning{background:rgba(255,184,0,.06); border-left:4px solid var(--amber); padding:16px 22px; margin:18px 0; border-radius:0 8px 8px 0; font-size:13.5px;}
+  .warning strong{color:var(--amber);}
+
+  .doc-end{text-align:center; margin-top:50px; padding-top:28px; border-top:1px solid var(--border); color:var(--muted); font-style:italic; font-size:13px;}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="hero">
+    <div class="version-tag">v2.0 · Reganti-aligned · Documentación paralela</div>
+    <h1>Circle LLC — Arquitectura Tecnológica v2</h1>
+    <div class="subtitle">
+      Arquitectura recalibrada según frameworks del AI Builder's Handbook. Reemplaza el modelo de 35+ agentes por workflow lineal con 5 agentes embebidos, observabilidad agent-native y evals como infraestructura. Documentada para registro; arquitectura v1 sigue siendo la activa para ejecución inmediata.
+    </div>
+  </div>
+
+  <div class="v1-callout">
+    <strong>Nota de uso:</strong> este documento existe en paralelo a <code>Circle_LLC_Arquitectura_Tecnologica.html</code> (v1). El equipo continúa ejecutando v1 mientras este documento queda como referencia técnica de la arquitectura alternativa para evaluación futura.
+  </div>
+
+  <div class="toc">
+    <h2>Tabla de Contenidos</h2>
+    <ol>
+      <li><a href="#s1">Cambios sustantivos respecto a v1</a></li>
+      <li><a href="#s2">Principios arquitectónicos inviolables</a></li>
+      <li><a href="#s3">Stack tecnológico actualizado</a></li>
+      <li><a href="#s4">Topología del orquestador (5 agentes activos)</a></li>
+      <li><a href="#s5">Workflow del evidence-gate</a></li>
+      <li><a href="#s6">Rulebook expandido (17 reglas)</a></li>
+      <li><a href="#s7">Eval harness como infraestructura</a></li>
+      <li><a href="#s8">Observabilidad con Langfuse self-hosted</a></li>
+      <li><a href="#s9">Outcome Database con write/eviction policy</a></li>
+      <li><a href="#s10">ADRs nuevos y modificados</a></li>
+      <li><a href="#s11">Costo operativo estimado</a></li>
+    </ol>
+  </div>
+
+  <h2 id="s1">1. Cambios sustantivos respecto a v1</h2>
+
+  <p>
+    Esta sección resume los cambios concretos. El resto del documento desarrolla cada uno en profundidad.
+  </p>
+
+  <div class="stat-grid">
+    <div class="stat">
+      <div class="label">Agentes activos</div>
+      <div class="value">5</div>
+      <div class="sub">v1: 35+ propuestos</div>
+    </div>
+    <div class="stat">
+      <div class="label">Líneas orquestador</div>
+      <div class="value">~1,500</div>
+      <div class="sub">v1: ~5,000 estimadas</div>
+    </div>
+    <div class="stat">
+      <div class="label">Reglas rulebook</div>
+      <div class="value">17</div>
+      <div class="sub">v1: 12 (faltaban failure modes)</div>
+    </div>
+    <div class="stat">
+      <div class="label">Evals golden</div>
+      <div class="value">150</div>
+      <div class="sub">v1: 0 construidos</div>
+    </div>
+  </div>
+
+  <h3>Lista completa de cambios v1 → v2</h3>
+
+  <div class="delta-box">
+    <h4>Cambio 1 · Número de agentes</h4>
+    <p>
+      <span class="v1-from">v1: 35+ agentes especializados</span><span class="arrow">→</span><span class="v2-to">v2: 5 agentes + 30 archivados en _deferred/</span>
+    </p>
+    <p style="margin-top:8px; color:var(--muted); font-size:13px;">
+      Los 30 agentes deferidos se reactivan cuando: (a) hay ≥3 fábricas operando, (b) eval harness está maduro, (c) se demuestra que un workflow no resuelve la tarea. Citar Cap 15 §15.1 del handbook.
+    </p>
+  </div>
+
+  <div class="delta-box">
+    <h4>Cambio 2 · Patrón arquitectónico</h4>
+    <p>
+      <span class="v1-from">v1: orquestador multi-agente coordinando 35+ componentes</span><span class="arrow">→</span><span class="v2-to">v2: workflow lineal como chassis, agentes embebidos solo donde hay heterogeneous expertise (F2-F5)</span>
+    </p>
+  </div>
+
+  <div class="delta-box">
+    <h4>Cambio 3 · Observabilidad</h4>
+    <p>
+      <span class="v1-from">v1: Sentry + PostHog</span><span class="arrow">→</span><span class="v2-to">v2: Langfuse self-hosted (traces agent-native) + Sentry (solo infraestructura) + PostHog (solo landings)</span>
+    </p>
+  </div>
+
+  <div class="delta-box">
+    <h4>Cambio 4 · Eval harness</h4>
+    <p>
+      <span class="v1-from">v1: mencionado como ítem futuro</span><span class="arrow">→</span><span class="v2-to">v2: infraestructura desde día 1 con 150 golden cases versionados, code-based primero, judge calibrado ≥80%</span>
+    </p>
+  </div>
+
+  <div class="delta-box">
+    <h4>Cambio 5 · Rulebook</h4>
+    <p>
+      <span class="v1-from">v1: R01-R12 (governance general)</span><span class="arrow">→</span><span class="v2-to">v2: R01-R17 (añade R13-R17 cubriendo 5 failure modes específicos de multi-agente)</span>
+    </p>
+  </div>
+
+  <div class="delta-box">
+    <h4>Cambio 6 · Outcome Database</h4>
+    <p>
+      <span class="v1-from">v1: schema diseñado, sin write policy</span><span class="arrow">→</span><span class="v2-to">v2: POLICIES.md + write_gate + eviction TTL + cross-tenant isolation tests + NO writable en M1</span>
+    </p>
+  </div>
+
+  <div class="delta-box">
+    <h4>Cambio 7 · Selección de modelo</h4>
+    <p>
+      <span class="v1-from">v1: Claude elegido por reputación + tooling</span><span class="arrow">→</span><span class="v2-to">v2: Claude validado contra Gemini 2.5 y GPT-5 con eval set de 30 casos antes de M1</span>
+    </p>
+  </div>
+
+  <h2 id="s2">2. Principios arquitectónicos inviolables</h2>
+
+  <p>
+    Seis principios derivados directamente del AI Builder's Handbook. Cualquier decisión técnica que se desvíe debe documentarse en un ADR justificándolo.
+  </p>
+
+  <div class="principle-card">
+    <div class="num">P-01</div>
+    <h4>Stay at the simplest level that handles 90% of cases</h4>
+    <p>Si dudas entre workflow y agente, elige workflow. Si dudas entre 5 agentes y 10, elige 5. <em>(Cap 10 §10.3)</em></p>
+  </div>
+
+  <div class="principle-card">
+    <div class="num">P-02</div>
+    <h4>Evals are infrastructure, not a milestone</h4>
+    <p>No se escribe código de orquestación nuevo sin evals que lo midan. CC/CD framework (Continuous Calibration / Continuous Development). <em>(Cap 6 §6.4)</em></p>
+  </div>
+
+  <div class="principle-card">
+    <div class="num">P-03</div>
+    <h4>Problem-first matters more in AI</h4>
+    <p>Si un componente no resuelve un problema específico de un usuario específico, no se construye. <em>(Cap 4)</em></p>
+  </div>
+
+  <div class="principle-card">
+    <div class="num">P-04</div>
+    <h4>Multi-agent is "not yet" for 90% of teams</h4>
+    <p>Hasta que un workflow demuestre que no resuelve la tarea, no se escala a multi-agente. <em>(Cap 15 §15.8)</em></p>
+  </div>
+
+  <div class="principle-card">
+    <div class="num">P-05</div>
+    <h4>Your evals beat any benchmark</h4>
+    <p>Decisiones de modelo con eval data propia, no con leaderboards públicos. <em>(Cap 3 §3.6)</em></p>
+  </div>
+
+  <div class="principle-card">
+    <div class="num">P-06</div>
+    <h4>A system you cannot see is a system you cannot fix</h4>
+    <p>Sin observabilidad agent-native, no hay despliegue a producción. <em>(Cap 16 §16.1)</em></p>
+  </div>
+
+  <h2 id="s3">3. Stack tecnológico actualizado</h2>
+
+  <p>
+    Stack heredado de v1 con cambios mínimos. La capa delgada sobre Anthropic SDK + MCP (ADR-001) se mantiene como decisión central.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Capa</th><th>Tecnología</th><th>Cambio vs v1</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="label">LLM primario</td><td>Anthropic Claude (Opus 4.7, Sonnet 4.6, Haiku 4.5)</td><td>Sin cambio</td></tr>
+      <tr><td class="label">LLM fallback</td><td>Gemini 2.5 + GPT-5 vía adapter</td><td>Failover testado <strong>monthly con tráfico real</strong>, no solo declarado</td></tr>
+      <tr><td class="label">Runtime desarrollo</td><td>Claude Code CLI</td><td>Sin cambio</td></tr>
+      <tr><td class="label">Frontend fábricas</td><td>Next.js 15 + TypeScript estricto</td><td>Sin cambio</td></tr>
+      <tr><td class="label">Backend orquestador</td><td>Python 3.12+ + FastAPI + Pydantic</td><td>Sin cambio</td></tr>
+      <tr><td class="label">Base de datos</td><td>PostgreSQL + pgvector (Supabase)</td><td>Sin cambio</td></tr>
+      <tr><td class="label">Outcome DB</td><td>PostgreSQL dedicada con write_gate</td><td><strong>writable=False en M1</strong>; activación condicional</td></tr>
+      <tr><td class="label">Eval harness</td><td><strong>Promptfoo + golden cases JSONL + LLM-as-judge calibrado</strong></td><td>NUEVO — no existía en v1</td></tr>
+      <tr><td class="label">Observabilidad agentes</td><td><strong>Langfuse self-hosted</strong></td><td>NUEVO — reemplaza Sentry para lógica de agentes</td></tr>
+      <tr><td class="label">Observabilidad infra</td><td>Sentry</td><td>Reducido a errores de infraestructura solamente</td></tr>
+      <tr><td class="label">Analytics web</td><td>PostHog</td><td>Reducido a landings públicas solamente</td></tr>
+      <tr><td class="label">DNS + CDN + WAF</td><td>Cloudflare</td><td>Sin cambio</td></tr>
+      <tr><td class="label">Hosting frontend</td><td>Vercel</td><td>Sin cambio</td></tr>
+      <tr><td class="label">CI/CD</td><td>GitHub Actions</td><td>Pipeline expandido con <strong>eval suite bloqueante</strong></td></tr>
+      <tr><td class="label">Pagos</td><td>Stripe</td><td>Sin cambio</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="s4">4. Topología del orquestador (5 agentes activos)</h2>
+
+  <p>
+    El orquestador v2 sigue un modelo de <strong>workflow lineal como chassis</strong> con agentes especializados embebidos solo donde aplica heterogeneous expertise. Esto elimina el modo "orquestador multi-agente coordinando 35 componentes" del v1.
+  </p>
+
+  <h3>4.1 Estructura de carpetas v2</h3>
+
+<pre><code>circle-llc/
+├── orchestrator/
+│   ├── CLAUDE.md                    # Constitución del orquestador
+│   ├── rulebook.md                  # R01-R17 (5 nuevas reglas)
+│   ├── core/
+│   │   ├── workflow_engine.py       # Motor de workflows lineales
+│   │   ├── canonical_goal.py        # R14: goal statement compartido
+│   │   ├── step_budget.py           # R13: cap por trayectoria
+│   │   ├── model_selector.py        # Routing Opus/Sonnet/Haiku
+│   │   ├── cost_guardrail.py        # R02 + R17 (alert en 80%)
+│   │   └── audit_logger.py          # Log inmutable
+│   ├── agents/                      # 5 agentes activos
+│   │   ├── idea_hunter.py
+│   │   ├── idea_maturer.py
+│   │   ├── market_validator.py
+│   │   ├── landing_generator.py
+│   │   ├── gate_decider.py
+│   │   ├── SCOPES.md                # R15: scope exclusivo documentado
+│   │   └── _deferred/               # 30 agentes archivados
+│   │       └── README.md            # Criterios de reactivación
+│   ├── workflows/
+│   │   └── evidence_gate.py         # Workflow lineal de 4 pasos
+│   ├── evals/                       # NUEVO en v2
+│   │   ├── golden_cases/            # 150 casos JSONL
+│   │   ├── code_based/              # Tests deterministas
+│   │   ├── llm_judge/               # Rubrics + calibration
+│   │   └── trajectory/              # Deferido hasta requerir multi-agente
+│   ├── observability/               # NUEVO en v2
+│   │   ├── langfuse_client.py
+│   │   ├── trace_decorators.py
+│   │   └── dashboards/
+│   ├── skills/                      # FoF-Brain (propietario)
+│   └── mcp/                         # Configuración MCP servers
+│
+├── outcome-db/
+│   ├── POLICIES.md                  # NUEVO: write/eviction policy
+│   ├── write_gate.py                # NUEVO: validador de escrituras
+│   ├── schema.sql
+│   └── tests/
+│       └── test_cross_tenant_isolation.py  # NUEVO
+│
+├── factories/
+│   ├── _template/
+│   └── (1 carpeta por fábrica activa)
+│
+├── landing/
+├── dashboard/
+├── shared/
+└── tests/</code></pre>
+
+  <h3>4.2 Los 5 agentes activos</h3>
+
+  <div class="agent-card">
+    <div class="agent-name">idea_hunter</div>
+    <div class="agent-role">Genera ideas crudas de productos a partir de tendencias de mercado</div>
+    <div class="agent-scope">Scope: solo genera. NO valida, NO diseña landing, NO ejecuta campañas.</div>
+  </div>
+
+  <div class="agent-card">
+    <div class="agent-name">idea_maturer</div>
+    <div class="agent-role">Refina ICP, propuesta de valor y narrativa de una idea cruda</div>
+    <div class="agent-scope">Scope: solo refina ideas existentes. NO genera ideas nuevas, NO valida con mercado.</div>
+  </div>
+
+  <div class="agent-card">
+    <div class="agent-name">market_validator</div>
+    <div class="agent-role">Diseña el experimento de evidence-gate (audiencias, copy, umbrales)</div>
+    <div class="agent-scope">Scope: diseña experimentos. NO los ejecuta (eso es código determinista vía APIs).</div>
+  </div>
+
+  <div class="agent-card">
+    <div class="agent-name">landing_generator</div>
+    <div class="agent-role">Genera landing page con copy alineado al ICP, usando tool use para estructurar output</div>
+    <div class="agent-scope">Scope: solo landings. NO diseña ads, NO mide conversiones.</div>
+  </div>
+
+  <div class="agent-card">
+    <div class="agent-name">gate_decider</div>
+    <div class="agent-role">Evalúa métricas reales contra umbrales y recomienda pasa/kill al humano</div>
+    <div class="agent-scope">Scope: solo decisión de gate. La decisión final siempre la valida un humano (R10).</div>
+  </div>
+
+  <h3>4.3 Los 30 agentes deferidos</h3>
+
+  <p>
+    Los agentes del diseño v1 que no entran en operación inicial se mantienen en <code>orchestrator/agents/_deferred/</code> con un README que especifica los criterios de reactivación:
+  </p>
+
+  <ul>
+    <li><strong>Criterio A:</strong> ≥3 fábricas operando en producción con MRR &gt;0</li>
+    <li><strong>Criterio B:</strong> eval harness con ≥80% de cobertura semántica de casos producción</li>
+    <li><strong>Criterio C:</strong> demostración cuantitativa de que un workflow + 5 agentes no resuelve un caso específico</li>
+    <li><strong>Criterio D:</strong> aprobación explícita del CEO + CTO documentada en ADR</li>
+  </ul>
+
+  <p>
+    Los 4 criterios deben cumplirse simultáneamente. Reactivar un agente sin esto se considera violación del principio P-04 y requiere ADR explícito.
+  </p>
+
+  <h2 id="s5">5. Workflow del evidence-gate</h2>
+
+  <p>
+    El evidence-gate del Sprint M1 se ejecuta como workflow lineal de 4 pasos, no como sistema multi-agente coordinado. Esto es el cambio arquitectónico más importante respecto a v1.
+  </p>
+
+  <h3>5.1 Pasos del workflow</h3>
+
+  <table>
+    <thead>
+      <tr><th>Paso</th><th>Quién ejecuta</th><th>Output</th><th>Validación</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="label">1. Generación de ideas</td>
+        <td>idea_hunter (single call)</td>
+        <td>10 ideas con descripción y ICP preliminar</td>
+        <td>Schema Pydantic + LLM judge calibrado</td>
+      </tr>
+      <tr>
+        <td class="label">2. Maduración</td>
+        <td>idea_maturer (single call por idea)</td>
+        <td>10 ideas con ICP detallado, propuesta de valor, narrativa</td>
+        <td>Schema + code-based length/format checks</td>
+      </tr>
+      <tr>
+        <td class="label">3. Landings + campañas</td>
+        <td>landing_generator + Meta/Google Ads APIs (código determinista)</td>
+        <td>10 landings deployadas + 10 campañas activas con budget USD 50 cada una</td>
+        <td>HTTP 200 + ads aprobadas en plataformas</td>
+      </tr>
+      <tr>
+        <td class="label">4. Decisión de gate</td>
+        <td>metrics_collector (código) + gate_decider (single call + judge)</td>
+        <td>Recomendación pasa/kill por idea con justificación</td>
+        <td>Validación humana obligatoria (R10)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>5.2 Por qué esto NO es multi-agente</h3>
+
+  <p>
+    El workflow es lineal: cada paso entrega su output al siguiente, sin negociación entre agentes, sin decisión dinámica de qué agente llamar, sin coordinación. Cada agente individual es un "single call con tool use" — exactamente el patrón que el handbook recomienda como primera opción (Cap 10 §10.1).
+  </p>
+
+  <h2 id="s6">6. Rulebook expandido (17 reglas)</h2>
+
+  <p>
+    Las 12 reglas originales del v1 (R01-R12) se mantienen sin cambios. Se añaden 5 reglas nuevas (R13-R17) que cubren los failure modes específicos de sistemas multi-agente del Cap 15 §15.5 del handbook.
+  </p>
+
+  <h3>6.1 Reglas heredadas del v1 (resumen)</h3>
+
+  <ul>
+    <li><strong>R01-R03:</strong> gates inviolables (no avanzar de fase sin pasar gate anterior)</li>
+    <li><strong>R04-R05:</strong> control de costos y auditoría</li>
+    <li><strong>R06-R08:</strong> configuración como código, retry policies, secret management</li>
+    <li><strong>R09-R11:</strong> observabilidad obligatoria, human-in-the-loop, validación de schemas</li>
+    <li><strong>R12:</strong> context blockers según fase</li>
+  </ul>
+
+  <h3>6.2 Reglas nuevas en v2</h3>
+
+  <div class="principle-card">
+    <div class="num">R13</div>
+    <h4>Step Budget por Trayectoria</h4>
+    <p>Cada workflow tiene un <code>step_budget</code> máximo. Default: 20 steps. Si una trayectoria lo supera, abort con <code>TrajectoryBudgetExceededError</code>. Previene loops (Cap 15 §15.5).</p>
+  </div>
+
+  <div class="principle-card">
+    <div class="num">R14</div>
+    <h4>Canonical Goal Statement</h4>
+    <p>Cada agente recibe en cada turno el <code>canonical_goal</code> del workflow actual como context block obligatorio. Previene drift from goal.</p>
+  </div>
+
+  <div class="principle-card">
+    <div class="num">R15</div>
+    <h4>Scope Exclusivo Documentado</h4>
+    <p>Cada agente tiene scope exclusivo en <code>SCOPES.md</code>. Tests de overlap corren en CI: si dos agentes pueden hacer la misma tarea, falla el build. Previene responsibility fuzziness.</p>
+  </div>
+
+  <div class="principle-card">
+    <div class="num">R16</div>
+    <h4>Per-Agent Quality Evals</h4>
+    <p>Antes de promover output de Agente A como input de Agente B, el output de A pasa por su quality eval. Detecta compounding errors antes de propagación.</p>
+  </div>
+
+  <div class="principle-card">
+    <div class="num">R17</div>
+    <h4>Cost Alert en 80% del Cap</h4>
+    <p>Alert (no kill) cuando una corrida alcanza 80% del <code>cost_cap_usd</code>. Permite ajustar antes del kill duro en 100% (R02).</p>
+  </div>
+
+  <h2 id="s7">7. Eval harness como infraestructura</h2>
+
+  <p>
+    Construido desde el día 1, versionado en el repositorio, ejecutable con <code>pnpm eval</code> o <code>uv run eval</code>. Bloquea merges en PRs si los evals regresan.
+  </p>
+
+  <h3>7.1 Estructura de evals</h3>
+
+<pre><code>orchestrator/evals/
+├── README.md                       # Cómo añadir nuevos casos
+├── conftest.py                     # Promptfoo config
+├── golden_cases/                   # 30 casos × 5 agentes = 150
+│   ├── idea_hunter.jsonl
+│   ├── idea_maturer.jsonl
+│   ├── market_validator.jsonl
+│   ├── landing_generator.jsonl
+│   └── gate_decider.jsonl
+├── code_based/                     # Cap 7: cheap, fast, deterministic
+│   ├── test_schema_validation.py
+│   ├── test_format_checks.py
+│   └── test_length_bounds.py
+├── llm_judge/                      # Cap 8: solo después de calibrar
+│   ├── rubric_idea_quality.md
+│   ├── rubric_gate_decision.md
+│   └── calibration_dataset.jsonl   # 50 ejemplos labelados manualmente
+└── trajectory/                     # Cap 15.6: deferido
+    └── README.md</code></pre>
+
+  <h3>7.2 Composición de los 30 casos por agente</h3>
+
+  <ul>
+    <li><strong>60% happy path:</strong> 18 casos representando uso típico esperado</li>
+    <li><strong>30% edge cases:</strong> 9 casos con inputs en los límites del dominio</li>
+    <li><strong>10% adversarios:</strong> 3 casos con prompt injection, valores extremos, encoding raro</li>
+  </ul>
+
+  <h3>7.3 Pipeline de calibración del LLM judge</h3>
+
+  <ol>
+    <li>Los 2 fundadores labelean manualmente 50 ejemplos de cada agente (1-2 horas, una sola vez)</li>
+    <li>Se corre el judge contra los 50 labels</li>
+    <li>Se mide el <strong>agreement rate</strong> con humanos</li>
+    <li><strong>Criterio de uso:</strong> agreement ≥80% antes de usar el judge en gates de producción</li>
+    <li>Si agreement &lt; 80%, refinar rubric y recalibrar</li>
+    <li>Recalibración trimestral según Cap 18.3</li>
+  </ol>
+
+  <div class="warning">
+    <strong>Realismo de calibración:</strong> el handbook advierte que llegar a 80% agreement típicamente toma 2-3 iteraciones de refinement del rubric. Planificar 4-6 horas de calibración total, no 1-2.
+  </div>
+
+  <h3>7.4 Pipeline CI con eval bloqueante</h3>
+
+  <p>
+    GitHub Action que falla el PR si:
+  </p>
+
+  <ul>
+    <li>Cobertura de tests baja del baseline establecido</li>
+    <li>Cualquier agente regresa de su score baseline por más de 10%</li>
+    <li>El costo total del eval suite supera USD 0.50 por corrida (fuerza uso de Haiku para judges)</li>
+    <li>El judge no está calibrado a ≥80% en la rama main</li>
+  </ul>
+
+  <h2 id="s8">8. Observabilidad con Langfuse self-hosted</h2>
+
+  <p>
+    Reemplazo crítico de Sentry+PostHog para lógica de agentes. Mantiene Sentry para errores de infraestructura y PostHog para analytics de landings, pero la lógica de orquestador y agentes se observa con Langfuse.
+  </p>
+
+  <h3>8.1 Por qué Langfuse vs Helicone</h3>
+
+  <table>
+    <thead>
+      <tr><th>Criterio</th><th>Langfuse self-hosted</th><th>Helicone</th><th>Decisión</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="label">Multi-agente trees</td><td>Sí, nativo</td><td>Limitado</td><td>Langfuse</td></tr>
+      <tr><td class="label">Datos en infra propia</td><td>Sí (self-host)</td><td>SaaS solamente</td><td>Langfuse (LOPDP Ecuador)</td></tr>
+      <tr><td class="label">Costo</td><td>Solo infra (~USD 20/mes)</td><td>Free tier limitado</td><td>Langfuse</td></tr>
+      <tr><td class="label">Setup time</td><td>4-8 horas (Docker, persistencia, auth)</td><td>30 minutos</td><td>Trade-off aceptable</td></tr>
+      <tr><td class="label">Lock-in</td><td>Ninguno (open-source)</td><td>Vendor</td><td>Langfuse</td></tr>
+    </tbody>
+  </table>
+
+  <h3>8.2 Qué se captura en cada trace</h3>
+
+  <ul>
+    <li>User input completo (sanitizado de PII)</li>
+    <li>Retrieved context si aplica</li>
+    <li>Full prompt enviado al modelo</li>
+    <li>Raw response del modelo</li>
+    <li>Tool calls con argumentos</li>
+    <li>Token counts por turno (input + output)</li>
+    <li>Latencia por step</li>
+    <li>Eval results del output si aplica</li>
+    <li>Costo en USD por corrida</li>
+  </ul>
+
+  <h3>8.3 Dashboard ejecutivo en Langfuse</h3>
+
+  <p>
+    4 widgets revisados <strong>weekly</strong> según cadencia del Cap 18.3:
+  </p>
+
+  <ol>
+    <li>10 worst cases de la semana (peor score, latencia alta, costo extremo)</li>
+    <li>Cost per workflow run distribution (P50, P95, P99)</li>
+    <li>Eval scores trending semanal por agente</li>
+    <li>Tool call success rate por agente</li>
+  </ol>
+
+  <h2 id="s9">9. Outcome Database con write/eviction policy</h2>
+
+  <p>
+    El "moat real" del proyecto sigue siendo la Outcome DB, pero v2 añade la disciplina operacional que faltaba en v1.
+  </p>
+
+  <h3>9.1 Write Policy</h3>
+
+  <p>Se escriben insights solo cuando se cumplen todas las condiciones:</p>
+  <ul>
+    <li>Provienen de ≥1 fábrica con ≥10 días de operación</li>
+    <li>Pasaron sanitización de PII (regex + LLM check)</li>
+    <li>Tienen <code>confidence_level</code> asignado: anecdotal (N=1), preliminary (N&lt;10), predictive (N≥10)</li>
+    <li>Pasaron schema validation de Pydantic</li>
+    <li>No contienen identificadores específicos de usuario final</li>
+  </ul>
+
+  <p>Se rechazan escrituras de:</p>
+  <ul>
+    <li>Insights de fábricas en F0-F1.5 (solo F4+ tiene data real)</li>
+    <li>Outputs raw de agentes (esos van a <code>agent_executions</code>)</li>
+    <li>Datos que mencionen usuarios específicos por nombre/email/id</li>
+  </ul>
+
+  <h3>9.2 Eviction Policy</h3>
+
+  <table>
+    <thead>
+      <tr><th>Nivel de confianza</th><th>TTL si no se promueve</th><th>Trigger de archive</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="label">anecdotal (N=1)</td><td>90 días</td><td>relevance_score &lt; 0.3 en 3 meses</td></tr>
+      <tr><td class="label">preliminary (N&lt;10)</td><td>180 días</td><td>relevance_score &lt; 0.3 en 3 meses</td></tr>
+      <tr><td class="label">predictive (N≥10)</td><td>Sin TTL</td><td>Revisión quarterly de relevancia</td></tr>
+    </tbody>
+  </table>
+
+  <h3>9.3 Estado activación en M1</h3>
+
+  <div class="warning">
+    <strong>writable=False en M1:</strong> la Outcome DB existe pero ningún agente le escribe hasta que haya ≥3 fábricas operando. Evita acumular ruido en fase temprana. Se activa con flag explícito una vez se cumplan criterios.
+  </div>
+
+  <h2 id="s10">10. ADRs nuevos y modificados</h2>
+
+  <table>
+    <thead>
+      <tr><th>ADR</th><th>Título</th><th>Estado en v2</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="label">ADR-001</td><td>Capa delgada sobre Anthropic SDK + MCP (85/15)</td><td>Sin cambio</td></tr>
+      <tr><td class="label">ADR-002</td><td>Outcome DB como moat real</td><td>Modificado: añade activación condicional</td></tr>
+      <tr><td class="label">ADR-003</td><td>Multi-provider failover</td><td>Modificado: testing monthly real, no declarado</td></tr>
+      <tr><td class="label">ADR-004</td><td><strong>Langfuse self-hosted para observabilidad agent-native</strong></td><td>Nuevo en v2</td></tr>
+      <tr><td class="label">ADR-005</td><td><strong>Workflow lineal como chassis con 5 agentes embebidos</strong></td><td>Nuevo en v2</td></tr>
+      <tr><td class="label">ADR-006</td><td><strong>Eval harness como infraestructura desde día 1</strong></td><td>Nuevo en v2</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="s11">11. Costo operativo estimado</h2>
+
+  <p>
+    Estimación realista del costo mensual operativo de la arquitectura v2 ejecutada, comparado contra v1.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Concepto</th><th>v1 estimado</th><th>v2 estimado real</th><th>Delta</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="label">LLM tokens (Anthropic)</td><td>USD 290-790/mes</td><td>USD 150-400/mes</td><td style="color:var(--green);">-50%</td></tr>
+      <tr><td class="label">Supabase (DB + Auth)</td><td>USD 25/mes</td><td>USD 25/mes</td><td>Igual</td></tr>
+      <tr><td class="label">Vercel (frontends)</td><td>USD 20/mes</td><td>USD 20/mes</td><td>Igual</td></tr>
+      <tr><td class="label">Cloudflare</td><td>USD 0 (free tier)</td><td>USD 0 (free tier)</td><td>Igual</td></tr>
+      <tr><td class="label">Sentry</td><td>USD 0 (free tier)</td><td>USD 0 (free tier)</td><td>Igual</td></tr>
+      <tr><td class="label">PostHog</td><td>USD 0 (free tier)</td><td>USD 0 (free tier)</td><td>Igual</td></tr>
+      <tr><td class="label">Langfuse self-hosted</td><td>—</td><td>USD 20/mes (Railway/Fly)</td><td>Nuevo</td></tr>
+      <tr><td class="label">GitHub Actions</td><td>USD 0 (free tier)</td><td>USD 0 (free tier)</td><td>Igual</td></tr>
+      <tr style="background:rgba(0,229,160,.05);"><td class="label" style="color:var(--green);">TOTAL mensual</td><td style="color:var(--pink); font-family:var(--mono);">USD 335-835</td><td style="color:var(--green); font-family:var(--mono);">USD 215-465</td><td style="color:var(--green);">-36%</td></tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top:14px;">
+    El ahorro de USD 120-370/mes proviene principalmente de menos tokens LLM (5 agentes vs 35). En 12 meses son USD 1,440-4,440 ahorrados, suficiente para financiar la auditoría SOC 2 Type II planeada para mes 18.
+  </p>
+
+  <div class="doc-end">
+    — Fin del documento de Arquitectura v2 —<br>
+    <span style="font-size:11px; color:var(--dim);">Documentación paralela · Arquitectura v1 sigue activa para ejecución inmediata</span>
+  </div>
+
+</div>
+</body>
+</html>

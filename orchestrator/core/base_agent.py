@@ -8,6 +8,25 @@ import anthropic
 
 DEFAULT_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
+# ---------------------------------------------------------------------------
+# Langfuse observability — opt-in via LANGFUSE_PUBLIC_KEY env var.
+# If the package is missing or the key is unset the agents work unchanged.
+# ---------------------------------------------------------------------------
+try:
+    from langfuse import Langfuse as _Langfuse  # noqa: F401 — imported for availability check
+    _LANGFUSE_ENABLED = bool(os.getenv("LANGFUSE_PUBLIC_KEY"))
+    if _LANGFUSE_ENABLED:
+        _langfuse_client = _Langfuse(
+            public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+            secret_key=os.getenv("LANGFUSE_SECRET_KEY", ""),
+            host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com"),
+        )
+    else:
+        _langfuse_client = None
+except ImportError:
+    _LANGFUSE_ENABLED = False
+    _langfuse_client = None
+
 
 class BaseAgent(ABC):
     """
@@ -53,7 +72,27 @@ class BaseAgent(ABC):
             ],
             messages=[{"role": "user", "content": user_message}],
         )
-        return response.content[0].text
+        output_text = response.content[0].text
+
+        # --- Langfuse tracing (opt-in, never breaks the agent) ---
+        if _LANGFUSE_ENABLED and _langfuse_client is not None:
+            try:
+                usage = response.usage
+                _langfuse_client.generation(
+                    name=f"{self.__class__.__name__}._call",
+                    model=self.model,
+                    input=user_message,
+                    output=output_text,
+                    usage={
+                        "input": usage.input_tokens,
+                        "output": usage.output_tokens,
+                    },
+                    metadata={"agent": self.__class__.__name__},
+                )
+            except Exception:  # noqa: BLE001 — observability must never crash the agent
+                pass
+
+        return output_text
 
     def _call_with_tools(
         self,
@@ -63,7 +102,7 @@ class BaseAgent(ABC):
         max_tokens: int = 4096,
     ) -> anthropic.types.Message:
         assert self._client is not None, "client required in non-mock mode"
-        return self._client.messages.create(
+        response = self._client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
             system=[
@@ -76,3 +115,33 @@ class BaseAgent(ABC):
             tools=tools,
             messages=[{"role": "user", "content": user_message}],
         )
+
+        # --- Langfuse tracing (opt-in, never breaks the agent) ---
+        if _LANGFUSE_ENABLED and _langfuse_client is not None:
+            try:
+                usage = response.usage
+                # Summarise tool calls for the output field
+                tool_calls = [
+                    {"name": b.name, "input": b.input}
+                    for b in response.content
+                    if b.type == "tool_use"
+                ]
+                _langfuse_client.generation(
+                    name=f"{self.__class__.__name__}._call_with_tools",
+                    model=self.model,
+                    input=user_message,
+                    output=tool_calls or [b.text for b in response.content if b.type == "text"],
+                    usage={
+                        "input": usage.input_tokens,
+                        "output": usage.output_tokens,
+                    },
+                    metadata={
+                        "agent": self.__class__.__name__,
+                        "tool_count": len(tools),
+                        "tool_calls_made": len(tool_calls),
+                    },
+                )
+            except Exception:  # noqa: BLE001 — observability must never crash the agent
+                pass
+
+        return response

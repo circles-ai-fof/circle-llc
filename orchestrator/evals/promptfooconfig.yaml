@@ -1,0 +1,77 @@
+description: "Factory of Factories — LLM Eval Suite"
+
+# IMPORTANT: Only use Haiku for cost control (R06)
+defaultTest:
+  options:
+    provider: anthropic:messages:claude-haiku-4-5
+
+providers:
+  - id: anthropic:messages:claude-haiku-4-5
+    label: haiku-4-5
+    config:
+      max_tokens: 1024
+      temperature: 0.0
+
+prompts:
+  - id: idea_quality_judge
+    label: "Idea Quality Judge"
+    raw: |
+      You are an expert startup evaluator. Score the following idea output on a scale of 1-5 for each criterion in the rubric.
+
+      Rubric criteria:
+      1. Problem Clarity (1-5): Is the problem well-defined and real?
+      2. Market Specificity (1-5): Is the target market specific and reachable?
+      3. Solution Differentiation (1-5): Does the solution clearly differ from alternatives?
+      4. ICP Definition (1-5): Is the ideal customer profile concrete and actionable?
+      5. Risk Awareness (1-5): Are key risks identified and plausible?
+
+      Output JSON: {"problem_clarity": N, "market_specificity": N, "solution_differentiation": N, "icp_definition": N, "risk_awareness": N, "overall": N, "justification": "..."}
+
+      Input: {{input}}
+      Output to evaluate: {{output}}
+
+  - id: gate_decision_judge
+    label: "Gate Decision Judge"
+    raw: |
+      You are an expert growth analyst. Evaluate the following gate decision on a scale of 1-5 for each criterion.
+
+      Rubric criteria:
+      1. Evidence Alignment (1-5): Does the verdict align with the metrics provided?
+      2. Confidence Calibration (1-5): Is the confidence score well-calibrated given the evidence?
+      3. Rationale Quality (1-5): Is the rationale clear, specific, and actionable?
+      4. Next Steps Actionability (1-5): Are the next steps concrete and appropriate for the verdict?
+
+      Output JSON: {"evidence_alignment": N, "confidence_calibration": N, "rationale_quality": N, "next_steps_actionability": N, "overall": N, "justification": "..."}
+
+      Input: {{input}}
+      Decision to evaluate: {{output}}
+
+tests:
+  - description: "Gate decider — clear PASS signal"
+    vars:
+      input: '{"metrics": {"impressions": 10000, "clicks": 450, "conversions": 45, "cost_usd": 200, "ctr": 0.045, "conversion_rate": 0.1, "cost_per_conversion": 4.44}}'
+      output: '{"verdict": "pass", "confidence": 0.87, "rationale": "CTR 4.5% exceeds 2% target. Conversion rate 10% well above 3% threshold. CAC $4.44 highly viable.", "key_evidence": ["CTR 4.5% vs 2% target", "CVR 10% vs 3% target"], "next_steps": ["Proceed to MVP build", "Allocate $5K seed budget"]}'
+    assert:
+      - type: llm-rubric
+        value: "The verdict 'pass' is justified by the strong metrics. Score should be ≥4 overall."
+        provider: anthropic:messages:claude-haiku-4-5
+
+  - description: "Gate decider — clear KILL signal"
+    vars:
+      input: '{"metrics": {"impressions": 8000, "clicks": 32, "conversions": 0, "cost_usd": 400, "ctr": 0.004, "conversion_rate": 0.0, "cost_per_conversion": 0.0}}'
+      output: '{"verdict": "kill", "confidence": 0.92, "rationale": "CTR 0.4% far below 2% target. Zero conversions despite 32 clicks signals no product-market fit.", "key_evidence": ["CTR 0.4% vs 2% target", "0 conversions after 32 clicks"], "next_steps": ["Archive idea", "Pivot to adjacent problem"]}'
+    assert:
+      - type: llm-rubric
+        value: "The verdict 'kill' is justified by zero conversions and low CTR. Score should be ≥4 overall."
+        provider: anthropic:messages:claude-haiku-4-5
+
+  - description: "Idea quality — strong fintech idea"
+    vars:
+      input: "fintech para PYMEs Ecuador"
+      output: '{"title": "FacturaPago EC", "description": "Plataforma de factoring digital para PYMEs ecuatorianas", "target_market": "PYMEs manufactureras Ecuador 10-50 empleados", "problem_statement": "60% PYMEs espera 60+ días cobro facturas afectando flujo de caja", "proposed_solution": "Marketplace factoring donde fondos de inversión compran facturas con descuento 2-4%", "vertical_category": "fintech"}'
+    assert:
+      - type: llm-rubric
+        value: "Idea has clear problem, specific market, and differentiated solution. Score should be ≥4 overall."
+        provider: anthropic:messages:claude-haiku-4-5
+
+outputPath: ./eval-results.json

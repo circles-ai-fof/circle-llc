@@ -30,6 +30,7 @@ from ..agents.idea_hunter import IdeaHunterAgent
 from ..agents.idea_maturer import IdeaMaturerAgent
 from ..agents.landing_generator import LandingGeneratorAgent
 from ..agents.market_validator import MarketValidatorAgent
+from ..core.canonical_goal import CanonicalGoal
 from ..core.models import (
     EvidenceTestDesign,
     GateDecision,
@@ -38,6 +39,7 @@ from ..core.models import (
     MatureIdeaSpec,
     MetricsSnapshot,
 )
+from ..core.step_budget import BudgetTracker, TrajectoryBudgetExceededError  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,8 @@ class EvidenceGateRun:
     test_design: EvidenceTestDesign
     landing: LandingSpec
     decision: GateDecision
+    canonical_goal: CanonicalGoal = field(default=None)
+    budget_tracker: BudgetTracker = field(default=None)
     completed_at: datetime = field(default_factory=datetime.utcnow)
 
     def summary(self) -> str:
@@ -94,24 +98,53 @@ class EvidenceGateWorkflow:
         started_at = datetime.utcnow()
         logger.info("EvidenceGate start run_id=%s topic=%r", run_id, topic)
 
+        # R14 — Canonical Goal Statement
+        goal = CanonicalGoal(
+            workflow_id=run_id,
+            goal_statement=(
+                "Validate whether a business idea has real market demand through a 14-day "
+                "evidence test with real ads and a landing page, before committing to build."
+            ),
+            success_criteria=[
+                "IdeaSpec generated with clear problem statement",
+                "ICP defined with specific demographic and acquisition channel",
+                "Market test designed with quantitative pass/fail thresholds",
+                "Landing page copy generated and ready to deploy",
+                "Gate decision made with data-backed rationale",
+            ],
+            out_of_scope=[
+                "Building the actual product",
+                "Writing production code",
+                "Making architectural decisions",
+                "Onboarding real users",
+            ],
+        )
+
+        # R13 — Step Budget per Trajectory
+        tracker = BudgetTracker()
+
         # Step 1 — Idea generation
         logger.info("[1/4] idea_hunter: topic=%r", topic)
         idea = self._idea_hunter.generate(topic)
+        tracker.record_step(cost_usd=0.01)
         logger.info("[1/4] done: idea.title=%r", idea.title)
 
         # Step 2 — ICP + value proposition
         logger.info("[2/4] idea_maturer")
         mature = self._idea_maturer.mature(idea)
+        tracker.record_step(cost_usd=0.01)
         logger.info("[2/4] done: value_prop=%r", mature.value_proposition[:60])
 
         # Step 3 — Test design
         logger.info("[3/4] market_validator")
         test_design = self._market_validator.design_test(mature)
+        tracker.record_step(cost_usd=0.01)
         logger.info("[3/4] done: budget=$%.0f duration=%dd", test_design.ad_budget_usd, test_design.test_duration_days)
 
         # Step 4a — Landing copy
         logger.info("[4a/4] landing_generator")
         landing = self._landing_generator.generate(mature)
+        tracker.record_step(cost_usd=0.01)
         logger.info("[4a/4] done: headline=%r slug=%r", landing.headline[:40], landing.domain_slug)
 
         # Step 4b — Gate decision
@@ -121,6 +154,7 @@ class EvidenceGateWorkflow:
         )
         logger.info("[4b/4] gate_decider")
         decision = self._gate_decider.decide(mature, test_design, snapshot)
+        tracker.record_step(cost_usd=0.01)
         logger.info("[4b/4] done: verdict=%s confidence=%.2f", decision.verdict.value, decision.confidence)
 
         run = EvidenceGateRun(
@@ -132,6 +166,8 @@ class EvidenceGateWorkflow:
             test_design=test_design,
             landing=landing,
             decision=decision,
+            canonical_goal=goal,
+            budget_tracker=tracker,
         )
         logger.info("EvidenceGate complete run_id=%s\n%s", run_id, run.summary())
         return run
