@@ -141,13 +141,30 @@ class GateDeciderAgent(BaseAgent):
             )
             ensemble = gate_ensemble_vote(prompt, ensemble_system)
             if ensemble.votes:
+                # R22 — Escalate when models disagree (agreement < 67%)
+                needs_review = ensemble.agreement_pct < 0.67
+                review_reason = (
+                    f"Ensemble disagreement: {ensemble.agreement_pct:.0%} "
+                    f"agreement across {len(ensemble.votes)} models. "
+                    f"Votes: {', '.join(v.verdict for v in ensemble.votes)}"
+                    if needs_review
+                    else None
+                )
+                if needs_review:
+                    logger.warning(
+                        "gate_decider: ensemble disagreement -> needs_human_review (%.0f%%)",
+                        ensemble.agreement_pct * 100,
+                    )
+                # Strip markdown fences from first vote's rationale (cosmetic)
+                clean_rationale = ensemble.votes[0].rationale
+                clean_rationale = clean_rationale.replace("```json", "").replace("```", "").strip()
                 return GateDecision(
                     verdict=GateVerdict(ensemble.final_verdict),
                     confidence=ensemble.final_confidence,
                     rationale=(
                         f"Ensemble verdict: {ensemble.final_verdict} "
                         f"({ensemble.agreement_pct:.0%} agreement, {len(ensemble.votes)} models). "
-                        f"{ensemble.votes[0].rationale[:200]}"
+                        f"{clean_rationale[:200]}"
                     ),
                     key_evidence=[
                         f"{v.provider}/{v.model}: {v.verdict} ({v.confidence:.2f})"
@@ -155,6 +172,8 @@ class GateDeciderAgent(BaseAgent):
                     ],
                     next_steps=_next_steps(GateVerdict(ensemble.final_verdict), mature),
                     metrics=metrics,
+                    needs_human_review=needs_review,
+                    review_reason=review_reason,
                 )
             logger.warning("gate_decider: ensemble had 0 votes, falling back to single Claude")
 

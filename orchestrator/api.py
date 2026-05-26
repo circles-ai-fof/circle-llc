@@ -31,9 +31,14 @@ from .schemas.api import (
     AgentsResponse,
     ErrorDetail,
     HealthResponse,
+    HumanOverrideRequest,
+    HumanOverrideResponse,
+    PendingReviewItem,
+    PendingReviewResponse,
     RunGateRequest,
     RunGateResponse,
 )
+from .core.models import GateVerdict, HumanOverride
 from .workflows.evidence_gate import EvidenceGateWorkflow
 
 logger = logging.getLogger(__name__)
@@ -206,6 +211,8 @@ def _client_ip(request: Request) -> str:
 
 def _serialize_run(run) -> RunGateResponse:  # noqa: ANN001  (EvidenceGateRun)
     """Convert an EvidenceGateRun dataclass to RunGateResponse."""
+    # Ensemble votes (if recorded in key_evidence)
+    ensemble_votes = [e for e in run.decision.key_evidence if "/" in e]
     return RunGateResponse(
         run_id=str(run.run_id),
         status="completed",
@@ -222,6 +229,14 @@ def _serialize_run(run) -> RunGateResponse:  # noqa: ANN001  (EvidenceGateRun)
         ),
         steps_used=run.budget_tracker.steps_used if run.budget_tracker else 0,
         cost_usd_estimated=run.budget_tracker.cost_used_usd if run.budget_tracker else 0.0,
+        needs_human_review=run.decision.needs_human_review,
+        review_reason=run.decision.review_reason,
+        ensemble_votes=ensemble_votes or None,
+        human_override=(
+            run.decision.human_override.model_dump(mode="json")
+            if run.decision.human_override
+            else None
+        ),
     )
 
 
@@ -326,6 +341,119 @@ def get_run(run_id: str) -> RunGateResponse:
             detail=f"Run {run_id!r} not found. Runs are stored in-memory; restart clears them.",
         )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Human review (escalation) endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/api/v1/gate/pending-review",
+    response_model=PendingReviewResponse,
+    summary="List runs awaiting human review (ensemble disagreement)",
+    tags=["gate", "review"],
+)
+def list_pending_review() -> PendingReviewResponse:
+    """
+    Returns all completed runs where the ensemble flagged
+    `needs_human_review=True` and no human_override has been recorded yet.
+    """
+    pending = [
+        PendingReviewItem(
+            run_id=r.run_id,
+            idea_title=r.idea_title,
+            verdict=r.verdict,
+            confidence=r.confidence,
+            review_reason=r.review_reason or "",
+            ensemble_votes=r.ensemble_votes or [],
+            rationale=r.rationale,
+        )
+        for r in _runs.values()
+        if r.needs_human_review and r.human_override is None
+    ]
+    return PendingReviewResponse(pending_count=len(pending), items=pending)
+
+
+@app.post(
+    "/api/v1/gate/runs/{run_id}/human-override",
+    response_model=HumanOverrideResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Record a human verdict on a flagged run",
+    tags=["gate", "review"],
+    responses={
+        404: {"model": ErrorDetail, "description": "Run not found"},
+        409: {"model": ErrorDetail, "description": "Run not flagged for review or already overridden"},
+        422: {"model": ErrorDetail, "description": "Invalid request body or run_id"},
+    },
+)
+def post_human_override(
+    run_id: str, body: HumanOverrideRequest, request: Request
+) -> HumanOverrideResponse:
+    """
+    A founder records the final verdict for a run that the ensemble could not
+    resolve unanimously. The recorded override is stored alongside the original
+    decision and surfaces in the dashboard for future calibration.
+    """
+    _check_rate_limit(_client_ip(request))
+
+    try:
+        UUID(run_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid run_id format: {run_id!r} — expected UUID v4",
+        )
+
+    stored = _runs.get(run_id)
+    if stored is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Run {run_id!r} not found.",
+        )
+    if not stored.needs_human_review:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This run was not flagged for human review (ensemble agreed).",
+        )
+    if stored.human_override is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This run has already been overridden.",
+        )
+
+    override = HumanOverride(
+        decided_by=body.decided_by,
+        original_verdict=GateVerdict(stored.verdict),
+        override_verdict=GateVerdict(body.verdict),
+        reason=body.reason,
+    )
+
+    # Update stored response in place
+    updated = stored.model_copy(
+        update={
+            "verdict": body.verdict,
+            "human_override": override.model_dump(mode="json"),
+        }
+    )
+    _runs[run_id] = updated
+
+    logger.info(
+        "human_override: run=%s %s -> %s by=%s",
+        run_id,
+        stored.verdict,
+        body.verdict,
+        body.decided_by,
+    )
+
+    return HumanOverrideResponse(
+        run_id=run_id,
+        original_verdict=stored.verdict,
+        override_verdict=body.verdict,
+        decided_by=body.decided_by,
+        decided_at=override.decided_at.isoformat(),
+        reason=body.reason,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -50,6 +50,57 @@ class RunGateResponse(BaseModel):
     canonical_goal_statement: str
     steps_used: int
     cost_usd_estimated: float
+    # Escalation
+    needs_human_review: bool = False
+    review_reason: Optional[str] = None
+    ensemble_votes: Optional[List[str]] = None
+    human_override: Optional[Dict] = None
+
+
+# ---------------------------------------------------------------------------
+# Human override (when ensemble disagrees and a founder decides manually)
+# ---------------------------------------------------------------------------
+
+
+class HumanOverrideRequest(BaseModel):
+    verdict: str = Field(
+        description='Final verdict chosen by the human: "pass" | "kill" | "iterate"',
+        pattern="^(pass|kill|iterate)$",
+    )
+    reason: str = Field(
+        min_length=10,
+        max_length=500,
+        description="Why this verdict — used for later calibration",
+    )
+    decided_by: str = Field(
+        min_length=2,
+        max_length=80,
+        description="Name or email of the human deciding",
+    )
+
+
+class HumanOverrideResponse(BaseModel):
+    run_id: str
+    original_verdict: str
+    override_verdict: str
+    decided_by: str
+    decided_at: str
+    reason: str
+
+
+class PendingReviewItem(BaseModel):
+    run_id: str
+    idea_title: str
+    verdict: str
+    confidence: float
+    review_reason: str
+    ensemble_votes: List[str]
+    rationale: str
+
+
+class PendingReviewResponse(BaseModel):
+    pending_count: int
+    items: List[PendingReviewItem]
 
 
 # ---------------------------------------------------------------------------

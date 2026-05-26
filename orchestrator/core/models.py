@@ -81,6 +81,15 @@ class GateVerdict(str, Enum):
     ITERATE = "iterate"
 
 
+class HumanOverride(BaseModel):
+    """Recorded when a human overrides a gate decision flagged for review."""
+    decided_by: str
+    decided_at: datetime = Field(default_factory=datetime.utcnow)
+    original_verdict: GateVerdict
+    override_verdict: GateVerdict
+    reason: str = Field(min_length=10, max_length=500)
+
+
 class GateDecision(BaseModel):
     verdict: GateVerdict
     confidence: float = Field(ge=0.0, le=1.0)
@@ -88,3 +97,7 @@ class GateDecision(BaseModel):
     key_evidence: List[str]
     next_steps: List[str]
     metrics: MetricsSnapshot
+    # Escalation fields — set by gate_decider when ensemble disagrees
+    needs_human_review: bool = False
+    review_reason: Optional[str] = None  # why escalation was triggered
+    human_override: Optional[HumanOverride] = None
