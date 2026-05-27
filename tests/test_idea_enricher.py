@@ -1,5 +1,5 @@
 """Tests for IdeaEnricherAgent (mock mode)."""
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from orchestrator.agents.idea_enricher import IdeaEnricherAgent
@@ -15,7 +15,7 @@ def _make_idea(market: str, problem: str) -> IdeaSpec:
         problem_statement=problem,
         proposed_solution="A SaaS platform with AI.",
         vertical_category=VerticalCategory.SAAS,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
 
 

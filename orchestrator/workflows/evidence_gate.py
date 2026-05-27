@@ -19,8 +19,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
+
+
+def _utc_now() -> datetime:
+    """Aware UTC datetime — replaces deprecated datetime.utcnow()."""
+    return datetime.now(timezone.utc)
 from uuid import UUID, uuid4
 
 import anthropic
@@ -57,7 +62,7 @@ class EvidenceGateRun:
     decision: GateDecision
     canonical_goal: CanonicalGoal = field(default=None)
     budget_tracker: BudgetTracker = field(default=None)
-    completed_at: datetime = field(default_factory=datetime.utcnow)
+    completed_at: datetime = field(default_factory=_utc_now)
 
     def summary(self) -> str:
         elapsed = (self.completed_at - self.started_at).total_seconds()
@@ -97,7 +102,7 @@ class EvidenceGateWorkflow:
         metrics: Optional[MetricsSnapshot] = None,
     ) -> EvidenceGateRun:
         run_id = uuid4()
-        started_at = datetime.utcnow()
+        started_at = _utc_now()
         logger.info("EvidenceGate start run_id=%s topic=%r", run_id, topic)
 
         # R14 — Canonical Goal Statement

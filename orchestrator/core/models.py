@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def _utc_now() -> datetime:
+    """Replacement for the deprecated datetime.utcnow() — returns an
+    aware datetime in UTC."""
+    return datetime.now(timezone.utc)
 from enum import Enum
 from typing import List, Optional
 from uuid import UUID, uuid4
@@ -27,7 +33,7 @@ class IdeaSpec(BaseModel):
     problem_statement: str
     proposed_solution: str
     vertical_category: VerticalCategory
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utc_now)
 
 
 class ICPProfile(BaseModel):
@@ -84,7 +90,7 @@ class GateVerdict(str, Enum):
 class HumanOverride(BaseModel):
     """Recorded when a human overrides a gate decision flagged for review."""
     decided_by: str
-    decided_at: datetime = Field(default_factory=datetime.utcnow)
+    decided_at: datetime = Field(default_factory=_utc_now)
     original_verdict: GateVerdict
     override_verdict: GateVerdict
     reason: str = Field(min_length=10, max_length=500)

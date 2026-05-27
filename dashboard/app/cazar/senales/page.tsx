@@ -146,6 +146,24 @@ export default function SenalesPage() {
     }
   };
 
+  const exportCsv = async () => {
+    try {
+      const r = await authFetch("/api/v1/signals.csv");
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const blob = await r.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `signals_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const cleanRescan = async () => {
     if (
       !confirm(
@@ -425,6 +443,17 @@ export default function SenalesPage() {
             }}
           >
             🧹 Limpiar viejas
+          </button>
+          <button
+            onClick={exportCsv}
+            title="Descarga todas las señales como CSV (incluye análisis, fuente, score, trend)."
+            style={{
+              padding: "6px 14px", background: "transparent",
+              color: "#94a3b8", border: "1px solid #1e293b", borderRadius: 6, fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            📊 CSV
           </button>
           <button
             onClick={refresh}

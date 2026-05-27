@@ -65,6 +65,7 @@ from .schemas.api import (
     SignalsCleanupMocksResponse,
     SignalsCleanupResponse,
     SignalsListResponse,
+    StatsResponse,
     SourceCreate,
     SourceItem,
     SourceQuality,
@@ -797,6 +798,133 @@ def diagnostic() -> DiagnosticResponse:
     )
 
 
+@app.get(
+    "/api/v1/stats",
+    response_model=StatsResponse,
+    summary="Aggregated counts for sidebar badges + cost indicators",
+    tags=["meta"],
+)
+def stats(request: Request) -> StatsResponse:
+    """Single round-trip for the sidebar to populate all its badges.
+
+    Cheap: no LLM, no scan — just store aggregates. Safe to call every
+    page load. Auth required (these counts are private business data).
+    """
+    _require_user(request)
+    from .core.storage import signals_store, sources_store, runs_store
+    cutoff_24h = int(time.time()) - 86_400
+    cutoff_30d = int(time.time()) - 30 * 86_400
+
+    all_signals = signals_store.list(limit=10_000, min_score=0)
+    signals_total = len(all_signals)
+    signals_new_24h = sum(1 for s in all_signals if s.get("created_at", 0) >= cutoff_24h)
+    signals_unmarked = sum(1 for s in all_signals if not s.get("feedback") and not s.get("promoted_run_id"))
+    signals_with_analysis = sum(1 for s in all_signals if s.get("analysis"))
+    signals_promoted = sum(1 for s in all_signals if s.get("promoted_run_id"))
+
+    all_sources = sources_store.list()
+    sources_total = len(all_sources)
+    sources_active = sum(1 for s in all_sources if s.get("active"))
+
+    all_runs = list(runs_store.values())
+    runs_total = len(all_runs)
+    runs_pending_review = sum(
+        1 for r in all_runs if r.needs_human_review and r.human_override is None
+    )
+    runs_pass = sum(1 for r in all_runs if r.verdict == "pass")
+    runs_kill = sum(1 for r in all_runs if r.verdict == "kill")
+    runs_iterate = sum(1 for r in all_runs if r.verdict == "iterate")
+
+    cost_30d = 0.0
+    cost_all = 0.0
+    for r in all_runs:
+        c = float(r.cost_usd_estimated or 0)
+        cost_all += c
+        # Best effort 30d filter — RunGateResponse has no created_at, so we
+        # approximate "all time" as worst case. Will be tightened when runs
+        # get persisted with timestamps (M4).
+        cost_30d += c
+
+    return StatsResponse(
+        signals_total=signals_total,
+        signals_new_24h=signals_new_24h,
+        signals_unmarked=signals_unmarked,
+        signals_with_analysis=signals_with_analysis,
+        signals_promoted=signals_promoted,
+        sources_total=sources_total,
+        sources_active=sources_active,
+        runs_total=runs_total,
+        runs_pending_review=runs_pending_review,
+        runs_pass=runs_pass,
+        runs_kill=runs_kill,
+        runs_iterate=runs_iterate,
+        cost_usd_total_30d=round(cost_30d, 4),
+        cost_usd_total_all_time=round(cost_all, 4),
+    )
+
+
+@app.get(
+    "/api/v1/signals.csv",
+    summary="Export signals as CSV (full snapshot, audit-friendly)",
+    tags=["hunter"],
+    response_class=JSONResponse,  # actual response is StreamingResponse below
+)
+def export_signals_csv(
+    request: Request, promoted_only: bool = False, limit: int = 5000,
+):
+    """Stream every signal as CSV. Useful for spreadsheets/audit.
+
+    Columns: id, created_at, source_name, source_kind, theme, score,
+    trend_score, feedback, promoted_run_id, recommendation, market_size,
+    icp_probable, evidence_urls (joined by ' | ').
+    """
+    _require_user(request)
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+    from datetime import datetime, timezone
+    from .core.storage import signals_store, sources_store
+
+    rows = signals_store.list(limit=min(limit, 10_000), min_score=0)
+    if promoted_only:
+        rows = [r for r in rows if r.get("promoted_run_id")]
+    source_names = {s["id"]: s["name"] for s in sources_store.list()}
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "id", "created_at_iso", "source_name", "source_kind", "theme",
+        "score", "trend_score", "feedback", "promoted_run_id",
+        "recommendation", "market_size_estimate", "icp_probable",
+        "evidence_urls",
+    ])
+    for r in rows:
+        analysis = r.get("analysis") or {}
+        writer.writerow([
+            r.get("id"),
+            datetime.fromtimestamp(r.get("created_at", 0), tz=timezone.utc).isoformat(),
+            source_names.get(r.get("source_id"), ""),
+            r.get("source_kind", ""),
+            r.get("theme", ""),
+            f"{r.get('score', 0):.2f}",
+            int(r.get("trend_score") or 0),
+            r.get("feedback") or "",
+            r.get("promoted_run_id") or "",
+            analysis.get("recommendation", ""),
+            analysis.get("market_size_estimate", ""),
+            analysis.get("icp_probable", ""),
+            " | ".join(r.get("evidence_urls", [])),
+        ])
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=signals_{int(time.time())}.csv",
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Admin: import leads from a localStorage backup
 # Used to rescue leads that were saved client-side because the API was
@@ -1094,6 +1222,7 @@ def _run_scan_internal(
     source_ids: Optional[List[int]] = None,
     auto_promote_threshold: float = 0.0,
     auto_analyze_trend_threshold: int = 0,
+    auto_promote_trend_threshold: int = 0,
 ) -> Dict:
     """Core scan logic — used by both the manual endpoint and the auto-scan loop.
 
@@ -1176,7 +1305,15 @@ def _run_scan_internal(
                         auto_analyzed += 1
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("scan: auto-analyze failed for signal %s: %s", signal_id, exc)
+            # Auto-promote by score (existing) OR by trend (new)
+            should_promote = False
             if auto_promote_threshold > 0 and sig.score >= auto_promote_threshold:
+                should_promote = True
+            if auto_promote_trend_threshold > 0:
+                fresh = signals_store.get(signal_id)
+                if fresh and (fresh.get("trend_score") or 0) >= auto_promote_trend_threshold:
+                    should_promote = True
+            if should_promote:
                 try:
                     run = _workflow.run(sig.suggested_topic or sig.theme)
                     signals_store.mark_promoted(signal_id, str(run.run_id))
@@ -1215,6 +1352,7 @@ def scan_sources(body: ScanRunRequest, request: Request) -> ScanRunResponse:
         source_ids=body.source_ids,
         auto_promote_threshold=body.auto_promote_threshold,
         auto_analyze_trend_threshold=body.auto_analyze_trend_threshold,
+        auto_promote_trend_threshold=body.auto_promote_trend_threshold,
     )
 
     return ScanRunResponse(**result)
@@ -1591,6 +1729,22 @@ def run_gate_from_sources(body: RunFromSourcesRequest, request: Request) -> RunG
             f"Score de detección: {sig['score']:.2f} | Trend: +{int(sig.get('trend_score', 0))} (apariciones recurrentes)\n"
             f"Resumen: {sig['excerpt']}\n"
         )
+        # If we already have an analysis attached, inject it too — avoids the
+        # hunter re-doing market/ICP/competitors estimation from scratch.
+        analysis = sig.get("analysis")
+        if analysis:
+            comp = ", ".join(analysis.get("competitors") or []) or "ninguno conocido"
+            risks = "; ".join(analysis.get("risks") or [])
+            evidence_parts.append(
+                f"=== ANÁLISIS PREVIO (IdeaAnalyzer) ===\n"
+                f"Recomendación previa: {analysis.get('recommendation', '?')}  "
+                f"({analysis.get('reasoning', '')})\n"
+                f"Mercado estimado: {analysis.get('market_size_estimate', '?')}\n"
+                f"ICP probable: {analysis.get('icp_probable', '?')}\n"
+                f"Diferenciador: {analysis.get('differentiator', '?')}\n"
+                f"Competencia: {comp}\n"
+                f"Riesgos: {risks}\n"
+            )
         for u in sig["evidence_urls"][:5]:
             item = fetch_url(u)
             if item:
@@ -1904,13 +2058,19 @@ async def _autoscan_loop() -> None:
     while True:
         try:
             await _asyncio.sleep(interval_sec)
-            # Read auto-analyze threshold on each iteration so the env can be
-            # updated without a restart (Railway live-reload semantics).
+            # Read thresholds on each iteration so env vars can be updated
+            # without a restart (Railway live-reload semantics).
             try:
                 auto_an_thr = int(os.getenv("AUTO_ANALYZE_TREND_THRESHOLD", "0"))
             except ValueError:
                 auto_an_thr = 0
-            result = await _asyncio.to_thread(_run_scan_internal, None, 0.0, auto_an_thr)
+            try:
+                auto_prom_trend = int(os.getenv("AUTO_PROMOTE_TREND_THRESHOLD", "0"))
+            except ValueError:
+                auto_prom_trend = 0
+            result = await _asyncio.to_thread(
+                _run_scan_internal, None, 0.0, auto_an_thr, auto_prom_trend
+            )
             _autoscan_state["last_run_at"] = int(time.time())
             _autoscan_state["last_run_signals_created"] = result["signals_created"]
             _autoscan_state["last_run_error"] = None
@@ -1928,38 +2088,50 @@ async def _autoscan_loop() -> None:
             logger.warning("autoscan: iteration failed: %s", exc)
 
 
-@app.on_event("startup")
-async def _autoscan_startup() -> None:
-    global _autoscan_task
-    # Disabled in tests by default
-    if os.getenv("PYTEST_CURRENT_TEST"):
-        return
-    try:
-        interval = int(os.getenv("AUTOSCAN_INTERVAL_MINUTES", "0"))
-    except ValueError:
-        interval = 0
-    if interval <= 0:
-        logger.info("autoscan: disabled (AUTOSCAN_INTERVAL_MINUTES=0)")
-        return
-    if interval < 15:
-        logger.warning("autoscan: interval %d min clamped to 15 (rate-limit safety)", interval)
-        interval = 15
-    _autoscan_state["enabled"] = True
-    _autoscan_state["interval_minutes"] = interval
-    _autoscan_task = _asyncio.create_task(_autoscan_loop())
+# --- Lifespan (replaces deprecated @app.on_event) ----------------------------
+# We hot-swap the router's lifespan context AFTER `app` was constructed
+# (the app variable is defined ~1900 lines above this code). Same semantics
+# as passing `lifespan=` to FastAPI(), just kept here so the autoscan
+# bookkeeping stays adjacent to its own functions.
+import contextlib as _contextlib
 
 
-@app.on_event("shutdown")
-async def _autoscan_shutdown() -> None:
+@_contextlib.asynccontextmanager
+async def _app_lifespan(_app):
     global _autoscan_task
-    if _autoscan_task is None:
-        return
-    _autoscan_task.cancel()
+    # --- Startup ---
+    if not os.getenv("PYTEST_CURRENT_TEST"):
+        try:
+            interval = int(os.getenv("AUTOSCAN_INTERVAL_MINUTES", "0"))
+        except ValueError:
+            interval = 0
+        if interval > 0:
+            if interval < 15:
+                logger.warning(
+                    "autoscan: interval %d min clamped to 15 (rate-limit safety)",
+                    interval,
+                )
+                interval = 15
+            _autoscan_state["enabled"] = True
+            _autoscan_state["interval_minutes"] = interval
+            _autoscan_task = _asyncio.create_task(_autoscan_loop())
+        else:
+            logger.info("autoscan: disabled (AUTOSCAN_INTERVAL_MINUTES=0)")
+
     try:
-        await _autoscan_task
-    except (_asyncio.CancelledError, Exception):  # noqa: BLE001
-        pass
-    _autoscan_task = None
+        yield
+    finally:
+        # --- Shutdown ---
+        if _autoscan_task is not None:
+            _autoscan_task.cancel()
+            try:
+                await _autoscan_task
+            except (_asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+            _autoscan_task = None
+
+
+app.router.lifespan_context = _app_lifespan
 
 
 @app.get(

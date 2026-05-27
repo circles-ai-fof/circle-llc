@@ -364,9 +364,28 @@ class AnalyzeSignalsBatchResponse(BaseModel):
     signal_ids_analyzed: List[int]
 
 
+class StatsResponse(BaseModel):
+    """Aggregated counts for sidebar badges + monthly cost indicator."""
+    signals_total: int
+    signals_new_24h: int           # created in the last 24h
+    signals_unmarked: int          # no feedback yet — need triage
+    signals_with_analysis: int
+    signals_promoted: int
+    sources_total: int
+    sources_active: int
+    runs_total: int
+    runs_pending_review: int
+    runs_pass: int
+    runs_kill: int
+    runs_iterate: int
+    cost_usd_total_30d: float      # sum of cost_usd_estimated for runs in last 30d
+    cost_usd_total_all_time: float
+
+
 class ScanRunRequest(BaseModel):
     source_ids: Optional[List[int]] = Field(default=None, description="If omitted: scan all active sources")
     auto_promote_threshold: float = Field(default=0.0, ge=0.0, le=1.0, description="Auto-promote signals with score >= this (0 disables)")
+    auto_promote_trend_threshold: int = Field(default=0, ge=0, le=10, description="Auto-promote signals whose trend_score >= this (0 disables) — costs ~$0.06/run, use with caution")
     auto_analyze_trend_threshold: int = Field(default=0, ge=0, le=10, description="Auto-analyze signals whose trend_score >= this (0 disables)")
 
 

@@ -1,13 +1,38 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { authFetch } from "@/lib/auth";
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ReactNode;
+  // Which stats counter to show as a badge (optional)
+  badgeKey?:
+    | "signals_unmarked"
+    | "signals_new_24h"
+    | "sources_active"
+    | "runs_pending_review";
 }
+
+type Stats = {
+  signals_total: number;
+  signals_new_24h: number;
+  signals_unmarked: number;
+  signals_with_analysis: number;
+  signals_promoted: number;
+  sources_total: number;
+  sources_active: number;
+  runs_total: number;
+  runs_pending_review: number;
+  runs_pass: number;
+  runs_kill: number;
+  runs_iterate: number;
+  cost_usd_total_30d: number;
+  cost_usd_total_all_time: number;
+};
 
 const navItems: NavItem[] = [
   {
@@ -33,6 +58,7 @@ const navItems: NavItem[] = [
   {
     label: "Fuentes",
     href: "/cazar/fuentes",
+    badgeKey: "sources_active",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -43,6 +69,7 @@ const navItems: NavItem[] = [
   {
     label: "Señales",
     href: "/cazar/senales",
+    badgeKey: "signals_unmarked",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -93,6 +120,7 @@ const navItems: NavItem[] = [
   {
     label: "Revisión",
     href: "/revision",
+    badgeKey: "runs_pending_review",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -135,6 +163,26 @@ const navItems: NavItem[] = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [stats, setStats] = useState<Stats | null>(null);
+
+  // Poll /stats every 30s — cheap aggregate, no LLM call.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const r = await authFetch("/api/v1/stats");
+        if (r.ok && !cancelled) setStats(await r.json());
+      } catch {
+        /* best-effort, ignore */
+      }
+    };
+    load();
+    const id = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   return (
     <aside className="w-60 flex-shrink-0 flex flex-col h-full" style={{ backgroundColor: "#0B0F1A" }}>
@@ -172,18 +220,68 @@ export default function Sidebar() {
               <span className={isActive ? "text-accent" : ""} style={isActive ? { color: "#00D4FF" } : {}}>
                 {item.icon}
               </span>
-              {item.label}
-              {isActive && (
-                <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "#00D4FF" }} />
+              <span className="flex-1">{item.label}</span>
+              {item.badgeKey && stats && stats[item.badgeKey] > 0 && (
+                <span
+                  className="px-1.5 py-0.5 rounded text-[10px] font-bold"
+                  style={{
+                    backgroundColor:
+                      item.badgeKey === "runs_pending_review"
+                        ? "rgba(255,68,68,0.15)"
+                        : item.badgeKey === "signals_unmarked"
+                          ? "rgba(255,184,0,0.15)"
+                          : "rgba(0,212,255,0.15)",
+                    color:
+                      item.badgeKey === "runs_pending_review"
+                        ? "#FF4444"
+                        : item.badgeKey === "signals_unmarked"
+                          ? "#FFB800"
+                          : "#00D4FF",
+                    fontFamily: "ui-monospace, monospace",
+                  }}
+                  title={
+                    item.badgeKey === "signals_unmarked"
+                      ? "Señales sin marcar (sin 👍/👎 ni promovidas)"
+                      : item.badgeKey === "sources_active"
+                        ? "Fuentes activas"
+                        : item.badgeKey === "runs_pending_review"
+                          ? "Runs pendientes de revisión humana"
+                          : "Items"
+                  }
+                >
+                  {stats[item.badgeKey]}
+                </span>
+              )}
+              {isActive && !item.badgeKey && (
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "#00D4FF" }} />
               )}
             </Link>
           );
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="px-4 py-4 border-t border-border">
-        <div className="flex items-center gap-2">
+      {/* Footer with cost indicator */}
+      <div className="px-4 py-3 border-t border-border space-y-2">
+        {stats && (
+          <div
+            className="px-3 py-2 rounded-md"
+            style={{ backgroundColor: "rgba(0,229,160,0.06)", border: "1px solid rgba(0,229,160,0.2)" }}
+            title="Costo total estimado de runs en este proceso (resetea al reiniciar el backend)"
+          >
+            <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">
+              Costo acumulado
+            </div>
+            <div className="flex items-baseline gap-1">
+              <span style={{ color: "#00E5A0", fontSize: 18, fontWeight: 700, fontFamily: "ui-monospace, monospace" }}>
+                ${stats.cost_usd_total_all_time.toFixed(2)}
+              </span>
+              <span className="text-[10px] text-gray-500">
+                · {stats.runs_total} runs
+              </span>
+            </div>
+          </div>
+        )}
+        <div className="flex items-center gap-2 px-1">
           <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
             style={{ backgroundColor: "#1E2A3A", color: "#00D4FF" }}>
             C
@@ -191,8 +289,8 @@ export default function Sidebar() {
           <div className="flex-1 min-w-0">
             <p className="text-xs font-medium text-gray-300 truncate">EvidenceGateWorkflow</p>
             <p className="text-xs text-gray-500 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-success inline-block" style={{ backgroundColor: "#00E5A0" }} />
-              5 agentes activos
+              <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: "#00E5A0" }} />
+              7 agentes + cazador
             </p>
           </div>
         </div>

@@ -650,6 +650,128 @@ def test_analyze_batch_requires_auth(client):
     assert client.post("/api/v1/signals/analyze-batch", json={}).status_code == 401
 
 
+def test_stats_endpoint_returns_aggregated_counts(client, auth):
+    """GET /stats returns counts for signals, sources, runs, and cost."""
+    from orchestrator.core.storage import signals_store, sources_store
+    sid = sources_store.add("rss", "https://x.test/feed", "Feed")
+    s1 = signals_store.add(sid, "rss", "A", 0.7, "ex", [], "t")
+    s2 = signals_store.add(sid, "rss", "B", 0.6, "ex", [], "t")
+    signals_store.set_feedback(s1, "up")
+    signals_store.mark_promoted(s2, "run-fake")
+
+    r = client.get("/api/v1/stats", headers=auth)
+    assert r.status_code == 200, r.text
+    s = r.json()
+    assert s["signals_total"] >= 2
+    assert s["signals_promoted"] >= 1
+    assert s["sources_total"] >= 1
+    assert s["sources_active"] >= 1
+    assert "cost_usd_total_30d" in s
+    assert "runs_total" in s
+
+
+def test_stats_requires_auth(client):
+    assert client.get("/api/v1/stats").status_code == 401
+
+
+def test_signals_csv_export(client, auth):
+    """GET /signals.csv streams a CSV with all the columns."""
+    from orchestrator.core.storage import signals_store, sources_store
+    sid = sources_store.add("rss", "https://x.test/feed", "Mi Fuente")
+    signals_store.add(sid, "rss", "Tema CSV", 0.75, "ex", ["https://x.test/a"], "topic")
+
+    r = client.get("/api/v1/signals.csv", headers=auth)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert "attachment" in r.headers.get("content-disposition", "")
+    body = r.text
+    # Header row
+    assert "id,created_at_iso,source_name,source_kind,theme" in body.split("\n")[0]
+    # Data row contains our values
+    assert "Tema CSV" in body
+    assert "Mi Fuente" in body
+
+
+def test_signals_csv_promoted_only_filter(client, auth):
+    from orchestrator.core.storage import signals_store
+    a = signals_store.add(None, "rss", "Promovida", 0.7, "ex", [], "topic")
+    signals_store.add(None, "rss", "No promovida", 0.7, "ex", [], "topic")
+    signals_store.mark_promoted(a, "run-aaa")
+
+    r = client.get("/api/v1/signals.csv?promoted_only=true", headers=auth)
+    assert r.status_code == 200
+    body = r.text
+    assert "Promovida" in body
+    assert "No promovida" not in body
+
+
+def test_signals_csv_requires_auth(client):
+    assert client.get("/api/v1/signals.csv").status_code == 401
+
+
+def test_run_from_signal_id_injects_analysis_when_present(client, auth):
+    """When the signal already has analysis, the evidence_context must
+    include the '=== ANÁLISIS PREVIO ===' block — avoids re-doing market/ICP
+    estimation from scratch in the hunter."""
+    from orchestrator.core.storage import signals_store
+
+    signal_id = signals_store.add(
+        None, "rss", "Tema con análisis previo",
+        0.8, "Excerpt", [], "topic con analisis",
+    )
+    # Run analyzer to attach analysis
+    client.post(f"/api/v1/signals/{signal_id}/analyze", headers=auth)
+
+    # Spy on the live workflow
+    route_workflow = None
+    for route in app.routes:
+        ep = getattr(route, "endpoint", None)
+        if ep and getattr(ep, "__name__", "") == "run_gate_from_sources":
+            route_workflow = ep.__globals__["_workflow"]
+            break
+    assert route_workflow is not None
+
+    captured = {}
+    original_generate = route_workflow._idea_hunter.generate
+
+    def _spy(topic, feedback=None, evidence_context=None, **kw):
+        captured["evidence_context"] = evidence_context
+        return original_generate(topic, feedback=feedback, evidence_context=evidence_context, **kw)
+
+    route_workflow._idea_hunter.generate = _spy  # type: ignore
+    try:
+        r = client.post(
+            "/api/v1/gate/run-from-sources",
+            headers=auth,
+            json={"signal_id": signal_id},
+        )
+    finally:
+        route_workflow._idea_hunter.generate = original_generate
+
+    assert r.status_code == 201, r.text
+    ec = captured.get("evidence_context") or ""
+    assert "=== ANÁLISIS PREVIO" in ec
+    assert "Recomendación previa:" in ec
+    assert "Mercado estimado:" in ec
+    assert "ICP probable:" in ec
+
+
+def test_scan_request_accepts_auto_promote_trend_threshold(client, auth):
+    """auto_promote_trend_threshold is bounded 0-10 by schema."""
+    r = client.post(
+        "/api/v1/sources/scan",
+        headers=auth,
+        json={"auto_promote_trend_threshold": 50},
+    )
+    assert r.status_code == 422
+    r2 = client.post(
+        "/api/v1/sources/scan",
+        headers=auth,
+        json={"auto_promote_trend_threshold": 5},
+    )
+    assert r2.status_code == 200
+
+
 def test_scan_request_accepts_auto_analyze_threshold(client, auth):
     """auto_analyze_trend_threshold is bounded 0-10 by schema."""
     r = client.post(
