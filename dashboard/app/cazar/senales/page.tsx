@@ -4,6 +4,16 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authFetch } from "@/lib/auth";
 
+type SignalAnalysis = {
+  market_size_estimate: string;
+  icp_probable: string;
+  competitors: string[];
+  differentiator: string;
+  risks: string[];
+  recommendation: "promote" | "wait_for_more_data" | "discard";
+  reasoning: string;
+};
+
 type Signal = {
   id: number;
   source_id: number | null;
@@ -18,10 +28,12 @@ type Signal = {
   promoted_run_id: string | null;
   trend_score: number;
   published_at: number | null;
+  analysis: SignalAnalysis | null;
   created_at: number;
 };
 
 type SortKey = "recent" | "score" | "trend" | "published";
+type FeedbackFilter = "all" | "none" | "up" | "down";
 
 const SOURCE_KINDS: { value: string; label: string }[] = [
   { value: "", label: "Todas las fuentes" },
@@ -47,6 +59,12 @@ export default function SenalesPage() {
   const [mockMode, setMockMode] = useState<boolean>(false);
   const [promoted, setPromoted] = useState<Signal[]>([]);
   const [showPromoted, setShowPromoted] = useState<boolean>(false);
+  // M3.5 — search + advanced filters + per-signal analyze state
+  const [search, setSearch] = useState<string>("");
+  const [feedbackFilter, setFeedbackFilter] = useState<FeedbackFilter>("all");
+  const [minTrend, setMinTrend] = useState<number>(0);
+  const [analyzing, setAnalyzing] = useState<Set<number>>(new Set());
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   // Detect mock mode (backend running without ANTHROPIC_API_KEY) so we can
   // warn the founder that ideas are placeholders, not real LLM output.
@@ -126,6 +144,55 @@ export default function SenalesPage() {
     }
   };
 
+  const cleanupMocks = async () => {
+    if (
+      !confirm(
+        "¿Borrar señales 'Mock signal from rss' viejas que quedaron de pruebas? Estas son placeholders sin contenido real."
+      )
+    )
+      return;
+    try {
+      const r = await authFetch("/api/v1/signals/cleanup-mocks", { method: "POST" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      alert(`✓ ${data.deleted} señales mock eliminadas.`);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const analyze = async (id: number) => {
+    setAnalyzing((prev) => new Set(prev).add(id));
+    try {
+      const r = await authFetch(`/api/v1/signals/${id}/analyze`, { method: "POST" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      // Update the signal in-place with the analysis instead of refetching everything
+      setSignals((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, analysis: data.analysis } : s))
+      );
+      setExpanded((prev) => new Set(prev).add(id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAnalyzing((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const toggleExpanded = (id: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const setFeedback = async (id: number, fb: "up" | "down" | "clear") => {
     try {
       await authFetch(`/api/v1/signals/${id}/feedback`, {
@@ -155,6 +222,21 @@ export default function SenalesPage() {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+
+  // Client-side filter: search (text), feedback filter, min trend
+  // Server still applies score/kind/sort — this is a fast in-browser refine.
+  const visibleSignals = signals.filter((s) => {
+    if (search) {
+      const q = search.toLowerCase();
+      const hay = `${s.theme} ${s.excerpt} ${s.suggested_topic} ${s.source_name || ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (feedbackFilter === "none" && s.feedback) return false;
+    if (feedbackFilter === "up" && s.feedback !== "up") return false;
+    if (feedbackFilter === "down" && s.feedback !== "down") return false;
+    if (minTrend > 0 && (s.trend_score || 0) < minTrend) return false;
+    return true;
+  });
 
   return (
     <main style={{ padding: "32px 40px", maxWidth: 1200, margin: "0 auto" }}>
@@ -240,6 +322,17 @@ export default function SenalesPage() {
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button
+            onClick={cleanupMocks}
+            title="Borra placeholders 'Mock signal from ...' que quedaron de pruebas viejas."
+            style={{
+              padding: "6px 14px", background: "transparent",
+              color: "#94a3b8", border: "1px solid #1e293b", borderRadius: 6, fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            🗑️ Borrar mocks
+          </button>
+          <button
             onClick={cleanup}
             title="Elimina señales >30 días sin feedback ni promoción. Conserva las marcadas como historial."
             style={{
@@ -263,6 +356,51 @@ export default function SenalesPage() {
         </div>
       </section>
 
+      {/* Second row: search + feedback filter + min trend */}
+      <section style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20, flexWrap: "wrap" }}>
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="🔍 Buscar en tema, extracto, topic, fuente…"
+          style={{
+            flex: "1 1 280px",
+            background: "#0F1525", color: "#cbd5e1", border: "1px solid #1e293b",
+            borderRadius: 6, padding: "8px 12px", fontSize: 13, outline: "none",
+          }}
+        />
+        <label style={{ color: "#94a3b8", fontSize: 12 }}>Feedback:</label>
+        <select
+          value={feedbackFilter}
+          onChange={(e) => setFeedbackFilter(e.target.value as FeedbackFilter)}
+          style={{
+            background: "#0F1525", color: "#cbd5e1", border: "1px solid #1e293b",
+            borderRadius: 6, padding: "4px 8px", fontSize: 12,
+          }}
+        >
+          <option value="all">Todos</option>
+          <option value="none">Sin marcar</option>
+          <option value="up">👍 Up</option>
+          <option value="down">👎 Down</option>
+        </select>
+        <label style={{ color: "#94a3b8", fontSize: 12 }}>Trend mín:</label>
+        <input
+          type="number"
+          min={0}
+          max={10}
+          step={1}
+          value={minTrend}
+          onChange={(e) => setMinTrend(parseInt(e.target.value || "0", 10))}
+          style={{
+            width: 50, background: "#0F1525", color: "#cbd5e1",
+            border: "1px solid #1e293b", borderRadius: 6, padding: "4px 8px", fontSize: 12,
+          }}
+        />
+        <span style={{ marginLeft: "auto", color: "#64748b", fontSize: 11, fontFamily: "monospace" }}>
+          {visibleSignals.length}/{signals.length} señales
+        </span>
+      </section>
+
       {error && <div style={{ color: "#FF4444", padding: 16, marginBottom: 16 }}>{error}</div>}
 
       {loading && (
@@ -277,12 +415,22 @@ export default function SenalesPage() {
         </div>
       )}
 
+      {!loading && signals.length > 0 && visibleSignals.length === 0 && (
+        <div style={{ color: "#94a3b8", padding: 40, textAlign: "center" }}>
+          Ninguna señal coincide con los filtros actuales. Prueba con menos restricciones.
+        </div>
+      )}
+
       {/* Cards */}
       <div style={{ display: "grid", gap: 12 }}>
-        {signals.map((s) => (
+        {visibleSignals.map((s) => (
           <SignalCard
             key={s.id}
             signal={s}
+            isAnalyzing={analyzing.has(s.id)}
+            isExpanded={expanded.has(s.id)}
+            onAnalyze={() => analyze(s.id)}
+            onToggleExpand={() => toggleExpanded(s.id)}
             onFeedback={(fb) => setFeedback(s.id, fb)}
             onPromote={() => promote(s.id)}
           />
@@ -383,10 +531,18 @@ function formatRelativeDate(ts: number | null | undefined, prefix: string): stri
 
 function SignalCard({
   signal,
+  isAnalyzing,
+  isExpanded,
+  onAnalyze,
+  onToggleExpand,
   onFeedback,
   onPromote,
 }: {
   signal: Signal;
+  isAnalyzing: boolean;
+  isExpanded: boolean;
+  onAnalyze: () => void;
+  onToggleExpand: () => void;
   onFeedback: (fb: "up" | "down" | "clear") => void;
   onPromote: () => void;
 }) {
@@ -395,6 +551,24 @@ function SignalCard({
   const publishedLabel = formatRelativeDate(signal.published_at, "publicado");
   const capturedLabel = formatRelativeDate(signal.created_at, "capturado");
   const sourceLabel = signal.source_name || `Fuente ${signal.source_kind}`;
+  const hasAnalysis = !!signal.analysis;
+  // Recommendation badge color: promote=green, wait=yellow, discard=red
+  const recColor =
+    signal.analysis?.recommendation === "promote"
+      ? "#00E5A0"
+      : signal.analysis?.recommendation === "wait_for_more_data"
+        ? "#FFB800"
+        : signal.analysis?.recommendation === "discard"
+          ? "#FF4444"
+          : "#94a3b8";
+  const recLabel =
+    signal.analysis?.recommendation === "promote"
+      ? "🟢 PROMOVER"
+      : signal.analysis?.recommendation === "wait_for_more_data"
+        ? "🟡 ESPERAR"
+        : signal.analysis?.recommendation === "discard"
+          ? "🔴 DESCARTAR"
+          : "";
   return (
     <div
       style={{
@@ -449,6 +623,23 @@ function SignalCard({
                 color: "#00E5A0", borderRadius: 4, fontSize: 10, textTransform: "uppercase",
               }}>
                 ✓ Promovida
+              </span>
+            )}
+            {hasAnalysis && (
+              <span
+                style={{
+                  padding: "2px 8px",
+                  background: `${recColor}20`,
+                  color: recColor,
+                  borderRadius: 4,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+                onClick={onToggleExpand}
+                title="Click para ver el análisis completo"
+              >
+                {recLabel}
               </span>
             )}
           </div>
@@ -540,8 +731,108 @@ function SignalCard({
               con prompt potenciado
             </span>
           )}
+          <button
+            onClick={hasAnalysis ? onToggleExpand : onAnalyze}
+            disabled={isAnalyzing}
+            title={
+              hasAnalysis
+                ? "Ver/ocultar análisis de mercado"
+                : "Analiza esta señal con IA: mercado, ICP, competidores, recomendación. ~$0.005"
+            }
+            style={{
+              marginTop: 4,
+              padding: "6px 12px",
+              background: "transparent",
+              color: isAnalyzing ? "#64748b" : "#A78BFA",
+              border: `1px solid ${isAnalyzing ? "#1e293b" : "#A78BFA"}`,
+              borderRadius: 6,
+              fontSize: 11,
+              cursor: isAnalyzing ? "wait" : "pointer",
+            }}
+          >
+            {isAnalyzing
+              ? "Analizando…"
+              : hasAnalysis
+                ? isExpanded
+                  ? "▲ Ocultar análisis"
+                  : "▼ Ver análisis"
+                : "🤖 Analizar"}
+          </button>
         </div>
       </div>
+
+      {/* Expandable analysis panel — only when analysis exists and is expanded */}
+      {hasAnalysis && isExpanded && signal.analysis && (
+        <div
+          style={{
+            marginTop: 14,
+            padding: 14,
+            background: "#0B0F1A",
+            border: `1px solid ${recColor}40`,
+            borderRadius: 8,
+          }}
+        >
+          {/* Recommendation banner */}
+          <div
+            style={{
+              padding: "10px 12px",
+              background: `${recColor}10`,
+              borderLeft: `3px solid ${recColor}`,
+              borderRadius: 4,
+              marginBottom: 12,
+            }}
+          >
+            <div style={{ color: recColor, fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+              {recLabel}
+            </div>
+            <div style={{ color: "#cbd5e1", fontSize: 12, lineHeight: 1.5 }}>
+              {signal.analysis.reasoning}
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <AnalysisCell label="🌎 Mercado potencial" value={signal.analysis.market_size_estimate} />
+            <AnalysisCell label="👤 ICP probable" value={signal.analysis.icp_probable} />
+            <AnalysisCell label="💡 Diferenciador" value={signal.analysis.differentiator} />
+            <AnalysisCell
+              label="⚔️ Competencia conocida"
+              value={
+                signal.analysis.competitors.length > 0
+                  ? signal.analysis.competitors.join(" · ")
+                  : "—"
+              }
+            />
+          </div>
+
+          {signal.analysis.risks.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ color: "#94a3b8", fontSize: 11, marginBottom: 6, fontWeight: 600 }}>
+                ⚠️ Riesgos a vigilar
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18, color: "#cbd5e1", fontSize: 12, lineHeight: 1.6 }}>
+                {signal.analysis.risks.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AnalysisCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div style={{ color: "#94a3b8", fontSize: 11, marginBottom: 4, fontWeight: 600 }}>{label}</div>
+      <div style={{ color: "#cbd5e1", fontSize: 12, lineHeight: 1.5 }}>{value || "—"}</div>
     </div>
   );
 }

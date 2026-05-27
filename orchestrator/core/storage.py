@@ -169,6 +169,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
             logger.info("storage: migrated signals.published_at column")
         except sqlite3.OperationalError as e:
             logger.warning("storage: migration published_at failed: %s", e)
+    # M3.5: optional analysis JSON blob (idea_analyzer output) — nullable until
+    # the founder clicks "Analizar" in the dashboard
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
+    if "analysis_json" not in cols:
+        try:
+            conn.execute("ALTER TABLE signals ADD COLUMN analysis_json TEXT")
+            logger.info("storage: migrated signals.analysis_json column")
+        except sqlite3.OperationalError as e:
+            logger.warning("storage: migration analysis_json failed: %s", e)
 
 
 @contextmanager
@@ -654,7 +663,7 @@ class SignalsStore:
             with _conn() as c:
                 rows = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,created_at "
                     "FROM signals WHERE score>=? "
                     "ORDER BY trend_score DESC, score DESC, created_at DESC LIMIT ?",
                     (min_score, limit),
@@ -674,7 +683,7 @@ class SignalsStore:
             with _conn() as c:
                 row = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,created_at "
                     "FROM signals WHERE id=?", (signal_id,),
                 ).fetchone()
                 return _signal_row_to_dict(dict(row)) if row else None
@@ -695,7 +704,7 @@ class SignalsStore:
             with _conn() as c:
                 rows = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,created_at "
                     "FROM signals WHERE promoted_run_id IS NOT NULL "
                     "ORDER BY created_at DESC LIMIT ?",
                     (limit,),
@@ -704,6 +713,50 @@ class SignalsStore:
         rows = [r for r in _memory_signals if r.get("promoted_run_id")]
         rows = sorted(rows, key=lambda r: r.get("created_at", 0), reverse=True)[:limit]
         return [_signal_row_to_dict(dict(r)) for r in rows]
+
+    def set_analysis(self, signal_id: int, analysis: Optional[Dict]) -> None:
+        """Persist a JSON blob with the IdeaAnalyzer output (M3.5).
+
+        Pass None to clear an existing analysis (e.g. user wants to re-run).
+        """
+        _ensure_init()
+        raw = json.dumps(analysis, ensure_ascii=False) if analysis is not None else None
+        if _db_path:
+            with _conn() as c:
+                c.execute("UPDATE signals SET analysis_json=? WHERE id=?", (raw, signal_id))
+        else:
+            for r in _memory_signals:
+                if r["id"] == signal_id:
+                    r["analysis_json"] = raw
+                    return
+
+    def cleanup_mocks(self) -> int:
+        """Remove legacy mock-mode signals so the dashboard doesn't show them.
+
+        Targets signals whose theme starts with "Mock signal from " — these
+        were created before the mock-scanner rewrite that uses real item
+        titles. Returns count deleted.
+
+        Safer than cleanup_stale because it keys on a literal string, not a
+        time window — won't touch any real signal.
+        """
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                cur = c.execute(
+                    "DELETE FROM signals WHERE theme LIKE 'Mock signal from %' "
+                    "OR suggested_topic LIKE 'Mock topic derived from %'"
+                )
+                return int(cur.rowcount or 0)
+        before = len(_memory_signals)
+        _memory_signals[:] = [
+            r for r in _memory_signals
+            if not (
+                str(r.get("theme", "")).startswith("Mock signal from ")
+                or str(r.get("suggested_topic", "")).startswith("Mock topic derived from ")
+            )
+        ]
+        return before - len(_memory_signals)
 
     def set_feedback(self, signal_id: int, feedback: Optional[str]) -> None:
         _ensure_init()
@@ -837,6 +890,15 @@ def _signal_row_to_dict(row: Dict) -> Dict:
         row["evidence_urls"] = json.loads(row.pop("evidence_json"))
     except Exception:  # noqa: BLE001
         row["evidence_urls"] = []
+    # Parse the optional analysis_json blob (M3.5)
+    raw_analysis = row.pop("analysis_json", None)
+    if raw_analysis:
+        try:
+            row["analysis"] = json.loads(raw_analysis)
+        except Exception:  # noqa: BLE001
+            row["analysis"] = None
+    else:
+        row["analysis"] = None
     # Ensure trend_score + published_at are always present (legacy rows may lack)
     row.setdefault("trend_score", 0)
     row.setdefault("published_at", None)

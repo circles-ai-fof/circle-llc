@@ -301,6 +301,7 @@ class SignalItem(BaseModel):
     promoted_run_id: Optional[str] = None
     trend_score: float = 0
     published_at: Optional[int] = None  # original publication ts of the source content
+    analysis: Optional[Dict] = None  # IdeaAnalyzer output (M3.5), null until "Analizar" clicked
     created_at: int
 
 
@@ -319,6 +320,30 @@ class SignalsCleanupResponse(BaseModel):
     survivors_kept_with_feedback: int = Field(
         description="Signals older than threshold that were KEPT because they have feedback or promotion",
     )
+
+
+class SignalsCleanupMocksResponse(BaseModel):
+    deleted: int = Field(description="Mock-mode signals removed (theme started with 'Mock signal from')")
+
+
+class SignalAnalysisItem(BaseModel):
+    """Output of IdeaAnalyzer — attached to a signal so the founder can
+    decide whether to spend $0.06 promoting it to a full workflow run."""
+    market_size_estimate: str
+    icp_probable: str
+    competitors: List[str] = Field(default_factory=list)
+    differentiator: str = ""
+    risks: List[str] = Field(default_factory=list)
+    recommendation: str = Field(
+        description='"promote" | "wait_for_more_data" | "discard"',
+    )
+    reasoning: str = ""
+
+
+class AnalyzeSignalResponse(BaseModel):
+    signal_id: int
+    analysis: SignalAnalysisItem
+    cost_usd_estimated: float = Field(description="LLM cost for this analyze call")
 
 
 class ScanRunRequest(BaseModel):

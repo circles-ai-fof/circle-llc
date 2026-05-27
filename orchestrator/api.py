@@ -56,8 +56,11 @@ from .schemas.api import (
     RunGateResponse,
     ScanRunRequest,
     ScanRunResponse,
+    AnalyzeSignalResponse,
+    SignalAnalysisItem,
     SignalFeedback,
     SignalItem,
+    SignalsCleanupMocksResponse,
     SignalsCleanupResponse,
     SignalsListResponse,
     SourceCreate,
@@ -1334,6 +1337,69 @@ def signals_cleanup(request: Request, older_than_days: int = 30) -> SignalsClean
         deleted=deleted,
         older_than_days=older_than_days,
         survivors_kept_with_feedback=survivors,
+    )
+
+
+@app.post(
+    "/api/v1/signals/cleanup-mocks",
+    response_model=SignalsCleanupMocksResponse,
+    summary="Delete legacy mock-mode signals (theme starts with 'Mock signal from')",
+    tags=["hunter"],
+)
+def signals_cleanup_mocks(request: Request) -> SignalsCleanupMocksResponse:
+    """Targeted cleanup of obsolete mock signals from before the scanner used
+    real item titles. Safe to run anytime — keys on the literal "Mock signal"
+    prefix, so it won't touch real signals."""
+    _require_user(request)
+    from .core.storage import signals_store
+    deleted = signals_store.cleanup_mocks()
+    return SignalsCleanupMocksResponse(deleted=deleted)
+
+
+@app.post(
+    "/api/v1/signals/{signal_id}/analyze",
+    response_model=AnalyzeSignalResponse,
+    summary="Enrich a signal with market/ICP/competitors/recommendation (IdeaAnalyzer)",
+    tags=["hunter"],
+)
+def analyze_signal(signal_id: int, request: Request) -> AnalyzeSignalResponse:
+    """Run IdeaAnalyzer on a single signal to produce structured info the
+    founder needs to decide whether to promote it: market size estimate,
+    probable ICP, known competitors, differentiator, risks, and a
+    recommendation (promote / wait_for_more_data / discard).
+
+    Cost: ~$0.005 (single Haiku call). Mock-aware: when the backend runs
+    without ANTHROPIC_API_KEY, returns a Spanish placeholder useful for UX.
+    """
+    _require_user(request)
+    from .core.storage import signals_store, sources_store
+    from .agents.idea_analyzer import IdeaAnalyzerAgent
+
+    sig = signals_store.get(signal_id)
+    if not sig:
+        raise HTTPException(status_code=404, detail="signal not found")
+
+    source = sources_store.get(sig["source_id"]) if sig.get("source_id") else None
+    source_name = source["name"] if source else ""
+
+    analyzer = IdeaAnalyzerAgent(
+        mock_mode=_workflow._mock_mode,
+        client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+    )
+    analysis = analyzer.analyze(
+        theme=sig["theme"],
+        excerpt=sig["excerpt"],
+        suggested_topic=sig["suggested_topic"],
+        evidence_urls=sig.get("evidence_urls", []),
+        source_kind=sig.get("source_kind", ""),
+        source_name=source_name,
+    )
+    # Persist so the dashboard can re-show without re-running the LLM
+    signals_store.set_analysis(signal_id, analysis.to_dict())
+    return AnalyzeSignalResponse(
+        signal_id=signal_id,
+        analysis=SignalAnalysisItem(**analysis.to_dict()),
+        cost_usd_estimated=0.0 if _workflow._mock_mode else 0.005,
     )
 
 

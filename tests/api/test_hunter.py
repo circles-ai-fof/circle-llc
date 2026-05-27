@@ -469,6 +469,94 @@ def test_autoscan_status_requires_auth(client):
     assert client.get("/api/v1/autoscan/status").status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# M3.5 — IdeaAnalyzer endpoint + cleanup-mocks
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_signal_returns_structured_analysis(client, auth):
+    """POST /signals/{id}/analyze returns market/ICP/competitors/recommendation."""
+    from orchestrator.core.storage import signals_store, sources_store
+
+    sid = sources_store.add("rss", "https://x.test/feed", "Test Feed")
+    signal_id = signals_store.add(
+        sid, "rss", "Tema interesante sobre logística LATAM",
+        0.75, "Excerpt con contexto real", ["https://x.test/a"],
+        "logistica latam pymes",
+    )
+
+    r = client.post(f"/api/v1/signals/{signal_id}/analyze", headers=auth)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["signal_id"] == signal_id
+    a = body["analysis"]
+    # Required fields, all in Spanish, all non-empty
+    assert a["market_size_estimate"]
+    assert a["icp_probable"]
+    assert isinstance(a["competitors"], list)
+    assert a["differentiator"]
+    assert isinstance(a["risks"], list) and len(a["risks"]) >= 1
+    assert a["recommendation"] in ("promote", "wait_for_more_data", "discard")
+    assert a["reasoning"]
+
+
+def test_analyze_signal_persists_analysis(client, auth):
+    """After analyzing, GET /signals returns the analysis attached to the signal."""
+    from orchestrator.core.storage import signals_store
+
+    signal_id = signals_store.add(
+        None, "hn", "Tema X", 0.7, "ex", [], "topic"
+    )
+    # Before analyze: analysis is None
+    r0 = client.get("/api/v1/signals", headers=auth)
+    items0 = r0.json()["items"]
+    target0 = next(it for it in items0 if it["id"] == signal_id)
+    assert target0["analysis"] is None
+
+    # Analyze
+    assert client.post(f"/api/v1/signals/{signal_id}/analyze", headers=auth).status_code == 200
+
+    # After analyze: analysis is populated
+    r1 = client.get("/api/v1/signals", headers=auth)
+    items1 = r1.json()["items"]
+    target1 = next(it for it in items1 if it["id"] == signal_id)
+    assert target1["analysis"] is not None
+    assert target1["analysis"]["recommendation"] in ("promote", "wait_for_more_data", "discard")
+
+
+def test_analyze_signal_404_for_unknown_id(client, auth):
+    r = client.post("/api/v1/signals/99999/analyze", headers=auth)
+    assert r.status_code == 404
+
+
+def test_analyze_signal_requires_auth(client):
+    assert client.post("/api/v1/signals/1/analyze").status_code == 401
+
+
+def test_cleanup_mocks_removes_legacy_mock_signals(client, auth):
+    """cleanup-mocks deletes only signals with theme starting with 'Mock signal from'."""
+    from orchestrator.core.storage import signals_store
+
+    real_a = signals_store.add(None, "rss", "Tema real LATAM", 0.7, "ex", [], "topic")
+    real_b = signals_store.add(None, "hn", "Otro tema real", 0.6, "ex", [], "topic")
+    mock1 = signals_store.add(None, "rss", "Mock signal from rss", 0.5, "ex", [], "Mock topic derived from rss signals")
+    mock2 = signals_store.add(None, "hn", "Mock signal from hn", 0.5, "ex", [], "topic")
+
+    r = client.post("/api/v1/signals/cleanup-mocks", headers=auth)
+    assert r.status_code == 200
+    assert r.json()["deleted"] == 2
+
+    remaining = {s["id"] for s in signals_store.list(limit=100)}
+    assert real_a in remaining
+    assert real_b in remaining
+    assert mock1 not in remaining
+    assert mock2 not in remaining
+
+
+def test_cleanup_mocks_requires_auth(client):
+    assert client.post("/api/v1/signals/cleanup-mocks").status_code == 401
+
+
 def test_list_promoted_signals_returns_only_promoted(client, auth):
     """GET /api/v1/signals/promoted lists only signals with a promoted_run_id,
     newest first, with source_name joined."""
