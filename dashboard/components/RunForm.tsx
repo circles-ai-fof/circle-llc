@@ -97,8 +97,25 @@ export default function RunForm({ onClose }: RunFormProps) {
         signal: AbortSignal.timeout(90000),
       });
       if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(`API ${res.status}: ${txt.slice(0, 200)}`);
+        let detail = `API ${res.status}`;
+        try {
+          const body = await res.json();
+          if (typeof body.detail === "string") {
+            detail = body.detail;
+          } else if (Array.isArray(body.detail)) {
+            // FastAPI Pydantic validation errors
+            detail = body.detail
+              .map((v: { loc?: string[]; msg?: string }) => {
+                const field = (v.loc || []).slice(1).join(".");
+                return field ? `${field}: ${v.msg}` : v.msg;
+              })
+              .filter(Boolean)
+              .join(" · ");
+          }
+        } catch {
+          /* response not json */
+        }
+        throw new Error(detail);
       }
       const data = await res.json();
       // Adapt API shape -> UI shape
@@ -161,30 +178,36 @@ export default function RunForm({ onClose }: RunFormProps) {
                 <label className="block text-sm font-medium text-gray-300 mb-1.5">
                   Idea o tema de negocio
                 </label>
-                <input
-                  type="text"
+                <textarea
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
                   placeholder="ej: App de delivery de medicamentos para adultos mayores"
                   disabled={loading}
-                  className="w-full px-3.5 py-2.5 rounded-lg text-sm text-gray-100 placeholder-gray-600 border outline-none transition-all focus:ring-1 disabled:opacity-60"
+                  maxLength={500}
+                  rows={3}
+                  className="w-full px-3.5 py-2.5 rounded-lg text-sm text-gray-100 placeholder-gray-600 border outline-none transition-all focus:ring-1 disabled:opacity-60 resize-y"
                   style={{
                     backgroundColor: "#0B0F1A",
                     borderColor: "#1E2A3A",
                     "--tw-ring-color": "#00D4FF",
                   } as React.CSSProperties}
                 />
-                {topic.length > 0 && topic.trim().length < 5 && (
-                  <p className="text-xs mt-1" style={{ color: "#FF4444" }}>
-                    Mínimo 5 caracteres
-                  </p>
-                )}
+                <div className="flex justify-between text-xs mt-1">
+                  {topic.length > 0 && topic.trim().length < 5 ? (
+                    <span style={{ color: "#FF4444" }}>Mínimo 5 caracteres</span>
+                  ) : (
+                    <span style={{ color: "#64748b" }}>Mínimo 5, máximo 500 chars</span>
+                  )}
+                  <span style={{ color: topic.length > 480 ? "#FFB800" : "#64748b" }}>
+                    {topic.length}/500
+                  </span>
+                </div>
               </div>
 
               {/* Pipeline steps preview */}
               <div className="rounded-lg p-3 space-y-2" style={{ backgroundColor: "#0B0F1A" }}>
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Pipeline</p>
-                {["idea_hunter", "idea_maturer", "market_validator", "landing_generator", "gate_decider"].map(
+                {["idea_hunter", "idea_enricher", "idea_maturer", "market_validator", "landing_generator", "gate_decider"].map(
                   (agent, i) => (
                     <div key={agent} className="flex items-center gap-2">
                       <span

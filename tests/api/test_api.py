@@ -118,8 +118,8 @@ class TestRunGate:
         assert response.status_code == 422
 
     def test_run_gate_invalid_topic_too_long(self, client: TestClient) -> None:
-        """Topic exceeding 200 chars must return 422."""
-        response = client.post("/api/v1/gate/run", json={"topic": "a" * 201})
+        """Topic exceeding 500 chars must return 422."""
+        response = client.post("/api/v1/gate/run", json={"topic": "a" * 501})
         assert response.status_code == 422
 
     def test_run_gate_missing_topic(self, client: TestClient) -> None:

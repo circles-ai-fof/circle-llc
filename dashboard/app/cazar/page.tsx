@@ -131,7 +131,20 @@ export default function CazarPage() {
         let detail = `HTTP ${res.status}`;
         try {
           const body = await res.json();
-          detail = body.detail || detail;
+          // FastAPI returns either {detail: "string"} or {detail: [validation errors]}
+          if (typeof body.detail === "string") {
+            detail = body.detail;
+          } else if (Array.isArray(body.detail)) {
+            detail = body.detail
+              .map((v: { loc?: string[]; msg?: string }) => {
+                const field = (v.loc || []).slice(1).join(".");
+                return field ? `${field}: ${v.msg}` : v.msg;
+              })
+              .filter(Boolean)
+              .join(" · ") || JSON.stringify(body.detail);
+          } else if (body.detail) {
+            detail = JSON.stringify(body.detail);
+          }
         } catch {
           /* not json */
         }
@@ -188,7 +201,7 @@ export default function CazarPage() {
             onChange={(e) => setTopic(e.target.value)}
             placeholder="Ej: plataforma para gestionar inventario en restaurantes pequeños LATAM"
             rows={3}
-            maxLength={300}
+            maxLength={500}
             disabled={running}
             style={{
               width: "100%",

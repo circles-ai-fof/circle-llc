@@ -21,8 +21,8 @@ from ..core.models import MetricsSnapshot
 class RunGateRequest(BaseModel):
     topic: str = Field(
         min_length=5,
-        max_length=200,
-        description="The business idea / trend to evaluate (5–200 chars)",
+        max_length=500,
+        description="The business idea / trend to evaluate (5–500 chars). Can be a short topic or a longer description / prompt.",
         examples=["fintech para PYMEs Ecuador"],
     )
     metrics: Optional[MetricsSnapshot] = Field(
