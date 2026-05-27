@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",
-    "start": "next start -p 3001"
+    "start": "next start -p 3001",
+    "clean": "node -e \"const fs=require('fs');['.next','tsconfig.tsbuildinfo','node_modules/.cache'].forEach(p=>fs.rmSync(p,{recursive:true,force:true}));console.log('cleaned: .next, tsconfig.tsbuildinfo, node_modules/.cache')\"",
+    "dev:clean": "npm run clean && npm run dev"
   },
   "dependencies": {
     "next": "15.5.18",
