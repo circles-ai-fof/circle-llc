@@ -69,18 +69,9 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // Permanent redirects for friendly URL variants.
-  // The file-system route is /cazar/senales (no eñe) because Next.js handles
-  // non-ASCII URLs poorly across browsers (historial autocomplete returns
-  // percent-encoded /cazar/se%C3%B1ales and the SSR layer 500's instead of
-  // 404'ing). Redirect catches those variants — and any external link that
-  // used the eñe — back to the canonical path.
-  async redirects() {
-    return [
-      { source: "/cazar/señales", destination: "/cazar/senales", permanent: true },
-      { source: "/cazar/señales/:path*", destination: "/cazar/senales/:path*", permanent: true },
-    ];
-  },
+  // Note: /cazar/señales → /cazar/senales redirect lives in middleware.ts
+  // (next.config.ts `redirects()` doesn't match percent-encoded sources
+  // reliably for non-ASCII paths).
 
   poweredByHeader: false,
 };
