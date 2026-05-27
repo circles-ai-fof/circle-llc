@@ -139,6 +139,15 @@ Auto: GitHub Actions cron (cada 6h) promueve signals con score ≥ 0.85.
 Cap de costo: ~$0.02/source/scan + $0.06/auto-promoted-run. ~$20/mes worst case.
 NO se integra X/Twitter ($100/mo) ni LinkedIn (API restricted) — esperan a M4+.
 
+## R29 — Trend Score + Single-Item Signals + New Source Kinds (ADR-012)
++ Tres kinds nuevos GRATIS: youtube (RSS de canal), bluesky (XRPC público),
+  telegram (canales públicos via t.me/s/). Sin auth.
++ signals.trend_score: +1 por cada signal previa en 7 días con tema que
+  comparte keyword ≥5 chars. Cap a 5.0. Migración aditiva ALTER TABLE.
++ Mock scanner acepta 1 item con contenido (score 0.60). Items con body
+  vacío (Instagram-style URLs) producen 0 signals — comportamiento honesto.
++ list() ordena por trend_score DESC, score DESC, created_at DESC.
+
 ## R27 — Closed-Beta Email Allowlist Auth (ADR-010)
 Dashboard pages exigen sesión emitida por POST /api/v1/auth/login.
 Solo emails en ALLOWED_EMAILS (env var) reciben token. Tokens duran 7 días.

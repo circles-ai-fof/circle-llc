@@ -139,9 +139,32 @@ class SourceScannerAgent(BaseAgent):
         return "\n".join(lines)
 
     def _mock_scan(self, items: List[FetchedItem]) -> List[Signal]:
-        """Deterministic: 1 signal if >=2 items, 0 otherwise."""
-        if len(items) < 2:
+        """
+        Deterministic mock for tests + dev UX:
+        - Empty items                 -> 0 signals
+        - All items with empty body   -> 0 signals (Instagram-like URLs)
+        - 1 item with content         -> 1 signal score 0.60
+        - 2+ items with content       -> 1 signal score 0.72
+        """
+        if not items:
             return []
+        non_empty = [it for it in items if (it.body or it.summary or it.title).strip()]
+        if not non_empty:
+            return []
+        if len(non_empty) == 1:
+            it = non_empty[0]
+            return [
+                Signal(
+                    theme=f"Mock single-source signal from {it.source_kind}",
+                    score=0.60,
+                    excerpt=f"Single item: {it.title[:120]}",
+                    evidence_urls=[it.url],
+                    suggested_topic=it.title or f"Topic from {it.source_kind}",
+                    source_kind=it.source_kind,
+                    items_seen=1,
+                )
+            ]
+        items = non_empty  # for downstream block below
         first = items[0]
         return [
             Signal(

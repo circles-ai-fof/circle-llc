@@ -321,6 +321,143 @@ def fetch_product_hunt(max_items: int = MAX_ITEMS_PER_FEED) -> List[FetchedItem]
 
 
 # ---------------------------------------------------------------------------
+# YouTube — uses the FREE per-channel/playlist RSS feed (no API key required)
+# ---------------------------------------------------------------------------
+
+_YT_CHANNEL_ID_RE = re.compile(r'"channelId":"(UC[\w-]+)"')
+
+
+def _resolve_youtube_to_rss(target: str) -> Optional[str]:
+    """
+    Turn a YouTube URL or handle into an RSS feed URL.
+    Accepts: @handle, /channel/UCxxx, /c/Name, raw UCxxxxx, or a full URL.
+    """
+    target = (target or "").strip()
+    if not target:
+        return None
+    if target.startswith("UC") and len(target) >= 20 and "/" not in target:
+        return f"https://www.youtube.com/feeds/videos.xml?channel_id={target}"
+    m = re.search(r"/channel/(UC[\w-]+)", target)
+    if m:
+        return f"https://www.youtube.com/feeds/videos.xml?channel_id={m.group(1)}"
+    if target.startswith("@"):
+        url = f"https://www.youtube.com/{target}"
+    elif "/c/" in target or "/@" in target or target.startswith("http"):
+        url = target
+    else:
+        url = f"https://www.youtube.com/@{target}"
+    raw = _http_get(url)
+    if raw is None:
+        return None
+    try:
+        html = raw.decode("utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        return None
+    m = _YT_CHANNEL_ID_RE.search(html)
+    if not m:
+        return None
+    return f"https://www.youtube.com/feeds/videos.xml?channel_id={m.group(1)}"
+
+
+def fetch_youtube_channel(target: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[FetchedItem]:
+    """Latest videos of a YouTube channel via its RSS feed (no API key)."""
+    feed_url = _resolve_youtube_to_rss(target)
+    if not feed_url:
+        logger.warning("fetch_youtube_channel: could not resolve %r", target)
+        return []
+    items = fetch_rss(feed_url, max_items)
+    for it in items:
+        it.source_kind = "youtube"
+    return items
+
+
+# ---------------------------------------------------------------------------
+# Bluesky — public AT Protocol XRPC endpoint (no auth)
+# ---------------------------------------------------------------------------
+
+_BSKY_SEARCH_URL = "https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts"
+
+
+def fetch_bluesky(query: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[FetchedItem]:
+    """Search Bluesky public posts for a query string."""
+    if not query.strip():
+        return []
+    qs = urllib.parse.urlencode({"q": query, "limit": min(max_items, 25)})
+    raw = _http_get(f"{_BSKY_SEARCH_URL}?{qs}")
+    if raw is None:
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    posts = data.get("posts", [])[:max_items]
+    items: List[FetchedItem] = []
+    for p in posts:
+        record = p.get("record", {})
+        text = (record.get("text") or "").strip()
+        if not text:
+            continue
+        author = p.get("author", {})
+        handle = author.get("handle", "")
+        uri = p.get("uri", "")
+        post_id = uri.rsplit("/", 1)[-1] if uri else ""
+        web_url = f"https://bsky.app/profile/{handle}/post/{post_id}" if handle and post_id else uri
+        like_count = p.get("likeCount", 0)
+        items.append(
+            FetchedItem(
+                source_kind="bluesky",
+                url=web_url,
+                title=_truncate(f"@{handle}: {text.splitlines()[0]}", 200),
+                summary=_truncate(f"@{handle} [{like_count} likes] — {text}", 400),
+                body=_truncate(f"@{handle}\n{text}\n\n{web_url}", MAX_CHARS_PER_SOURCE),
+            )
+        )
+    return items
+
+
+# ---------------------------------------------------------------------------
+# Telegram — public channels via t.me/s/<channel> (no auth, HTML scrape)
+# ---------------------------------------------------------------------------
+
+
+def fetch_telegram(channel: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[FetchedItem]:
+    """Read recent messages from a PUBLIC Telegram channel (web preview).
+    `channel` is the handle without @ or t.me/. Private channels return []."""
+    handle = channel.strip().lstrip("@").replace("t.me/", "").replace("s/", "").rstrip("/")
+    if not handle:
+        return []
+    raw = _http_get(f"https://t.me/s/{handle}")
+    if raw is None:
+        return []
+    try:
+        html = raw.decode("utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        return []
+    msg_blocks = re.findall(
+        r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
+        html, re.DOTALL,
+    )
+    link_re = re.compile(r'<a class="tgme_widget_message_date"[^>]*href="(https://t\.me/[^"]+)"')
+    links = link_re.findall(html)
+    items: List[FetchedItem] = []
+    for i, msg_html in enumerate(msg_blocks[-max_items:][::-1]):
+        text = _html_to_text(msg_html)
+        if not text:
+            continue
+        link = links[-(i + 1)] if i < len(links) else f"https://t.me/{handle}"
+        items.append(
+            FetchedItem(
+                source_kind="telegram",
+                url=link,
+                title=_truncate(f"@{handle}: {text.splitlines()[0][:160]}", 200),
+                summary=_truncate(text, 400),
+                body=_truncate(f"@{handle}\n{text}\n\n{link}", MAX_CHARS_PER_SOURCE),
+            )
+        )
+    return items[:max_items]
+
+
+# ---------------------------------------------------------------------------
 # GitHub Trending (scrape — no official API)
 # ---------------------------------------------------------------------------
 
@@ -391,6 +528,12 @@ def fetch_by_kind(kind: str, target: str = "", max_items: int = MAX_ITEMS_PER_FE
         return fetch_github_trending(max_items)
     if kind == "product_hunt":
         return fetch_product_hunt(max_items)
+    if kind == "youtube":
+        return fetch_youtube_channel(target, max_items)
+    if kind == "bluesky":
+        return fetch_bluesky(target, max_items)
+    if kind == "telegram":
+        return fetch_telegram(target, max_items)
     logger.warning("fetch_by_kind: unknown kind %r", kind)
     return []
 
@@ -407,5 +550,8 @@ __all__ = [
     "fetch_reddit",
     "fetch_product_hunt",
     "fetch_github_trending",
+    "fetch_youtube_channel",
+    "fetch_bluesky",
+    "fetch_telegram",
     "fetch_by_kind",
 ]

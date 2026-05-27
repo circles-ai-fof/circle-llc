@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS signals (
     suggested_topic   TEXT NOT NULL,
     feedback          TEXT,                -- 'up' | 'down' | NULL
     promoted_run_id   TEXT,                -- run_id if promoted to idea_hunter
+    trend_score       REAL NOT NULL DEFAULT 0,  -- bumped when same theme reappears
     created_at        INTEGER NOT NULL,
     FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE SET NULL
 );
@@ -125,11 +126,25 @@ def _ensure_init() -> None:
             Path(_db_path).parent.mkdir(parents=True, exist_ok=True)
             with sqlite3.connect(_db_path) as conn:
                 conn.executescript(_SCHEMA)
+                # Migrations for existing databases — additive only
+                _migrate(conn)
                 conn.commit()
             logger.info("storage: SQLite ready at %s", _db_path)
         else:
             logger.info("storage: DATABASE_PATH not set -> in-memory mode")
         _initialised = True
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply additive column migrations idempotently."""
+    # Add trend_score to signals if missing (M3.1)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
+    if "trend_score" not in cols:
+        try:
+            conn.execute("ALTER TABLE signals ADD COLUMN trend_score REAL NOT NULL DEFAULT 0")
+            logger.info("storage: migrated signals.trend_score column")
+        except sqlite3.OperationalError as e:
+            logger.warning("storage: migration trend_score failed: %s", e)
 
 
 @contextmanager
@@ -560,13 +575,15 @@ class SignalsStore:
         _ensure_init()
         ts = int(time.time())
         ev_json = json.dumps(evidence_urls, ensure_ascii=False)
+        # Compute trend_score: +1 per other signal with similar theme in last 7 days
+        trend = self._compute_trend_score(theme, ts)
         if _db_path:
             with _conn() as c:
                 cur = c.execute(
                     "INSERT INTO signals(source_id,source_kind,theme,score,excerpt,"
-                    "evidence_json,suggested_topic,created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?)",
-                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic, ts),
+                    "evidence_json,suggested_topic,trend_score,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?)",
+                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic, trend, ts),
                 )
                 return int(cur.lastrowid)
         new_id = max([s["id"] for s in _memory_signals], default=0) + 1
@@ -574,9 +591,37 @@ class SignalsStore:
             "id": new_id, "source_id": source_id, "source_kind": source_kind,
             "theme": theme, "score": score, "excerpt": excerpt,
             "evidence_json": ev_json, "suggested_topic": suggested_topic,
-            "feedback": None, "promoted_run_id": None, "created_at": ts,
+            "feedback": None, "promoted_run_id": None,
+            "trend_score": trend, "created_at": ts,
         })
         return new_id
+
+    def _compute_trend_score(self, theme: str, ts: int) -> float:
+        """
+        +1 for each prior signal with overlapping theme keywords seen in the
+        last 7 days. Capped at 5.0 so a single hot topic doesn't dominate.
+        """
+        if not theme.strip():
+            return 0.0
+        cutoff = ts - 7 * 24 * 3600
+        keywords = {w.lower() for w in theme.split() if len(w) > 4}
+        if not keywords:
+            return 0.0
+        prior_themes: List[str] = []
+        if _db_path:
+            with _conn() as c:
+                rows = c.execute(
+                    "SELECT theme FROM signals WHERE created_at >= ?", (cutoff,)
+                ).fetchall()
+                prior_themes = [r["theme"] for r in rows]
+        else:
+            prior_themes = [s["theme"] for s in _memory_signals if s["created_at"] >= cutoff]
+        hits = 0
+        for prev in prior_themes:
+            prev_kw = {w.lower() for w in prev.split() if len(w) > 4}
+            if keywords & prev_kw:
+                hits += 1
+        return min(5.0, float(hits))
 
     def list(self, limit: int = 100, min_score: float = 0.0) -> List[Dict]:
         _ensure_init()
@@ -584,13 +629,18 @@ class SignalsStore:
             with _conn() as c:
                 rows = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,created_at "
-                    "FROM signals WHERE score>=? ORDER BY created_at DESC LIMIT ?",
+                    "suggested_topic,feedback,promoted_run_id,trend_score,created_at "
+                    "FROM signals WHERE score>=? "
+                    "ORDER BY trend_score DESC, score DESC, created_at DESC LIMIT ?",
                     (min_score, limit),
                 ).fetchall()
                 return [_signal_row_to_dict(dict(r)) for r in rows]
         rows = [r for r in _memory_signals if r["score"] >= min_score]
-        rows = sorted(rows, key=lambda r: r["created_at"], reverse=True)[:limit]
+        rows = sorted(
+            rows,
+            key=lambda r: (r.get("trend_score", 0), r["score"], r["created_at"]),
+            reverse=True,
+        )[:limit]
         return [_signal_row_to_dict(dict(r)) for r in rows]
 
     def get(self, signal_id: int) -> Optional[Dict]:
@@ -599,7 +649,7 @@ class SignalsStore:
             with _conn() as c:
                 row = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,created_at "
                     "FROM signals WHERE id=?", (signal_id,),
                 ).fetchone()
                 return _signal_row_to_dict(dict(row)) if row else None
@@ -645,6 +695,8 @@ def _signal_row_to_dict(row: Dict) -> Dict:
         row["evidence_urls"] = json.loads(row.pop("evidence_json"))
     except Exception:  # noqa: BLE001
         row["evidence_urls"] = []
+    # Ensure trend_score is always present (legacy memory rows may lack it)
+    row.setdefault("trend_score", 0)
     return row
 
 

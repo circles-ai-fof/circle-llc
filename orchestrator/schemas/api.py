@@ -251,7 +251,7 @@ class AuthAttemptsResponse(BaseModel):
 
 
 class SourceCreate(BaseModel):
-    kind: str = Field(pattern="^(url|rss|hn|reddit|github_trending|product_hunt)$")
+    kind: str = Field(pattern="^(url|rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram)$")
     target: str = Field(default="", max_length=500)
     name: str = Field(min_length=1, max_length=120)
 
@@ -282,6 +282,7 @@ class SignalItem(BaseModel):
     suggested_topic: str
     feedback: Optional[str] = None
     promoted_run_id: Optional[str] = None
+    trend_score: float = 0
     created_at: int
 
 

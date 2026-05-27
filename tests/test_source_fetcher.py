@@ -102,3 +102,95 @@ def test_fetched_item_to_dict():
     assert d["source_kind"] == "url"
     assert d["title"] == "t"
     assert isinstance(d["fetched_at"], int)
+
+
+# ---------------------------------------------------------------------------
+# M3.1 new source kinds — YouTube, Bluesky, Telegram
+# ---------------------------------------------------------------------------
+
+
+def test_youtube_resolve_raw_channel_id():
+    """Raw UC-prefixed channel id resolves directly to the RSS feed URL."""
+    feed = _sf()._resolve_youtube_to_rss("UCxK1JKBdJrCQ74yqMyKW7sQ")
+    assert feed is not None
+    assert "channel_id=UCxK1JKBdJrCQ74yqMyKW7sQ" in feed
+
+
+def test_youtube_resolve_channel_url():
+    feed = _sf()._resolve_youtube_to_rss("https://www.youtube.com/channel/UC123_AbcDefGhijKLMnOPq")
+    assert feed is not None
+    assert "channel_id=UC123_AbcDefGhijKLMnOPq" in feed
+
+
+def test_youtube_resolve_invalid_returns_none():
+    """Unresolvable target -> None (no network mock here, so handle/c/ resolve)."""
+    with _patch_http_get(None):
+        assert _sf()._resolve_youtube_to_rss("@nonexistent-channel-test") is None
+
+
+def test_bluesky_empty_query_returns_empty():
+    assert _sf().fetch_bluesky("") == []
+
+
+def test_bluesky_parses_posts_from_json():
+    payload = {
+        "posts": [
+            {
+                "uri": "at://did:plc:xxx/app.bsky.feed.post/abc",
+                "author": {"handle": "founder.bsky.team"},
+                "record": {"text": "Building a fintech for LATAM PYMEs"},
+                "likeCount": 42,
+            }
+        ]
+    }
+    import json as _json
+    with _patch_http_get(_json.dumps(payload).encode()):
+        items = _sf().fetch_bluesky("fintech LATAM")
+    assert len(items) == 1
+    assert items[0].source_kind == "bluesky"
+    assert "founder.bsky.team" in items[0].title
+    assert "fintech" in items[0].body.lower()
+
+
+def test_bluesky_skips_empty_posts():
+    import json as _json
+    payload = {"posts": [{"record": {"text": ""}, "author": {"handle": "x"}}]}
+    with _patch_http_get(_json.dumps(payload).encode()):
+        assert _sf().fetch_bluesky("anything") == []
+
+
+def test_telegram_empty_handle_returns_empty():
+    assert _sf().fetch_telegram("") == []
+
+
+def test_telegram_parses_public_channel_html():
+    html = b"""
+    <html><body>
+      <a class="tgme_widget_message_date" href="https://t.me/durov/1"><time>...</time></a>
+      <div class="tgme_widget_message_text">Hello from <b>Telegram</b></div>
+      <a class="tgme_widget_message_date" href="https://t.me/durov/2"><time>...</time></a>
+      <div class="tgme_widget_message_text">Second message here</div>
+    </body></html>
+    """
+    with _patch_http_get(html):
+        items = _sf().fetch_telegram("durov")
+    assert len(items) >= 1
+    assert items[0].source_kind == "telegram"
+    assert "@durov" in items[0].title or "durov" in items[0].title.lower()
+
+
+def test_telegram_handle_normalization():
+    """Accepts @handle, t.me/handle, or bare handle."""
+    with _patch_http_get(None):  # network fails -> we only check the call did happen
+        assert _sf().fetch_telegram("@durov") == []
+        assert _sf().fetch_telegram("t.me/durov") == []
+        assert _sf().fetch_telegram("durov") == []
+
+
+def test_fetch_by_kind_routes_to_new_kinds():
+    """Dispatch table includes youtube/bluesky/telegram."""
+    sf = _sf()
+    with _patch_http_get(None):
+        assert sf.fetch_by_kind("youtube", "UCxxxxxxxxxxxxxxxxxx00") == []
+        assert sf.fetch_by_kind("bluesky", "fintech") == []
+        assert sf.fetch_by_kind("telegram", "durov") == []

@@ -20,9 +20,21 @@ const KIND_LABELS: Record<string, string> = {
   reddit: "Reddit",
   github_trending: "GitHub Trending",
   product_hunt: "Product Hunt",
+  youtube: "YouTube canal",
+  bluesky: "Bluesky (búsqueda)",
+  telegram: "Telegram canal público",
 };
 
-const KIND_NEEDS_TARGET = new Set(["url", "rss", "reddit"]);
+const KIND_NEEDS_TARGET = new Set(["url", "rss", "reddit", "youtube", "bluesky", "telegram"]);
+
+const KIND_PLACEHOLDERS: Record<string, string> = {
+  url: "https://artículo.com/post",
+  rss: "https://blog.com/feed.xml",
+  reddit: "startups (sin r/)",
+  youtube: "@MrBeast  o  /channel/UCxxxxx",
+  bluesky: 'fintech LATAM  o  from:handle.bsky.social',
+  telegram: "channelhandle (sin @ ni t.me/)",
+};
 
 export default function FuentesPage() {
   const [sources, setSources] = useState<Source[]>([]);
@@ -156,12 +168,7 @@ export default function FuentesPage() {
             type="text"
             value={target}
             onChange={(e) => setTarget(e.target.value)}
-            placeholder={
-              kind === "url" ? "https://artículo.com/post"
-                : kind === "rss" ? "https://blog.com/feed.xml"
-                : kind === "reddit" ? "startups (sin r/)"
-                : "(no aplica)"
-            }
+            placeholder={KIND_PLACEHOLDERS[kind] || "(no aplica)"}
             disabled={!KIND_NEEDS_TARGET.has(kind)}
             style={{
               padding: "10px 12px", background: "#0B0F1A", color: "#fff",
