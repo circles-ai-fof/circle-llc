@@ -217,6 +217,26 @@ export default function CazarPage() {
               opacity: running ? 0.5 : 1,
             }}
           />
+          {/* Counter / hint */}
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, marginBottom: 16 }}>
+            <span style={{ color: topic.length > 0 && topic.length < 5 ? "#FF4444" : "#64748b", fontSize: 11 }}>
+              {topic.length > 0 && topic.length < 5
+                ? "Mínimo 5 caracteres"
+                : "Mínimo 5, máximo 500 caracteres"}
+            </span>
+            <span
+              style={{
+                color: topic.length >= 500 ? "#FF4444"
+                  : topic.length >= 450 ? "#FFB800"
+                  : "#64748b",
+                fontSize: 11,
+                fontFamily: "monospace",
+                fontWeight: topic.length >= 450 ? 700 : 400,
+              }}
+            >
+              {topic.length}/500
+            </span>
+          </div>
           <div style={{ marginTop: 12, marginBottom: 16 }}>
             <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 6 }}>
               X-Gate-Secret (si el backend lo requiere — opcional)
