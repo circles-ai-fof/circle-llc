@@ -44,6 +44,41 @@ export default function SenalesPage() {
   const [minScore, setMinScore] = useState(0.5);
   const [sort, setSort] = useState<SortKey>("recent");
   const [kindFilter, setKindFilter] = useState<string>("");
+  const [mockMode, setMockMode] = useState<boolean>(false);
+  const [promoted, setPromoted] = useState<Signal[]>([]);
+  const [showPromoted, setShowPromoted] = useState<boolean>(false);
+
+  // Detect mock mode (backend running without ANTHROPIC_API_KEY) so we can
+  // warn the founder that ideas are placeholders, not real LLM output.
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await authFetch("/api/v1/diagnostic");
+        if (r.ok) {
+          const d = await r.json();
+          setMockMode(d.mode === "mock");
+        }
+      } catch {
+        /* silently ignore — diagnostic is best-effort */
+      }
+    })();
+  }, []);
+
+  // Load the promotion audit log (separate fetch, only when the user opens it)
+  const loadPromoted = async () => {
+    try {
+      const r = await authFetch("/api/v1/signals/promoted?limit=50");
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setPromoted((await r.json()).items);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const togglePromoted = async () => {
+    if (!showPromoted) await loadPromoted();
+    setShowPromoted((v) => !v);
+  };
 
   const refresh = async () => {
     setLoading(true);
@@ -123,6 +158,28 @@ export default function SenalesPage() {
 
   return (
     <main style={{ padding: "32px 40px", maxWidth: 1200, margin: "0 auto" }}>
+      {/* Mock-mode banner — only shows when backend has no API key configured */}
+      {mockMode && (
+        <div
+          style={{
+            background: "rgba(255,184,0,0.08)",
+            border: "1px solid rgba(255,184,0,0.4)",
+            borderRadius: 8,
+            padding: "10px 14px",
+            marginBottom: 16,
+            color: "#FFB800",
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          ⚠️ <strong>Modo demostración activo.</strong> El backend está corriendo
+          sin <code style={{ background: "#0B0F1A", padding: "1px 6px", borderRadius: 3 }}>ANTHROPIC_API_KEY</code> —
+          las ideas que se generen son <em>placeholders</em> de ejemplo, no
+          ideas reales. Configura las API keys del backend para activar el
+          workflow real (ver <code>orchestrator/.env.example</code>).
+        </div>
+      )}
+
       <header style={{ marginBottom: 28 }}>
         <h1 style={{ fontSize: 28, fontWeight: 700, color: "#fff", marginBottom: 6 }}>
           📡 Señales capturadas
@@ -231,6 +288,76 @@ export default function SenalesPage() {
           />
         ))}
       </div>
+
+      {/* Promotion audit log */}
+      <section style={{ marginTop: 36 }}>
+        <button
+          onClick={togglePromoted}
+          style={{
+            background: "transparent",
+            border: "1px solid #1e293b",
+            color: "#94a3b8",
+            padding: "8px 16px",
+            borderRadius: 8,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          {showPromoted ? "▼" : "▶"} Promociones recientes ({promoted.length || "ver"})
+        </button>
+        {showPromoted && (
+          <div
+            style={{
+              marginTop: 12,
+              border: "1px solid #1e293b",
+              borderRadius: 8,
+              background: "#0F1525",
+              overflow: "hidden",
+            }}
+          >
+            {promoted.length === 0 ? (
+              <div style={{ padding: 20, color: "#64748b", fontSize: 13, textAlign: "center" }}>
+                Aún no has promovido ninguna señal. Cuando promuevas una, aparecerá aquí con su run_id.
+              </div>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: "#0B0F1A", color: "#94a3b8", textAlign: "left" }}>
+                    <th style={{ padding: "10px 12px" }}>Fecha</th>
+                    <th style={{ padding: "10px 12px" }}>Fuente</th>
+                    <th style={{ padding: "10px 12px" }}>Tema</th>
+                    <th style={{ padding: "10px 12px" }}>Run</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {promoted.map((p) => (
+                    <tr key={p.id} style={{ borderTop: "1px solid #1e293b" }}>
+                      <td style={{ padding: "10px 12px", color: "#cbd5e1", whiteSpace: "nowrap" }}>
+                        {new Date(p.created_at * 1000).toLocaleString("es-EC", {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })}
+                      </td>
+                      <td style={{ padding: "10px 12px", color: "#94a3b8" }}>
+                        {p.source_name || p.source_kind}
+                      </td>
+                      <td style={{ padding: "10px 12px", color: "#cbd5e1" }}>{p.theme}</td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <a
+                          href={`/cazar?run_id=${p.promoted_run_id}`}
+                          style={{ color: "#00D4FF", fontFamily: "monospace", fontSize: 11 }}
+                        >
+                          {p.promoted_run_id?.slice(0, 8)}… →
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </section>
     </main>
   );
 }

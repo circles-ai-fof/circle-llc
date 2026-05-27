@@ -112,7 +112,24 @@ function CazarPageInner() {
   const [result, setResult] = useState<RunResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingExisting, setLoadingExisting] = useState<boolean>(!!initialRunId);
+  const [mockMode, setMockMode] = useState<boolean>(false);
   const startedAt = useRef<number>(0);
+
+  // Detect mock mode so we can warn the founder that ideas/verdicts are
+  // placeholders, not real LLM output.
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await authFetch("/api/v1/diagnostic");
+        if (r.ok) {
+          const d = await r.json();
+          setMockMode(d.mode === "mock");
+        }
+      } catch {
+        /* best-effort */
+      }
+    })();
+  }, []);
 
   // While running, animate through agents
   useEffect(() => {
@@ -216,6 +233,27 @@ function CazarPageInner() {
 
   return (
     <main style={{ padding: "32px 40px", maxWidth: 1100, margin: "0 auto" }}>
+      {mockMode && (
+        <div
+          style={{
+            background: "rgba(255,184,0,0.08)",
+            border: "1px solid rgba(255,184,0,0.4)",
+            borderRadius: 8,
+            padding: "10px 14px",
+            marginBottom: 16,
+            color: "#FFB800",
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          ⚠️ <strong>Modo demostración.</strong> Las ideas y verdicts son
+          placeholders en español, no salida real de LLM. Configura{" "}
+          <code style={{ background: "#0B0F1A", padding: "1px 6px", borderRadius: 3 }}>
+            ANTHROPIC_API_KEY
+          </code>{" "}
+          en <code>orchestrator/.env</code> y reinicia el backend.
+        </div>
+      )}
       <header style={{ marginBottom: 28 }}>
         <h1 style={{ fontSize: 28, fontWeight: 700, color: "#fff", marginBottom: 6 }}>
           🎯 Cazar idea
@@ -405,7 +443,33 @@ function CazarPageInner() {
       )}
 
       {/* Result */}
-      {result && <ResultView result={result} elapsed={elapsed} onReset={handleReset} />}
+      {result && (
+        <>
+          {/* Back button — shown when we came from /cazar/senales via promotion */}
+          {initialRunId && (
+            <div style={{ marginBottom: 16 }}>
+              <a
+                href="/cazar/senales"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  color: "#94a3b8",
+                  fontSize: 13,
+                  textDecoration: "none",
+                  padding: "6px 12px",
+                  border: "1px solid #1e293b",
+                  borderRadius: 6,
+                  background: "transparent",
+                }}
+              >
+                ← Volver a Señales
+              </a>
+            </div>
+          )}
+          <ResultView result={result} elapsed={elapsed} onReset={handleReset} />
+        </>
+      )}
     </main>
   );
 }

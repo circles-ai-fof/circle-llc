@@ -683,6 +683,28 @@ class SignalsStore:
                 return _signal_row_to_dict(dict(r))
         return None
 
+    def list_promoted(self, limit: int = 50) -> List[Dict]:
+        """List signals that were promoted to a workflow run, newest first.
+
+        Used by the dashboard "Promociones" log so the founder can see which
+        signals turned into runs, when, and follow the link back to either
+        the signal or the run.
+        """
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                rows = c.execute(
+                    "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,created_at "
+                    "FROM signals WHERE promoted_run_id IS NOT NULL "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+                return [_signal_row_to_dict(dict(r)) for r in rows]
+        rows = [r for r in _memory_signals if r.get("promoted_run_id")]
+        rows = sorted(rows, key=lambda r: r.get("created_at", 0), reverse=True)[:limit]
+        return [_signal_row_to_dict(dict(r)) for r in rows]
+
     def set_feedback(self, signal_id: int, feedback: Optional[str]) -> None:
         _ensure_init()
         if feedback not in (None, "up", "down"):

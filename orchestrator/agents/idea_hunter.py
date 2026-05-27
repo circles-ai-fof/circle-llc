@@ -96,12 +96,30 @@ class IdeaHunterAgent(BaseAgent):
         return IdeaSpec(**data)
 
     def _mock_generate(self, topic: str) -> IdeaSpec:
+        """Mock output — readable Spanish placeholder.
+
+        IMPORTANT: este texto SOLO aparece cuando el backend corre sin
+        ANTHROPIC_API_KEY. El dashboard muestra un banner "modo demo" cuando
+        detecta este estado. NO usar este texto para tomar decisiones reales.
+        """
+        # Take the first ~60 chars of the topic so the title is meaningful
+        # instead of "MockIdea:" — much easier for the founder to read.
+        clean_topic = topic.strip().split("\n")[0][:80]
         return IdeaSpec(
             id=uuid4(),
-            title=f"MockIdea: {topic[:30]}",
-            description="A SaaS platform that solves the core friction in this space.",
-            target_market="SMBs in Ecuador and Colombia, ~50k businesses",
-            problem_statement="Manual processes cause 40% revenue leakage for target users.",
-            proposed_solution="Automated workflow with AI recommendations reduces time-to-value.",
+            title=f"[Demo] {clean_topic}",
+            description=(
+                "Plataforma SaaS que reduce la fricción operativa en este "
+                "nicho. (Ejemplo generado en modo demostración — sin API key.)"
+            ),
+            target_market="PYMEs en Ecuador y Colombia (~50k empresas potenciales)",
+            problem_statement=(
+                "Los procesos manuales generan ~40% de pérdida operativa "
+                "para el segmento objetivo."
+            ),
+            proposed_solution=(
+                "Flujo automatizado con recomendaciones por IA que acorta "
+                "el tiempo-a-valor de semanas a días."
+            ),
             vertical_category=VerticalCategory.SAAS,
         )

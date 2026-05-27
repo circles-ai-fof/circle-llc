@@ -469,6 +469,40 @@ def test_autoscan_status_requires_auth(client):
     assert client.get("/api/v1/autoscan/status").status_code == 401
 
 
+def test_list_promoted_signals_returns_only_promoted(client, auth):
+    """GET /api/v1/signals/promoted lists only signals with a promoted_run_id,
+    newest first, with source_name joined."""
+    from orchestrator.core.storage import signals_store, sources_store
+
+    sid = sources_store.add("rss", "https://x.test/feed", "Test Feed")
+    not_promoted = signals_store.add(sid, "rss", "Sin promover", 0.6, "ex", [], "topic")
+    promoted_a = signals_store.add(sid, "rss", "Promovida A", 0.8, "ex", [], "topic")
+    promoted_b = signals_store.add(sid, "rss", "Promovida B", 0.7, "ex", [], "topic")
+    signals_store.mark_promoted(promoted_a, "run-aaa-uuid")
+    signals_store.mark_promoted(promoted_b, "run-bbb-uuid")
+
+    r = client.get("/api/v1/signals/promoted", headers=auth)
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert len(items) == 2
+    themes = {it["theme"] for it in items}
+    assert themes == {"Promovida A", "Promovida B"}
+    assert "Sin promover" not in themes
+    # source_name joined
+    assert all(it["source_name"] == "Test Feed" for it in items)
+    assert all(it["promoted_run_id"] for it in items)
+    _ = not_promoted  # silence unused
+
+
+def test_list_promoted_signals_requires_auth(client):
+    assert client.get("/api/v1/signals/promoted").status_code == 401
+
+
+def test_list_promoted_signals_invalid_limit_422(client, auth):
+    assert client.get("/api/v1/signals/promoted?limit=0", headers=auth).status_code == 422
+    assert client.get("/api/v1/signals/promoted?limit=999", headers=auth).status_code == 422
+
+
 def test_run_scan_internal_swallows_fetch_errors(client, auth):
     """A misbehaving fetcher must not crash the scan — the loop relies on this."""
     from unittest.mock import patch

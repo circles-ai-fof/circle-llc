@@ -199,7 +199,11 @@ class GateDeciderAgent(BaseAgent):
         code_verdict, confidence, rationale = _apply_code_rules(metrics, design)
         verdict = code_verdict or GateVerdict.ITERATE
         confidence = confidence or 0.60
-        rationale = rationale or "Borderline signal — insufficient impressions for confidence."
+        rationale = rationale or (
+            "[Modo demo] Señal limítrofe — impresiones insuficientes para "
+            "decidir con confianza. Configura ANTHROPIC_API_KEY para activar "
+            "el juez con LLM real."
+        )
         return GateDecision(
             verdict=verdict,
             confidence=confidence,
@@ -216,18 +220,18 @@ class GateDeciderAgent(BaseAgent):
 def _next_steps(verdict: GateVerdict, mature: MatureIdeaSpec) -> list[str]:
     if verdict == GateVerdict.PASS:
         return [
-            f"Advance '{mature.idea.title}' to Sprint M1 build phase",
-            "Assign TechAgent to generate architecture blueprint",
-            "Set Sprint M1 budget and timeline",
+            f"Avanzar '{mature.idea.title}' a la fase de construcción (Sprint M1)",
+            "Asignar TechAgent para generar el blueprint de arquitectura",
+            "Definir presupuesto y timeline del Sprint M1",
         ]
     if verdict == GateVerdict.KILL:
         return [
-            f"Archive '{mature.idea.title}' in outcome-db with kill rationale",
-            "Run idea_hunter on adjacent verticals",
-            "Review ICP assumptions — channel may be wrong, not idea",
+            f"Archivar '{mature.idea.title}' en outcome-db con rationale de descarte",
+            "Ejecutar idea_hunter en verticales adyacentes",
+            "Revisar supuestos del ICP — el canal puede ser incorrecto, no la idea",
         ]
     return [
-        "Adjust ad creative and headline (A/B test 2 variants)",
-        "Extend test 7 more days with revised targeting",
-        "Re-evaluate at $150 additional spend",
+        "Ajustar creativos y headline (A/B test con 2 variantes)",
+        "Extender el test 7 días con targeting revisado",
+        "Re-evaluar con $150 adicionales de inversión",
     ]

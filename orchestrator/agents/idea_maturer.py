@@ -67,17 +67,34 @@ class IdeaMaturerAgent(BaseAgent):
         )
 
     def _mock_mature(self, idea: IdeaSpec) -> MatureIdeaSpec:
+        """Mock — solo se usa sin ANTHROPIC_API_KEY. Texto en español para
+        que el dashboard sea legible en modo demo."""
         icp = ICPProfile(
-            demographic="35-50 yo CFO/finance manager, company 20-200 employees, Ecuador",
-            psychographic="Efficiency-driven, risk-averse, proud of operational control",
-            pain_points=["Manual reconciliation takes 3 days/month", "No real-time visibility", "Audit prep is chaotic"],
-            willingness_to_pay="$150-300/month SaaS, annual commitment preferred",
-            acquisition_channel="LinkedIn outreach + accountant referral network",
+            demographic="CFO o gerente financiero, 35-50 años, empresa de 20-200 empleados, Ecuador",
+            psychographic="Orientado a eficiencia, averso al riesgo, valora el control operativo",
+            pain_points=[
+                "La reconciliación manual toma ~3 días al mes",
+                "No hay visibilidad en tiempo real del estado financiero",
+                "La preparación para auditoría es caótica",
+            ],
+            willingness_to_pay="$150-300/mes en SaaS, prefieren contrato anual",
+            acquisition_channel="LinkedIn outbound + red de referidos de contadores",
         )
         return MatureIdeaSpec(
             idea=idea,
             icp=icp,
-            value_proposition=f"We help finance managers at SMBs to close books 80% faster by automating reconciliation, unlike Excel + manual bank exports.",
-            unfair_advantage="Deep SAP B1 integration that competitors ignore (20k+ companies in LATAM)",
-            key_risks=["CAC > LTV in early months", "Integration complexity delays onboarding", "Regulation changes in SRI"],
+            value_proposition=(
+                "Ayudamos a gerentes financieros de PYMEs a cerrar sus libros "
+                "80% más rápido automatizando la reconciliación, a diferencia "
+                "de Excel + exportes bancarios manuales."
+            ),
+            unfair_advantage=(
+                "Integración nativa con SAP B1 que los competidores ignoran "
+                "(20k+ empresas en LATAM usan SAP B1)"
+            ),
+            key_risks=[
+                "CAC > LTV en los primeros meses de operación",
+                "La complejidad de integración retrasa el onboarding",
+                "Cambios regulatorios del SRI impactan el roadmap",
+            ],
         )

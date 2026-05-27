@@ -58,13 +58,14 @@ class MarketValidatorAgent(BaseAgent):
         return EvidenceTestDesign(**data)
 
     def _mock_design_test(self, mature: MatureIdeaSpec) -> EvidenceTestDesign:
+        """Mock en español — solo se usa sin ANTHROPIC_API_KEY."""
         return EvidenceTestDesign(
             hypothesis=(
-                f"If we show finance managers a landing about '{mature.idea.title}', "
-                "then 3% will sign up for a demo because the pain (3-day close) is urgent."
+                f"Si mostramos a gerentes financieros una landing de '{mature.idea.title}', "
+                "el 3% solicitará un demo porque el dolor (cierre de 3 días) es urgente."
             ),
-            success_metrics=["CTR > 2%", "Conversion > 3%", "CPC < $2.50"],
-            failure_metrics=["CTR < 0.5% after 1000 impressions", "0 conversions after $150 spend"],
+            success_metrics=["CTR > 2%", "Conversión > 3%", "CPC < $2.50"],
+            failure_metrics=["CTR < 0.5% tras 1000 impresiones", "0 conversiones tras gastar $150"],
             test_duration_days=14,
             ad_budget_usd=300.0,
             target_ctr=0.02,

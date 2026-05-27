@@ -1280,6 +1280,28 @@ def signal_feedback(signal_id: int, body: SignalFeedback, request: Request) -> D
     return {"signal_id": signal_id, "feedback": new_value}
 
 
+@app.get(
+    "/api/v1/signals/promoted",
+    response_model=SignalsListResponse,
+    summary="List signals that were promoted to a workflow run (audit log)",
+    tags=["hunter"],
+)
+def list_promoted_signals(request: Request, limit: int = 50) -> SignalsListResponse:
+    """Audit log of promotions: which signals became runs, when, and the
+    resulting run_id. Newest first."""
+    _require_user(request)
+    from .core.storage import signals_store, sources_store
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=422, detail="limit must be 1-500")
+    rows = signals_store.list_promoted(limit=limit)
+    source_names = {s["id"]: s["name"] for s in sources_store.list()}
+    items: List[SignalItem] = []
+    for r in rows:
+        r["source_name"] = source_names.get(r.get("source_id")) if r.get("source_id") else None
+        items.append(SignalItem(**r))
+    return SignalsListResponse(total=len(items), items=items)
+
+
 @app.post(
     "/api/v1/signals/cleanup",
     response_model=SignalsCleanupResponse,
