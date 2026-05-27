@@ -713,6 +713,39 @@ class SignalsStore:
                 c.execute("DELETE FROM signals")
         _memory_signals.clear()
 
+    def cleanup_stale(self, older_than_days: int = 30) -> int:
+        """Delete signals older than `older_than_days` that have NO feedback AND
+        were NOT promoted. Returns count of deleted rows.
+
+        Rationale (ADR-014 follow-up): the cazador accumulates noise over time.
+        After 30 days, a signal that nobody touched (no 👍, no 👎, no promote)
+        is dead weight in the UI and skews the trend-score baseline. Promoted
+        and feedback-tagged signals are preserved as audit history.
+        """
+        _ensure_init()
+        cutoff_ts = int(time.time()) - older_than_days * 86_400
+        if _db_path:
+            with _conn() as c:
+                cur = c.execute(
+                    "DELETE FROM signals "
+                    "WHERE created_at < ? "
+                    "AND feedback IS NULL "
+                    "AND promoted_run_id IS NULL",
+                    (cutoff_ts,),
+                )
+                return int(cur.rowcount or 0)
+        # In-memory fallback
+        before = len(_memory_signals)
+        _memory_signals[:] = [
+            r for r in _memory_signals
+            if not (
+                r.get("created_at", 0) < cutoff_ts
+                and r.get("feedback") is None
+                and r.get("promoted_run_id") is None
+            )
+        ]
+        return before - len(_memory_signals)
+
     def quality_by_source(self) -> List[Dict]:
         """
         Aggregate signal stats per source_id:

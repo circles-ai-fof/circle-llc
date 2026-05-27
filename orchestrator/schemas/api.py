@@ -313,6 +313,14 @@ class SignalFeedback(BaseModel):
     feedback: str = Field(pattern="^(up|down|clear)$")
 
 
+class SignalsCleanupResponse(BaseModel):
+    deleted: int = Field(description="Number of stale signals removed")
+    older_than_days: int = Field(description="Threshold used (days)")
+    survivors_kept_with_feedback: int = Field(
+        description="Signals older than threshold that were KEPT because they have feedback or promotion",
+    )
+
+
 class ScanRunRequest(BaseModel):
     source_ids: Optional[List[int]] = Field(default=None, description="If omitted: scan all active sources")
     auto_promote_threshold: float = Field(default=0.0, ge=0.0, le=1.0, description="Auto-promote signals with score >= this (0 disables)")

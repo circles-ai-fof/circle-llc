@@ -21,18 +21,41 @@ type Signal = {
   created_at: number;
 };
 
+type SortKey = "recent" | "score" | "trend" | "published";
+
+const SOURCE_KINDS: { value: string; label: string }[] = [
+  { value: "", label: "Todas las fuentes" },
+  { value: "rss", label: "RSS" },
+  { value: "hn", label: "Hacker News" },
+  { value: "reddit", label: "Reddit" },
+  { value: "github_trending", label: "GitHub trending" },
+  { value: "product_hunt", label: "Product Hunt" },
+  { value: "youtube", label: "YouTube" },
+  { value: "bluesky", label: "Bluesky" },
+  { value: "telegram", label: "Telegram" },
+  { value: "url", label: "URL importada" },
+];
+
 export default function SenalesPage() {
   const router = useRouter();
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [minScore, setMinScore] = useState(0.5);
+  const [sort, setSort] = useState<SortKey>("recent");
+  const [kindFilter, setKindFilter] = useState<string>("");
 
   const refresh = async () => {
     setLoading(true);
     setError(null);
     try {
-      const r = await authFetch(`/api/v1/signals?limit=200&min_score=${minScore}`);
+      const params = new URLSearchParams({
+        limit: "200",
+        min_score: String(minScore),
+        sort,
+      });
+      if (kindFilter) params.set("kind", kindFilter);
+      const r = await authFetch(`/api/v1/signals?${params.toString()}`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setSignals((await r.json()).items);
     } catch (e) {
@@ -44,7 +67,29 @@ export default function SenalesPage() {
 
   useEffect(() => {
     refresh();
-  }, [minScore]);
+  }, [minScore, sort, kindFilter]);
+
+  const cleanup = async () => {
+    if (
+      !confirm(
+        "¿Limpiar señales de más de 30 días que nadie marcó con 👍/👎 ni promovió? Las marcadas se conservan como historial."
+      )
+    )
+      return;
+    try {
+      const r = await authFetch("/api/v1/signals/cleanup?older_than_days=30", {
+        method: "POST",
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      alert(
+        `✓ Eliminadas ${data.deleted} señales obsoletas.\nConservadas con feedback/promovidas: ${data.survivors_kept_with_feedback}.`
+      );
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const setFeedback = async (id: number, fb: "up" | "down" | "clear") => {
     try {
@@ -90,7 +135,7 @@ export default function SenalesPage() {
       </header>
 
       {/* Filter + refresh */}
-      <section style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20 }}>
+      <section style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20, flexWrap: "wrap" }}>
         <label style={{ color: "#94a3b8", fontSize: 12 }}>Score mínimo:</label>
         <input
           type="range"
@@ -99,21 +144,66 @@ export default function SenalesPage() {
           step={0.1}
           value={minScore}
           onChange={(e) => setMinScore(parseFloat(e.target.value))}
-          style={{ width: 200 }}
+          style={{ width: 160 }}
         />
         <span style={{ color: "#00D4FF", fontSize: 13, fontFamily: "monospace" }}>
           ≥ {minScore.toFixed(1)}
         </span>
-        <button
-          onClick={refresh}
+
+        <label style={{ color: "#94a3b8", fontSize: 12, marginLeft: 8 }}>Ordenar:</label>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortKey)}
           style={{
-            marginLeft: "auto", padding: "6px 14px", background: "transparent",
-            color: "#00D4FF", border: "1px solid #00D4FF", borderRadius: 6, fontSize: 13,
-            cursor: "pointer",
+            background: "#0F1525", color: "#cbd5e1", border: "1px solid #1e293b",
+            borderRadius: 6, padding: "4px 8px", fontSize: 12,
           }}
         >
-          ↻ Refresh
-        </button>
+          <option value="recent">Más recientes</option>
+          <option value="score">Mayor score</option>
+          <option value="trend">Mayor trend</option>
+          <option value="published">Publicación más reciente</option>
+        </select>
+
+        <label style={{ color: "#94a3b8", fontSize: 12 }}>Fuente:</label>
+        <select
+          value={kindFilter}
+          onChange={(e) => setKindFilter(e.target.value)}
+          style={{
+            background: "#0F1525", color: "#cbd5e1", border: "1px solid #1e293b",
+            borderRadius: 6, padding: "4px 8px", fontSize: 12,
+          }}
+        >
+          {SOURCE_KINDS.map((k) => (
+            <option key={k.value || "all"} value={k.value}>
+              {k.label}
+            </option>
+          ))}
+        </select>
+
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button
+            onClick={cleanup}
+            title="Elimina señales >30 días sin feedback ni promoción. Conserva las marcadas como historial."
+            style={{
+              padding: "6px 14px", background: "transparent",
+              color: "#94a3b8", border: "1px solid #1e293b", borderRadius: 6, fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            🧹 Limpiar viejas
+          </button>
+          <button
+            onClick={refresh}
+            style={{
+              padding: "6px 14px", background: "transparent",
+              color: "#00D4FF", border: "1px solid #00D4FF", borderRadius: 6, fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            ↻ Refresh
+          </button>
+        </div>
       </section>
 
       {error && <div style={{ color: "#FF4444", padding: 16, marginBottom: 16 }}>{error}</div>}

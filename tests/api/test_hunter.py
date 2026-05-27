@@ -354,3 +354,97 @@ def test_run_from_sources_signal_id_unknown_returns_404(client, auth):
         json={"signal_id": 99_999},
     )
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# M3.3 — list sort + kind filter + cleanup endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_list_signals_sort_by_score_desc(client, auth):
+    """sort=score returns highest score first."""
+    from orchestrator.core.storage import signals_store
+    signals_store.add(None, "rss", "low", 0.3, "ex", [], "topic")
+    signals_store.add(None, "rss", "high", 0.9, "ex", [], "topic")
+    signals_store.add(None, "rss", "mid", 0.6, "ex", [], "topic")
+
+    r = client.get("/api/v1/signals?sort=score", headers=auth)
+    assert r.status_code == 200
+    items = r.json()["items"]
+    scores = [it["score"] for it in items]
+    assert scores == sorted(scores, reverse=True)
+    assert items[0]["theme"] == "high"
+
+
+def test_list_signals_filter_by_kind(client, auth):
+    """kind=hn returns only hn signals."""
+    from orchestrator.core.storage import signals_store
+    signals_store.add(None, "rss", "rss-one", 0.5, "ex", [], "topic")
+    signals_store.add(None, "hn", "hn-one", 0.5, "ex", [], "topic")
+    signals_store.add(None, "reddit", "rd-one", 0.5, "ex", [], "topic")
+
+    r = client.get("/api/v1/signals?kind=hn", headers=auth)
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert len(items) == 1
+    assert items[0]["source_kind"] == "hn"
+
+
+def test_list_signals_sort_invalid_value_422(client, auth):
+    r = client.get("/api/v1/signals?sort=banana", headers=auth)
+    assert r.status_code == 422
+
+
+def test_signals_cleanup_removes_stale_but_keeps_touched(client, auth):
+    """Cleanup must purge old untouched signals but preserve any signal
+    with feedback or a promoted_run_id (audit trail)."""
+    import time
+    from orchestrator.core.storage import signals_store
+
+    # Inject 4 signals, then backdate created_at on 3 of them.
+    stale_untouched = signals_store.add(None, "rss", "stale untouched", 0.5, "ex", [], "topic")
+    stale_with_up = signals_store.add(None, "rss", "stale with up", 0.5, "ex", [], "topic")
+    stale_promoted = signals_store.add(None, "rss", "stale promoted", 0.5, "ex", [], "topic")
+    fresh_untouched = signals_store.add(None, "rss", "fresh untouched", 0.5, "ex", [], "topic")
+
+    # Tag two of the stale ones so they should survive cleanup
+    signals_store.set_feedback(stale_with_up, "up")
+    signals_store.mark_promoted(stale_promoted, "run-fake-uuid")
+
+    # Backdate three signals to 60 days ago
+    cutoff = int(time.time()) - 60 * 86_400
+    from orchestrator.core import storage as st
+    if st._db_path:
+        with st._conn() as c:
+            c.executemany(
+                "UPDATE signals SET created_at=? WHERE id=?",
+                [(cutoff, stale_untouched), (cutoff, stale_with_up), (cutoff, stale_promoted)],
+            )
+    else:
+        for r in st._memory_signals:
+            if r["id"] in (stale_untouched, stale_with_up, stale_promoted):
+                r["created_at"] = cutoff
+
+    # Run cleanup with default 30-day threshold
+    resp = client.post("/api/v1/signals/cleanup?older_than_days=30", headers=auth)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["deleted"] == 1  # only the stale_untouched one
+    assert body["survivors_kept_with_feedback"] == 2  # the up + promoted ones
+
+    # Verify the survivors are still there
+    remaining = {s["theme"] for s in signals_store.list(limit=100)}
+    assert "stale untouched" not in remaining
+    assert "stale with up" in remaining
+    assert "stale promoted" in remaining
+    assert "fresh untouched" in remaining
+
+
+def test_signals_cleanup_threshold_bounds(client, auth):
+    """older_than_days must be 7-365."""
+    assert client.post("/api/v1/signals/cleanup?older_than_days=3", headers=auth).status_code == 422
+    assert client.post("/api/v1/signals/cleanup?older_than_days=1000", headers=auth).status_code == 422
+
+
+def test_signals_cleanup_requires_auth(client):
+    assert client.post("/api/v1/signals/cleanup").status_code == 401

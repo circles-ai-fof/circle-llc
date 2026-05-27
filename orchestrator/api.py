@@ -58,6 +58,7 @@ from .schemas.api import (
     ScanRunResponse,
     SignalFeedback,
     SignalItem,
+    SignalsCleanupResponse,
     SignalsListResponse,
     SourceCreate,
     SourceItem,
@@ -1155,12 +1156,39 @@ def scan_sources(body: ScanRunRequest, request: Request) -> ScanRunResponse:
     summary="List collected signals",
     tags=["hunter"],
 )
-def list_signals(request: Request, limit: int = 100, min_score: float = 0.0) -> SignalsListResponse:
+def list_signals(
+    request: Request,
+    limit: int = 100,
+    min_score: float = 0.0,
+    sort: str = "recent",
+    kind: str = "",
+) -> SignalsListResponse:
+    """
+    sort:
+      - "recent"    (default) — newest first by created_at
+      - "score"     — highest score first
+      - "trend"     — highest trend_score first (then score)
+      - "published" — most-recently-published-by-source first (NULLs last)
+    kind: filter by source_kind (rss/hn/reddit/url/youtube/...). Empty = all.
+    """
     _require_user(request)
     from .core.storage import signals_store, sources_store
     if limit < 1 or limit > 500:
         raise HTTPException(status_code=422, detail="limit must be 1-500")
+    if sort not in {"recent", "score", "trend", "published"}:
+        raise HTTPException(status_code=422, detail="sort must be one of: recent, score, trend, published")
     rows = signals_store.list(limit=limit, min_score=min_score)
+    # Filter by source_kind if requested
+    if kind:
+        rows = [r for r in rows if r.get("source_kind") == kind]
+    # Re-sort according to client preference (store returns recent-first by default)
+    if sort == "score":
+        rows.sort(key=lambda r: r.get("score", 0), reverse=True)
+    elif sort == "trend":
+        rows.sort(key=lambda r: (r.get("trend_score", 0), r.get("score", 0)), reverse=True)
+    elif sort == "published":
+        # NULLs last: rows without published_at get -inf sort key
+        rows.sort(key=lambda r: r.get("published_at") or -1, reverse=True)
     # Join source_name from sources table for nicer UI display
     source_names = {s["id"]: s["name"] for s in sources_store.list()}
     items: List[SignalItem] = []
@@ -1220,6 +1248,41 @@ def signal_feedback(signal_id: int, body: SignalFeedback, request: Request) -> D
     new_value: Optional[str] = body.feedback if body.feedback in ("up", "down") else None
     signals_store.set_feedback(signal_id, new_value)
     return {"signal_id": signal_id, "feedback": new_value}
+
+
+@app.post(
+    "/api/v1/signals/cleanup",
+    response_model=SignalsCleanupResponse,
+    summary="Remove stale signals (>N days, no feedback, not promoted)",
+    tags=["hunter"],
+)
+def signals_cleanup(request: Request, older_than_days: int = 30) -> SignalsCleanupResponse:
+    """
+    Purges signals older than `older_than_days` (default 30) that nobody
+    has touched (no thumbs up/down, no promotion). Signals with feedback
+    or a promoted_run_id are PRESERVED as audit history.
+
+    Bounded to 7-365 days to prevent accidental wipes.
+    """
+    _require_user(request)
+    if older_than_days < 7 or older_than_days > 365:
+        raise HTTPException(status_code=422, detail="older_than_days must be 7-365")
+    from .core.storage import signals_store
+    # Count how many old-but-kept (for transparency in the response)
+    import time
+    cutoff = int(time.time()) - older_than_days * 86_400
+    all_rows = signals_store.list(limit=10_000, min_score=0)
+    survivors = sum(
+        1 for r in all_rows
+        if r.get("created_at", 0) < cutoff
+        and (r.get("feedback") is not None or r.get("promoted_run_id") is not None)
+    )
+    deleted = signals_store.cleanup_stale(older_than_days=older_than_days)
+    return SignalsCleanupResponse(
+        deleted=deleted,
+        older_than_days=older_than_days,
+        survivors_kept_with_feedback=survivors,
+    )
 
 
 @app.post(
