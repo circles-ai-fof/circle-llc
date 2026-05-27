@@ -12,7 +12,8 @@ echo Root: %ROOT%
 echo.
 
 echo [1/3] Starting FastAPI backend on http://localhost:8000 ...
-start "circle-llc API" cmd /k "cd /d %ROOT% && python -m uvicorn orchestrator.api:app --host 127.0.0.1 --port 8000 --reload"
+REM --env-file loads .env automatically. ALLOWED_EMAILS, ANTHROPIC_API_KEY, etc.
+start "circle-llc API" cmd /k "cd /d %ROOT% && python -m uvicorn orchestrator.api:app --host 127.0.0.1 --port 8000 --reload --env-file .env"
 
 timeout /t 3 /nobreak >nul
 
