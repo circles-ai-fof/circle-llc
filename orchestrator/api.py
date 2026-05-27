@@ -1085,6 +1085,78 @@ def delete_source(source_id: int, request: Request) -> None:
     sources_store.delete(source_id)
 
 
+def _run_scan_internal(
+    source_ids: Optional[List[int]] = None,
+    auto_promote_threshold: float = 0.0,
+) -> Dict:
+    """Core scan logic — used by both the manual endpoint and the auto-scan loop.
+
+    Returns a dict with the same shape as ScanRunResponse fields.
+    Never raises — wraps each per-source error so one bad source doesn't kill
+    the rest of the batch (critical for the background loop).
+    """
+    from .core.source_fetcher import fetch_by_kind
+    from .core.storage import sources_store, signals_store
+    from .agents.source_scanner import SourceScannerAgent
+
+    if source_ids:
+        sources = [s for s in (sources_store.get(sid) for sid in source_ids) if s]
+    else:
+        sources = sources_store.list(active_only=True)
+
+    scanner = SourceScannerAgent(
+        mock_mode=_workflow._mock_mode,
+        client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+    )
+
+    items_fetched_total = 0
+    signals_created = 0
+    auto_promoted: List[str] = []
+
+    for src in sources:
+        try:
+            items = fetch_by_kind(src["kind"], src["target"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("scan: fetch failed for source %s (%s): %s", src["id"], src["kind"], exc)
+            sources_store.mark_scanned(src["id"])
+            continue
+        items_fetched_total += len(items)
+        if not items:
+            sources_store.mark_scanned(src["id"])
+            continue
+        try:
+            new_signals = scanner.scan(items)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("scan: scanner agent failed for source %s: %s", src["id"], exc)
+            sources_store.mark_scanned(src["id"])
+            continue
+        for sig in new_signals:
+            signal_id = signals_store.add(
+                source_id=src["id"], source_kind=sig.source_kind,
+                theme=sig.theme, score=sig.score, excerpt=sig.excerpt,
+                evidence_urls=sig.evidence_urls, suggested_topic=sig.suggested_topic,
+                published_at=sig.published_at,
+            )
+            signals_created += 1
+            if auto_promote_threshold > 0 and sig.score >= auto_promote_threshold:
+                try:
+                    run = _workflow.run(sig.suggested_topic or sig.theme)
+                    signals_store.mark_promoted(signal_id, str(run.run_id))
+                    auto_promoted.append(str(run.run_id))
+                    response = _serialize_run(run)
+                    _runs[response.run_id] = response
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("scan: auto-promote failed for signal %s: %s", signal_id, exc)
+        sources_store.mark_scanned(src["id"])
+
+    return {
+        "scanned_sources": len(sources),
+        "items_fetched": items_fetched_total,
+        "signals_created": signals_created,
+        "auto_promoted_runs": auto_promoted,
+    }
+
+
 @app.post(
     "/api/v1/sources/scan",
     response_model=ScanRunResponse,
@@ -1100,54 +1172,12 @@ def scan_sources(body: ScanRunRequest, request: Request) -> ScanRunResponse:
       4. Optionally auto-promote signals >= threshold by invoking idea_hunter
     """
     _require_user(request)
-    from .core.source_fetcher import fetch_by_kind
-    from .core.storage import sources_store, signals_store
-    from .agents.source_scanner import SourceScannerAgent
-
-    # Pick which sources to scan
-    if body.source_ids:
-        sources = [s for s in (sources_store.get(sid) for sid in body.source_ids) if s]
-    else:
-        sources = sources_store.list(active_only=True)
-
-    scanner = SourceScannerAgent(mock_mode=_workflow._mock_mode, client=None if _workflow._mock_mode else _workflow._idea_hunter._client)
-
-    items_fetched_total = 0
-    signals_created = 0
-    auto_promoted: List[str] = []
-
-    for src in sources:
-        items = fetch_by_kind(src["kind"], src["target"])
-        items_fetched_total += len(items)
-        if not items:
-            sources_store.mark_scanned(src["id"])
-            continue
-        new_signals = scanner.scan(items)
-        for sig in new_signals:
-            signal_id = signals_store.add(
-                source_id=src["id"], source_kind=sig.source_kind,
-                theme=sig.theme, score=sig.score, excerpt=sig.excerpt,
-                evidence_urls=sig.evidence_urls, suggested_topic=sig.suggested_topic,
-                published_at=sig.published_at,
-            )
-            signals_created += 1
-            # Auto-promote
-            if body.auto_promote_threshold > 0 and sig.score >= body.auto_promote_threshold:
-                # Build evidence context from the signal
-                ctx = f"Signal: {sig.theme}\n{sig.excerpt}\nEvidence URLs:\n" + "\n".join(sig.evidence_urls)
-                run = _workflow.run(sig.suggested_topic or sig.theme)
-                signals_store.mark_promoted(signal_id, str(run.run_id))
-                auto_promoted.append(str(run.run_id))
-                response = _serialize_run(run)
-                _runs[response.run_id] = response
-        sources_store.mark_scanned(src["id"])
-
-    return ScanRunResponse(
-        scanned_sources=len(sources),
-        items_fetched=items_fetched_total,
-        signals_created=signals_created,
-        auto_promoted_runs=auto_promoted,
+    result = _run_scan_internal(
+        source_ids=body.source_ids,
+        auto_promote_threshold=body.auto_promote_threshold,
     )
+
+    return ScanRunResponse(**result)
 
 
 @app.get(
@@ -1619,6 +1649,101 @@ def pipeline(request: Request) -> PipelineResponse:
             for phase, label in columns_def
         ],
     )
+
+
+# ---------------------------------------------------------------------------
+# Auto-scan background loop (ADR-014 follow-up)
+#
+# Opt-in via env: AUTOSCAN_INTERVAL_MINUTES=360  (6 hours; 0 = disabled, default)
+# Bounded: minimum 15 minutes to prevent rate-limit hell against upstream sources.
+# Never runs in pytest (`PYTEST_CURRENT_TEST` env is set by pytest automatically).
+# ---------------------------------------------------------------------------
+
+import asyncio as _asyncio
+
+_autoscan_task = None  # type: ignore[assignment]
+_autoscan_state = {
+    "enabled": False,
+    "interval_minutes": 0,
+    "last_run_at": None,
+    "last_run_signals_created": 0,
+    "last_run_error": None,
+    "runs_completed": 0,
+}
+
+
+async def _autoscan_loop() -> None:
+    """Background coroutine: sleep + scan active sources, forever.
+
+    Sleeps FIRST so import-time and tests don't hammer upstream feeds.
+    Each iteration is wrapped in a try/except — a failure logs and continues.
+    """
+    interval_min = _autoscan_state["interval_minutes"]
+    interval_sec = max(15 * 60, interval_min * 60)
+    logger.info("autoscan: loop started, interval=%d min", interval_min)
+    while True:
+        try:
+            await _asyncio.sleep(interval_sec)
+            result = await _asyncio.to_thread(_run_scan_internal, None, 0.0)
+            _autoscan_state["last_run_at"] = int(time.time())
+            _autoscan_state["last_run_signals_created"] = result["signals_created"]
+            _autoscan_state["last_run_error"] = None
+            _autoscan_state["runs_completed"] += 1
+            logger.info(
+                "autoscan: completed run #%d, signals_created=%d",
+                _autoscan_state["runs_completed"],
+                result["signals_created"],
+            )
+        except _asyncio.CancelledError:
+            logger.info("autoscan: loop cancelled (shutdown)")
+            raise
+        except Exception as exc:  # noqa: BLE001
+            _autoscan_state["last_run_error"] = str(exc)[:200]
+            logger.warning("autoscan: iteration failed: %s", exc)
+
+
+@app.on_event("startup")
+async def _autoscan_startup() -> None:
+    global _autoscan_task
+    # Disabled in tests by default
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return
+    try:
+        interval = int(os.getenv("AUTOSCAN_INTERVAL_MINUTES", "0"))
+    except ValueError:
+        interval = 0
+    if interval <= 0:
+        logger.info("autoscan: disabled (AUTOSCAN_INTERVAL_MINUTES=0)")
+        return
+    if interval < 15:
+        logger.warning("autoscan: interval %d min clamped to 15 (rate-limit safety)", interval)
+        interval = 15
+    _autoscan_state["enabled"] = True
+    _autoscan_state["interval_minutes"] = interval
+    _autoscan_task = _asyncio.create_task(_autoscan_loop())
+
+
+@app.on_event("shutdown")
+async def _autoscan_shutdown() -> None:
+    global _autoscan_task
+    if _autoscan_task is None:
+        return
+    _autoscan_task.cancel()
+    try:
+        await _autoscan_task
+    except (_asyncio.CancelledError, Exception):  # noqa: BLE001
+        pass
+    _autoscan_task = None
+
+
+@app.get(
+    "/api/v1/autoscan/status",
+    summary="Status of the background auto-scan loop (R28 / ADR-014)",
+    tags=["hunter", "meta"],
+)
+def autoscan_status(request: Request) -> Dict:
+    _require_user(request)
+    return dict(_autoscan_state)
 
 
 # ---------------------------------------------------------------------------

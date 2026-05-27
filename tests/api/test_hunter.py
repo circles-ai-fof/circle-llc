@@ -448,3 +448,55 @@ def test_signals_cleanup_threshold_bounds(client, auth):
 
 def test_signals_cleanup_requires_auth(client):
     assert client.post("/api/v1/signals/cleanup").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Autoscan loop status + resilience of _run_scan_internal
+# ---------------------------------------------------------------------------
+
+
+def test_autoscan_status_endpoint_default_disabled(client, auth):
+    """In test env autoscan startup is skipped — endpoint reports disabled."""
+    r = client.get("/api/v1/autoscan/status", headers=auth)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["enabled"] is False
+    assert body["interval_minutes"] == 0
+    assert body["runs_completed"] == 0
+
+
+def test_autoscan_status_requires_auth(client):
+    assert client.get("/api/v1/autoscan/status").status_code == 401
+
+
+def test_run_scan_internal_swallows_fetch_errors(client, auth):
+    """A misbehaving fetcher must not crash the scan — the loop relies on this."""
+    from unittest.mock import patch
+    # Add one source so _run_scan_internal has something to iterate
+    add = client.post(
+        "/api/v1/sources", headers=auth,
+        json={"kind": "rss", "target": "https://x.test/feed", "name": "Broken Feed"},
+    )
+    assert add.status_code == 201
+
+    # Locate the live api module via the route function (resilient to sys.modules swaps)
+    api_mod = None
+    for route in app.routes:
+        ep = getattr(route, "endpoint", None)
+        if ep is not None and getattr(ep, "__name__", "") == "scan_sources":
+            api_mod = __import__(ep.__module__, fromlist=["_run_scan_internal"])
+            break
+    assert api_mod is not None
+
+    def _boom(*args, **kw):
+        raise RuntimeError("upstream is down")
+
+    with patch.object(api_mod, "_workflow", api_mod._workflow):
+        # Patch fetch_by_kind so the scan hits the failure branch
+        with patch("orchestrator.core.source_fetcher.fetch_by_kind", side_effect=_boom):
+            result = api_mod._run_scan_internal()
+
+    # Did NOT raise. Scanned the source but produced 0 signals.
+    assert result["scanned_sources"] == 1
+    assert result["signals_created"] == 0
+    assert result["items_fetched"] == 0
