@@ -557,6 +557,115 @@ def test_cleanup_mocks_requires_auth(client):
     assert client.post("/api/v1/signals/cleanup-mocks").status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# M3.6 — GET single signal + batch analyze + item_titles
+# ---------------------------------------------------------------------------
+
+
+def test_get_single_signal_by_id(client, auth):
+    from orchestrator.core.storage import signals_store, sources_store
+    sid = sources_store.add("rss", "https://x.test/feed", "Mi Feed")
+    signal_id = signals_store.add(
+        sid, "rss", "Tema X", 0.7, "ex", ["https://x.test/a", "https://x.test/b"],
+        "topic",
+        item_titles=["Título A", "Título B"],
+    )
+
+    r = client.get(f"/api/v1/signals/{signal_id}", headers=auth)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == signal_id
+    assert body["theme"] == "Tema X"
+    assert body["source_name"] == "Mi Feed"
+    assert body["item_titles"] == ["Título A", "Título B"]
+    assert body["evidence_urls"] == ["https://x.test/a", "https://x.test/b"]
+
+
+def test_get_signal_404_for_unknown(client, auth):
+    assert client.get("/api/v1/signals/99999", headers=auth).status_code == 404
+
+
+def test_get_signal_requires_auth(client):
+    assert client.get("/api/v1/signals/1").status_code == 401
+
+
+def test_analyze_batch_with_explicit_ids(client, auth):
+    """Batch analyze: pass signal_ids explicitly."""
+    from orchestrator.core.storage import signals_store
+    s1 = signals_store.add(None, "rss", "Tema A LATAM", 0.7, "ex", [], "topic A")
+    s2 = signals_store.add(None, "hn", "Tema B LATAM", 0.6, "ex", [], "topic B")
+
+    r = client.post(
+        "/api/v1/signals/analyze-batch",
+        headers=auth,
+        json={"signal_ids": [s1, s2]},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["analyzed"] == 2
+    assert body["errors"] == 0
+    assert set(body["signal_ids_analyzed"]) == {s1, s2}
+
+    # Verify analysis was persisted
+    r1 = client.get(f"/api/v1/signals/{s1}", headers=auth).json()
+    assert r1["analysis"] is not None
+
+
+def test_analyze_batch_skips_already_analyzed(client, auth):
+    from orchestrator.core.storage import signals_store
+    sid = signals_store.add(None, "rss", "Ya analizada", 0.7, "ex", [], "topic")
+    # Pre-analyze
+    client.post(f"/api/v1/signals/{sid}/analyze", headers=auth)
+
+    r = client.post(
+        "/api/v1/signals/analyze-batch",
+        headers=auth,
+        json={"signal_ids": [sid], "skip_already_analyzed": True},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["analyzed"] == 0
+    assert body["skipped_already_analyzed"] == 1
+
+
+def test_analyze_batch_auto_pick_by_top_n(client, auth):
+    """Without signal_ids, picks top_n highest-trend signals to analyze."""
+    from orchestrator.core.storage import signals_store
+    # Create 5 signals — top_n=3 should analyze the 3 highest scored
+    for i in range(5):
+        signals_store.add(None, "rss", f"Tema {i}", 0.5 + i * 0.05, "ex", [], f"topic {i}")
+
+    r = client.post(
+        "/api/v1/signals/analyze-batch",
+        headers=auth,
+        json={"top_n": 3, "min_trend": 0},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["analyzed"] == 3
+    assert body["errors"] == 0
+
+
+def test_analyze_batch_requires_auth(client):
+    assert client.post("/api/v1/signals/analyze-batch", json={}).status_code == 401
+
+
+def test_scan_request_accepts_auto_analyze_threshold(client, auth):
+    """auto_analyze_trend_threshold is bounded 0-10 by schema."""
+    r = client.post(
+        "/api/v1/sources/scan",
+        headers=auth,
+        json={"auto_analyze_trend_threshold": 100},
+    )
+    assert r.status_code == 422  # too high
+    r2 = client.post(
+        "/api/v1/sources/scan",
+        headers=auth,
+        json={"auto_analyze_trend_threshold": 3},
+    )
+    assert r2.status_code == 200  # valid, even with no sources
+
+
 def test_list_promoted_signals_returns_only_promoted(client, auth):
     """GET /api/v1/signals/promoted lists only signals with a promoted_run_id,
     newest first, with source_name joined."""

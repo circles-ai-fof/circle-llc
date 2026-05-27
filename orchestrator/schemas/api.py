@@ -302,6 +302,7 @@ class SignalItem(BaseModel):
     trend_score: float = 0
     published_at: Optional[int] = None  # original publication ts of the source content
     analysis: Optional[Dict] = None  # IdeaAnalyzer output (M3.5), null until "Analizar" clicked
+    item_titles: List[str] = Field(default_factory=list)  # Parallel to evidence_urls (M3.6)
     created_at: int
 
 
@@ -346,9 +347,27 @@ class AnalyzeSignalResponse(BaseModel):
     cost_usd_estimated: float = Field(description="LLM cost for this analyze call")
 
 
+class AnalyzeSignalsBatchRequest(BaseModel):
+    """Pick which signals to analyze. Either explicit IDs, OR auto-pick top N
+    not-yet-analyzed signals with at least min_trend trend_score."""
+    signal_ids: Optional[List[int]] = Field(default=None, max_length=50)
+    top_n: int = Field(default=10, ge=1, le=50, description="Auto-pick: how many to analyze")
+    min_trend: int = Field(default=0, ge=0, le=10, description="Auto-pick: minimum trend_score")
+    skip_already_analyzed: bool = Field(default=True, description="Skip signals that already have analysis")
+
+
+class AnalyzeSignalsBatchResponse(BaseModel):
+    analyzed: int
+    skipped_already_analyzed: int
+    errors: int
+    cost_usd_estimated: float
+    signal_ids_analyzed: List[int]
+
+
 class ScanRunRequest(BaseModel):
     source_ids: Optional[List[int]] = Field(default=None, description="If omitted: scan all active sources")
     auto_promote_threshold: float = Field(default=0.0, ge=0.0, le=1.0, description="Auto-promote signals with score >= this (0 disables)")
+    auto_analyze_trend_threshold: int = Field(default=0, ge=0, le=10, description="Auto-analyze signals whose trend_score >= this (0 disables)")
 
 
 class ScanRunResponse(BaseModel):
@@ -356,6 +375,10 @@ class ScanRunResponse(BaseModel):
     items_fetched: int
     signals_created: int
     auto_promoted_runs: List[str]
+    signals_auto_analyzed: int = Field(
+        default=0,
+        description="Signals auto-enriched by IdeaAnalyzer during this scan (only when AUTO_ANALYZE_TREND_THRESHOLD>0)",
+    )
 
 
 class RunFromSourcesRequest(BaseModel):

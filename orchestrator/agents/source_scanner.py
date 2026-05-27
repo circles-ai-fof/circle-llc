@@ -77,6 +77,9 @@ class Signal:
     source_kind: str = ""  # filled by caller
     items_seen: int = 0    # how many items were in the batch when this signal emerged
     published_at: Optional[int] = None  # earliest published_at among evidence items
+    # Titles for each evidence URL (parallel to evidence_urls).
+    # Used by the dashboard to show meaningful hovercards instead of bare hostnames.
+    item_titles: List[str] = field(default_factory=list)
 
 
 class SourceScannerAgent(BaseAgent):
@@ -168,6 +171,7 @@ class SourceScannerAgent(BaseAgent):
                     source_kind=it.source_kind,
                     items_seen=1,
                     published_at=it.published_at,
+                    item_titles=[it.title or ""],
                 )
             ]
         items = non_empty
@@ -186,5 +190,6 @@ class SourceScannerAgent(BaseAgent):
                 source_kind=first.source_kind,
                 items_seen=len(items),
                 published_at=published_at,
+                item_titles=[it.title or "" for it in items[:3]],
             )
         ]

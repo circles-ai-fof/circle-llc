@@ -57,6 +57,8 @@ from .schemas.api import (
     ScanRunRequest,
     ScanRunResponse,
     AnalyzeSignalResponse,
+    AnalyzeSignalsBatchRequest,
+    AnalyzeSignalsBatchResponse,
     SignalAnalysisItem,
     SignalFeedback,
     SignalItem,
@@ -1091,16 +1093,21 @@ def delete_source(source_id: int, request: Request) -> None:
 def _run_scan_internal(
     source_ids: Optional[List[int]] = None,
     auto_promote_threshold: float = 0.0,
+    auto_analyze_trend_threshold: int = 0,
 ) -> Dict:
     """Core scan logic — used by both the manual endpoint and the auto-scan loop.
 
-    Returns a dict with the same shape as ScanRunResponse fields.
+    Returns a dict with the same shape as ScanRunResponse fields, plus
+    `signals_auto_analyzed` (count of signals enriched in-line by IdeaAnalyzer
+    because their trend_score met `auto_analyze_trend_threshold`).
+
     Never raises — wraps each per-source error so one bad source doesn't kill
     the rest of the batch (critical for the background loop).
     """
     from .core.source_fetcher import fetch_by_kind
     from .core.storage import sources_store, signals_store
     from .agents.source_scanner import SourceScannerAgent
+    from .agents.idea_analyzer import IdeaAnalyzerAgent
 
     if source_ids:
         sources = [s for s in (sources_store.get(sid) for sid in source_ids) if s]
@@ -1115,6 +1122,15 @@ def _run_scan_internal(
     items_fetched_total = 0
     signals_created = 0
     auto_promoted: List[str] = []
+    auto_analyzed = 0
+
+    # Build the analyzer once if we'll need it
+    analyzer = None
+    if auto_analyze_trend_threshold > 0:
+        analyzer = IdeaAnalyzerAgent(
+            mock_mode=_workflow._mock_mode,
+            client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+        )
 
     for src in sources:
         try:
@@ -1139,8 +1155,27 @@ def _run_scan_internal(
                 theme=sig.theme, score=sig.score, excerpt=sig.excerpt,
                 evidence_urls=sig.evidence_urls, suggested_topic=sig.suggested_topic,
                 published_at=sig.published_at,
+                item_titles=getattr(sig, "item_titles", None),
             )
             signals_created += 1
+            # Auto-analyze if trend score is interesting enough
+            if analyzer is not None:
+                # Re-fetch signal to get the computed trend_score
+                fresh = signals_store.get(signal_id)
+                if fresh and (fresh.get("trend_score") or 0) >= auto_analyze_trend_threshold:
+                    try:
+                        result = analyzer.analyze(
+                            theme=sig.theme,
+                            excerpt=sig.excerpt,
+                            suggested_topic=sig.suggested_topic,
+                            evidence_urls=sig.evidence_urls,
+                            source_kind=sig.source_kind,
+                            source_name=src.get("name", ""),
+                        )
+                        signals_store.set_analysis(signal_id, result.to_dict())
+                        auto_analyzed += 1
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("scan: auto-analyze failed for signal %s: %s", signal_id, exc)
             if auto_promote_threshold > 0 and sig.score >= auto_promote_threshold:
                 try:
                     run = _workflow.run(sig.suggested_topic or sig.theme)
@@ -1157,6 +1192,7 @@ def _run_scan_internal(
         "items_fetched": items_fetched_total,
         "signals_created": signals_created,
         "auto_promoted_runs": auto_promoted,
+        "signals_auto_analyzed": auto_analyzed,
     }
 
 
@@ -1178,6 +1214,7 @@ def scan_sources(body: ScanRunRequest, request: Request) -> ScanRunResponse:
     result = _run_scan_internal(
         source_ids=body.source_ids,
         auto_promote_threshold=body.auto_promote_threshold,
+        auto_analyze_trend_threshold=body.auto_analyze_trend_threshold,
     )
 
     return ScanRunResponse(**result)
@@ -1400,6 +1437,101 @@ def analyze_signal(signal_id: int, request: Request) -> AnalyzeSignalResponse:
         signal_id=signal_id,
         analysis=SignalAnalysisItem(**analysis.to_dict()),
         cost_usd_estimated=0.0 if _workflow._mock_mode else 0.005,
+    )
+
+
+@app.get(
+    "/api/v1/signals/{signal_id}",
+    response_model=SignalItem,
+    summary="Get a single signal by id (for the detail page)",
+    tags=["hunter"],
+)
+def get_signal(signal_id: int, request: Request) -> SignalItem:
+    _require_user(request)
+    from .core.storage import signals_store, sources_store
+    sig = signals_store.get(signal_id)
+    if not sig:
+        raise HTTPException(status_code=404, detail="signal not found")
+    if sig.get("source_id"):
+        source = sources_store.get(sig["source_id"])
+        sig["source_name"] = source["name"] if source else None
+    else:
+        sig["source_name"] = None
+    return SignalItem(**sig)
+
+
+@app.post(
+    "/api/v1/signals/analyze-batch",
+    response_model=AnalyzeSignalsBatchResponse,
+    summary="Analyze multiple signals at once (cost: ~$0.005 each)",
+    tags=["hunter"],
+)
+def analyze_signals_batch(
+    body: AnalyzeSignalsBatchRequest, request: Request
+) -> AnalyzeSignalsBatchResponse:
+    """Run IdeaAnalyzer on a batch of signals — either explicit IDs (max 50)
+    or auto-pick top_n not-yet-analyzed signals with trend_score >= min_trend.
+
+    Each signal costs ~$0.005 in mock or live mode (Haiku-tier). Returns a
+    summary so the founder can budget.
+    """
+    _require_user(request)
+    from .core.storage import signals_store, sources_store
+    from .agents.idea_analyzer import IdeaAnalyzerAgent
+
+    # Resolve which signals to analyze
+    if body.signal_ids:
+        candidates = [signals_store.get(sid) for sid in body.signal_ids]
+        candidates = [s for s in candidates if s]
+    else:
+        # Auto-pick: top_n highest-trend signals matching criteria
+        all_signals = signals_store.list(limit=500, min_score=0)
+        candidates = [
+            s for s in all_signals
+            if (s.get("trend_score") or 0) >= body.min_trend
+        ]
+        candidates.sort(
+            key=lambda s: (s.get("trend_score", 0), s.get("score", 0)),
+            reverse=True,
+        )
+        candidates = candidates[: body.top_n]
+
+    source_names = {s["id"]: s["name"] for s in sources_store.list()}
+
+    analyzer = IdeaAnalyzerAgent(
+        mock_mode=_workflow._mock_mode,
+        client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+    )
+
+    analyzed_ids: List[int] = []
+    skipped = 0
+    errors = 0
+    for sig in candidates:
+        if body.skip_already_analyzed and sig.get("analysis") is not None:
+            skipped += 1
+            continue
+        try:
+            result = analyzer.analyze(
+                theme=sig["theme"],
+                excerpt=sig["excerpt"],
+                suggested_topic=sig["suggested_topic"],
+                evidence_urls=sig.get("evidence_urls", []),
+                source_kind=sig.get("source_kind", ""),
+                source_name=source_names.get(sig.get("source_id")) or "",
+            )
+            signals_store.set_analysis(sig["id"], result.to_dict())
+            analyzed_ids.append(sig["id"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("analyze-batch failed on signal %s: %s", sig["id"], exc)
+            errors += 1
+
+    cost_per = 0.0 if _workflow._mock_mode else 0.005
+    return AnalyzeSignalsBatchResponse(
+        analyzed=len(analyzed_ids),
+        skipped_already_analyzed=skipped,
+        errors=errors,
+        cost_usd_estimated=cost_per * len(analyzed_ids),
+        signal_ids_analyzed=analyzed_ids,
     )
 
 
@@ -1772,7 +1904,13 @@ async def _autoscan_loop() -> None:
     while True:
         try:
             await _asyncio.sleep(interval_sec)
-            result = await _asyncio.to_thread(_run_scan_internal, None, 0.0)
+            # Read auto-analyze threshold on each iteration so the env can be
+            # updated without a restart (Railway live-reload semantics).
+            try:
+                auto_an_thr = int(os.getenv("AUTO_ANALYZE_TREND_THRESHOLD", "0"))
+            except ValueError:
+                auto_an_thr = 0
+            result = await _asyncio.to_thread(_run_scan_internal, None, 0.0, auto_an_thr)
             _autoscan_state["last_run_at"] = int(time.time())
             _autoscan_state["last_run_signals_created"] = result["signals_created"]
             _autoscan_state["last_run_error"] = None

@@ -29,6 +29,7 @@ type Signal = {
   trend_score: number;
   published_at: number | null;
   analysis: SignalAnalysis | null;
+  item_titles: string[];
   created_at: number;
 };
 
@@ -65,6 +66,7 @@ export default function SenalesPage() {
   const [minTrend, setMinTrend] = useState<number>(0);
   const [analyzing, setAnalyzing] = useState<Set<number>>(new Set());
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [batchAnalyzing, setBatchAnalyzing] = useState<boolean>(false);
 
   // Detect mock mode (backend running without ANTHROPIC_API_KEY) so we can
   // warn the founder that ideas are placeholders, not real LLM output.
@@ -181,6 +183,42 @@ export default function SenalesPage() {
         next.delete(id);
         return next;
       });
+    }
+  };
+
+  const analyzeBatch = async () => {
+    // Analyze top 10 not-yet-analyzed signals among the visible ones
+    const candidateIds = visibleSignals
+      .filter((s) => !s.analysis)
+      .slice(0, 10)
+      .map((s) => s.id);
+    if (candidateIds.length === 0) {
+      alert("No hay señales pendientes de análisis en la vista actual.");
+      return;
+    }
+    if (
+      !confirm(
+        `¿Analizar ${candidateIds.length} señales con IdeaAnalyzer? Costo estimado: ~$${(candidateIds.length * 0.005).toFixed(3)}.`
+      )
+    )
+      return;
+    setBatchAnalyzing(true);
+    try {
+      const r = await authFetch("/api/v1/signals/analyze-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signal_ids: candidateIds }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      alert(
+        `✓ Analizadas: ${data.analyzed}\nSaltadas (ya analizadas): ${data.skipped_already_analyzed}\nErrores: ${data.errors}\nCosto: $${data.cost_usd_estimated.toFixed(4)}`
+      );
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBatchAnalyzing(false);
     }
   };
 
@@ -396,7 +434,24 @@ export default function SenalesPage() {
             border: "1px solid #1e293b", borderRadius: 6, padding: "4px 8px", fontSize: 12,
           }}
         />
-        <span style={{ marginLeft: "auto", color: "#64748b", fontSize: 11, fontFamily: "monospace" }}>
+        <button
+          onClick={analyzeBatch}
+          disabled={batchAnalyzing}
+          title="Analiza las primeras 10 señales visibles que aún no tienen análisis. ~$0.005 por señal."
+          style={{
+            marginLeft: "auto",
+            padding: "6px 14px",
+            background: "transparent",
+            color: batchAnalyzing ? "#64748b" : "#A78BFA",
+            border: `1px solid ${batchAnalyzing ? "#1e293b" : "#A78BFA"}`,
+            borderRadius: 6,
+            fontSize: 12,
+            cursor: batchAnalyzing ? "wait" : "pointer",
+          }}
+        >
+          {batchAnalyzing ? "Analizando batch…" : "🤖 Analizar top 10"}
+        </button>
+        <span style={{ color: "#64748b", fontSize: 11, fontFamily: "monospace" }}>
           {visibleSignals.length}/{signals.length} señales
         </span>
       </section>
@@ -655,23 +710,46 @@ function SignalCard({
           )}
           {signal.evidence_urls.length > 0 && (
             <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {signal.evidence_urls.map((u, i) => (
-                <a
-                  key={i}
-                  href={u}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    color: "#00D4FF", fontSize: 11, padding: "2px 8px",
-                    background: "rgba(0,212,255,0.05)", borderRadius: 4,
-                    textDecoration: "none", fontFamily: "monospace",
-                  }}
-                >
-                  {new URL(u).hostname}
-                </a>
-              ))}
+              {signal.evidence_urls.map((u, i) => {
+                const title = signal.item_titles?.[i] || "";
+                let host = u;
+                try {
+                  host = new URL(u).hostname;
+                } catch {
+                  /* keep raw */
+                }
+                return (
+                  <a
+                    key={i}
+                    href={u}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={title ? `${title}\n${u}` : u}
+                    style={{
+                      color: "#00D4FF", fontSize: 11, padding: "2px 8px",
+                      background: "rgba(0,212,255,0.05)", borderRadius: 4,
+                      textDecoration: "none", fontFamily: "monospace",
+                      maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {title ? `📄 ${title.slice(0, 50)}${title.length > 50 ? "…" : ""}` : host}
+                  </a>
+                );
+              })}
             </div>
           )}
+          <div style={{ marginTop: 10 }}>
+            <a
+              href={`/cazar/senales/${signal.id}`}
+              style={{
+                color: "#94a3b8", fontSize: 11, textDecoration: "none",
+                borderBottom: "1px dashed #1e293b", paddingBottom: 1,
+              }}
+            >
+              Ver detalle completo →
+            </a>
+          </div>
         </div>
         {/* Actions */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 100 }}>

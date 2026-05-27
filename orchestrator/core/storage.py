@@ -178,6 +178,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
             logger.info("storage: migrated signals.analysis_json column")
         except sqlite3.OperationalError as e:
             logger.warning("storage: migration analysis_json failed: %s", e)
+    # M3.6: parallel array of titles for each evidence URL (for nicer hovercards)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
+    if "item_titles_json" not in cols:
+        try:
+            conn.execute("ALTER TABLE signals ADD COLUMN item_titles_json TEXT")
+            logger.info("storage: migrated signals.item_titles_json column")
+        except sqlite3.OperationalError as e:
+            logger.warning("storage: migration item_titles_json failed: %s", e)
 
 
 @contextmanager
@@ -605,19 +613,21 @@ class SignalsStore:
         evidence_urls: List[str],
         suggested_topic: str,
         published_at: Optional[int] = None,
+        item_titles: Optional[List[str]] = None,
     ) -> int:
         _ensure_init()
         ts = int(time.time())
         ev_json = json.dumps(evidence_urls, ensure_ascii=False)
+        titles_json = json.dumps(item_titles or [], ensure_ascii=False)
         # Compute trend_score: +1 per other signal with similar theme in last 7 days
         trend = self._compute_trend_score(theme, ts)
         if _db_path:
             with _conn() as c:
                 cur = c.execute(
                     "INSERT INTO signals(source_id,source_kind,theme,score,excerpt,"
-                    "evidence_json,suggested_topic,trend_score,published_at,created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic, trend, published_at, ts),
+                    "evidence_json,suggested_topic,trend_score,published_at,item_titles_json,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic, trend, published_at, titles_json, ts),
                 )
                 return int(cur.lastrowid)
         new_id = max([s["id"] for s in _memory_signals], default=0) + 1
@@ -626,7 +636,8 @@ class SignalsStore:
             "theme": theme, "score": score, "excerpt": excerpt,
             "evidence_json": ev_json, "suggested_topic": suggested_topic,
             "feedback": None, "promoted_run_id": None,
-            "trend_score": trend, "published_at": published_at, "created_at": ts,
+            "trend_score": trend, "published_at": published_at,
+            "item_titles_json": titles_json, "created_at": ts,
         })
         return new_id
 
@@ -663,7 +674,7 @@ class SignalsStore:
             with _conn() as c:
                 rows = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,created_at "
                     "FROM signals WHERE score>=? "
                     "ORDER BY trend_score DESC, score DESC, created_at DESC LIMIT ?",
                     (min_score, limit),
@@ -683,7 +694,7 @@ class SignalsStore:
             with _conn() as c:
                 row = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,created_at "
                     "FROM signals WHERE id=?", (signal_id,),
                 ).fetchone()
                 return _signal_row_to_dict(dict(row)) if row else None
@@ -704,7 +715,7 @@ class SignalsStore:
             with _conn() as c:
                 rows = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,created_at "
                     "FROM signals WHERE promoted_run_id IS NOT NULL "
                     "ORDER BY created_at DESC LIMIT ?",
                     (limit,),
@@ -899,6 +910,15 @@ def _signal_row_to_dict(row: Dict) -> Dict:
             row["analysis"] = None
     else:
         row["analysis"] = None
+    # Parse item_titles_json — parallel to evidence_urls (M3.6)
+    raw_titles = row.pop("item_titles_json", None)
+    if raw_titles:
+        try:
+            row["item_titles"] = json.loads(raw_titles)
+        except Exception:  # noqa: BLE001
+            row["item_titles"] = []
+    else:
+        row["item_titles"] = []
     # Ensure trend_score + published_at are always present (legacy rows may lack)
     row.setdefault("trend_score", 0)
     row.setdefault("published_at", None)
