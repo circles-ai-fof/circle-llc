@@ -216,3 +216,141 @@ def test_signals_listed_with_trend_score(client, auth):
     assert items
     assert "trend_score" in items[0]
     assert items[0]["trend_score"] == 0  # first signal -> no prior signals
+
+
+# ---------------------------------------------------------------------------
+# M3.2 follow-up — published_at + source_name + prompt potenciado (ADR-014)
+# ---------------------------------------------------------------------------
+
+
+def test_signals_include_published_at_and_source_name(client, auth):
+    """list_signals must surface published_at + source_name (joined from sources)."""
+    from orchestrator.core.storage import signals_store, sources_store
+
+    sid = sources_store.add("rss", "https://startupeable.test/feed", "Startupeable LATAM")
+    pub_ts = 1_700_000_000  # arbitrary fixed unix ts
+    signals_store.add(
+        sid, "rss", "Theme con fecha", 0.75, "excerpt",
+        ["https://x.test/a"], "topic potencial", published_at=pub_ts,
+    )
+    # And one without source/published_at, to confirm Optional handling.
+    signals_store.add(None, "hn", "Theme sin fuente", 0.6, "ex2", [], "topic 2")
+
+    r = client.get("/api/v1/signals", headers=auth)
+    assert r.status_code == 200
+    items = r.json()["items"]
+    by_theme = {it["theme"]: it for it in items}
+
+    with_source = by_theme["Theme con fecha"]
+    assert with_source["source_name"] == "Startupeable LATAM"
+    assert with_source["published_at"] == pub_ts
+
+    without_source = by_theme["Theme sin fuente"]
+    assert without_source["source_name"] is None
+    assert without_source["published_at"] is None
+
+
+def test_parse_rfc822_or_iso_handles_common_formats():
+    """RFC 822 (RSS pubDate) and ISO 8601 (Atom updated) both parse to unix ts."""
+    from orchestrator.core.source_fetcher import _parse_rfc822_or_iso
+
+    # RFC 822 — RSS pubDate
+    rfc = _parse_rfc822_or_iso("Wed, 27 May 2026 14:30:00 +0000")
+    assert rfc is not None and rfc > 1_700_000_000
+
+    # ISO 8601 with Z suffix — Atom updated
+    iso = _parse_rfc822_or_iso("2026-05-27T14:30:00Z")
+    assert iso is not None and iso > 1_700_000_000
+
+    # ISO 8601 with explicit offset
+    iso2 = _parse_rfc822_or_iso("2026-05-27T09:30:00-05:00")
+    assert iso2 is not None
+
+    # Same UTC instant — RFC and ISO should align (±2s tolerance for ts precision)
+    assert abs(rfc - iso) <= 2
+    assert abs(rfc - iso2) <= 2
+
+    # Garbage / empty inputs return None gracefully (never raise)
+    assert _parse_rfc822_or_iso("") is None
+    assert _parse_rfc822_or_iso("not a date") is None
+    assert _parse_rfc822_or_iso("   ") is None
+
+
+def test_run_from_sources_with_signal_id_injects_potentiated_prompt(client, auth):
+    """Promoting a signal must inject a '=== SEÑAL DEL CAZADOR ===' block as
+    evidence_context to idea_hunter — that's what makes the prompt 'potenciado'."""
+    from orchestrator.core.storage import signals_store, sources_store
+
+    sid = sources_store.add("rss", "https://startupeable.test/feed", "Startupeable LATAM")
+    pub_ts = 1_700_000_000
+    signal_id = signals_store.add(
+        sid, "rss",
+        "Lanzan plataforma B2B de gestión de inventarios",
+        0.82, "Resumen del item con contexto rico",
+        [],  # no evidence URLs — we don't want network fetches in the test
+        "marketplace b2b inventarios latam",
+        published_at=pub_ts,
+    )
+
+    # Spy on idea_hunter.generate to capture the evidence_context kwarg.
+    # NOTE: test_api.py and test_observability.py delete orchestrator.* from
+    # sys.modules, so `from orchestrator.api import _workflow` would return a
+    # different singleton than the one this TestClient's `app` was wired to.
+    # Resolve the workflow via the route function's own __globals__ — that's
+    # the dict the running endpoint actually consults.
+    route_workflow = None
+    for route in app.routes:
+        ep = getattr(route, "endpoint", None)
+        if ep is not None and getattr(ep, "__name__", "") == "run_gate_from_sources":
+            route_workflow = ep.__globals__["_workflow"]
+            break
+    assert route_workflow is not None, "could not locate live _workflow for endpoint"
+
+    captured: dict = {}
+    workflow = route_workflow
+    original_generate = workflow._idea_hunter.generate
+
+    def _spy(topic, feedback=None, evidence_context=None, **kw):
+        captured["topic"] = topic
+        captured["evidence_context"] = evidence_context
+        return original_generate(topic, feedback=feedback, evidence_context=evidence_context, **kw)
+
+    workflow._idea_hunter.generate = _spy  # type: ignore
+    try:
+        r = client.post(
+            "/api/v1/gate/run-from-sources",
+            headers=auth,
+            json={"signal_id": signal_id},
+        )
+    finally:
+        workflow._idea_hunter.generate = original_generate  # restore
+
+    assert r.status_code == 201, r.text
+
+    # Topic should carry the signal context, not just the raw theme.
+    assert "Startupeable LATAM" in captured["topic"]
+
+    # Evidence context must contain the structured "SEÑAL DEL CAZADOR" block
+    # with all the fields the founder cares about.
+    ec = captured["evidence_context"] or ""
+    assert "=== SEÑAL DEL CAZADOR ===" in ec
+    assert "Startupeable LATAM" in ec  # source name
+    assert "rss" in ec  # source kind
+    assert "0.82" in ec  # detection score
+    assert "Lanzan plataforma B2B de gestión de inventarios" in ec  # theme
+    assert "Resumen del item con contexto rico" in ec  # excerpt
+
+    # And the signal must be marked as promoted afterwards
+    sig_after = signals_store.get(signal_id)
+    assert sig_after is not None
+    assert sig_after["promoted_run_id"] == r.json()["run_id"]
+
+
+def test_run_from_sources_signal_id_unknown_returns_404(client, auth):
+    """Promoting a non-existent signal_id must 404, not 500."""
+    r = client.post(
+        "/api/v1/gate/run-from-sources",
+        headers=auth,
+        json={"signal_id": 99_999},
+    )
+    assert r.status_code == 404
