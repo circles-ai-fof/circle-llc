@@ -8,6 +8,9 @@ type Props = {
   variant?: "hero" | "bottom";
 };
 
+// Baked at build time. If undefined, the form will warn the user.
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
 export default function LeadForm({ slug, ctaText, variant = "hero" }: Props) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -15,7 +18,10 @@ export default function LeadForm({ slug, ctaText, variant = "hero" }: Props) {
   const [companyWebsite, setCompanyWebsite] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  // null = none, string = error
   const [error, setError] = useState<string | null>(null);
+  // Track if API confirmed the save (vs only-localStorage fallback)
+  const [serverConfirmed, setServerConfirmed] = useState(false);
 
   // Track time on page → block obviously-bot-fast submissions
   const mountedAt = useRef<number>(0);
@@ -40,7 +46,8 @@ export default function LeadForm({ slug, ctaText, variant = "hero" }: Props) {
 
     setSubmitting(true);
 
-    // Store locally first (works offline; backend pickup is optional in M1)
+    // Always backup to localStorage first — this never fails.
+    let backedUp = false;
     try {
       const stored = JSON.parse(localStorage.getItem("circles_leads") || "[]");
       stored.push({
@@ -49,51 +56,94 @@ export default function LeadForm({ slug, ctaText, variant = "hero" }: Props) {
         name: name || null,
         ts: new Date().toISOString(),
         ua: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 200) : "",
+        confirmed: false, // updated after server ack
       });
       localStorage.setItem("circles_leads", JSON.stringify(stored));
+      backedUp = true;
     } catch {
       /* localStorage disabled — non-fatal */
     }
 
-    // POST to API if configured. Backend enforces full anti-bot stack.
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-      if (apiUrl) {
-        const turnstileEl =
-          typeof document !== "undefined"
-            ? (document.querySelector(
-                'input[name="cf-turnstile-response"]',
-              ) as HTMLInputElement | null)
-            : null;
-        const turnstileToken = turnstileEl?.value || null;
+    // ---- Server submit ----
+    // If NEXT_PUBLIC_API_URL isn't baked, surface it immediately.
+    if (!API_URL) {
+      setSubmitting(false);
+      setError(
+        "Configuración pendiente: NEXT_PUBLIC_API_URL no está disponible. " +
+          (backedUp ? "Tu email quedó guardado localmente." : "No se guardó.")
+      );
+      return;
+    }
 
-        const res = await fetch(`${apiUrl}/api/v1/leads`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            slug,
-            email,
-            name: name || null,
-            company_website: companyWebsite || null, // honeypot
-            dwell_ms: dwellMs,
-            turnstile_token: turnstileToken,
-          }),
-          signal: AbortSignal.timeout(6000),
-        });
-        if (res.status === 400 || res.status === 401 || res.status === 429) {
-          const body = await res.json().catch(() => ({ detail: "Rechazado" }));
-          throw new Error(body.detail || `HTTP ${res.status}`);
+    const turnstileEl =
+      typeof document !== "undefined"
+        ? (document.querySelector(
+            'input[name="cf-turnstile-response"]',
+          ) as HTMLInputElement | null)
+        : null;
+    const turnstileToken = turnstileEl?.value || null;
+
+    try {
+      const res = await fetch(`${API_URL}/api/v1/leads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug,
+          email,
+          name: name || null,
+          company_website: companyWebsite || null, // honeypot
+          dwell_ms: dwellMs,
+          turnstile_token: turnstileToken,
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+
+      // Treat any non-2xx as user-visible error so we never falsely show "Recibido".
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          detail = body.detail || detail;
+        } catch {
+          /* body not JSON */
+        }
+        setSubmitting(false);
+        setError(
+          `${detail} — Tu email quedó guardado localmente, lo recuperaremos manualmente.`
+        );
+        // Mark localStorage entry as unconfirmed (already false by default)
+        return;
+      }
+
+      // 2xx: parse server payload to confirm accepted=true
+      let serverSays: { accepted?: boolean } = {};
+      try {
+        serverSays = await res.json();
+      } catch {
+        /* tolerate missing body */
+      }
+
+      if (serverSays.accepted !== false) {
+        setServerConfirmed(true);
+        // Update localStorage entry to mark confirmed=true
+        try {
+          const stored = JSON.parse(localStorage.getItem("circles_leads") || "[]");
+          if (stored.length > 0) {
+            stored[stored.length - 1].confirmed = true;
+            localStorage.setItem("circles_leads", JSON.stringify(stored));
+          }
+        } catch {
+          /* ignore */
         }
       }
     } catch (e) {
-      // Soft-fail: localStorage copy is the safety net
+      // Network / CORS / timeout
       const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("Disposable") || msg.includes("Bot-check") || msg.includes("moment")) {
-        setSubmitting(false);
-        setError(msg);
-        return;
-      }
-      /* otherwise just continue — local copy already saved */
+      setSubmitting(false);
+      setError(
+        `No pude contactar al servidor (${msg}). Tu email quedó guardado localmente.`
+      );
+      return;
     }
 
     setDone(true);
@@ -112,7 +162,8 @@ export default function LeadForm({ slug, ctaText, variant = "hero" }: Props) {
           fontSize: 14,
         }}
       >
-        ✓ Recibido. Te avisaremos en máximo 14 días si seguimos adelante con esta fábrica.
+        ✓ Recibido{serverConfirmed ? "" : " (guardado local)"}. Te avisaremos en
+        máximo 14 días si seguimos adelante con esta fábrica.
       </div>
     );
   }
@@ -206,6 +257,12 @@ export default function LeadForm({ slug, ctaText, variant = "hero" }: Props) {
       </button>
       {error && (
         <div style={{ color: "#FF4444", fontSize: 13, marginTop: 4 }}>{error}</div>
+      )}
+      {/* Debug footer — visible only when NEXT_PUBLIC_DEBUG=1 at build */}
+      {process.env.NEXT_PUBLIC_DEBUG === "1" && (
+        <div style={{ color: "#64748b", fontSize: 11, marginTop: 8, fontFamily: "monospace" }}>
+          API: {API_URL ?? "❌ NEXT_PUBLIC_API_URL undefined"}
+        </div>
       )}
     </form>
   );

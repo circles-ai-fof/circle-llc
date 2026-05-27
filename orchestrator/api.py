@@ -29,12 +29,16 @@ from fastapi.responses import JSONResponse
 from .schemas.api import (
     AgentInfo,
     AgentsResponse,
+    DiagnosticResponse,
     ErrorDetail,
     HealthResponse,
     HumanOverrideRequest,
     HumanOverrideResponse,
     LeadCaptureRequest,
     LeadCaptureResponse,
+    LeadImportItem,
+    LeadImportRequest,
+    LeadImportResponse,
     LeadItem,
     LeadsListResponse,
     LeadsStatsBySlug,
@@ -718,6 +722,127 @@ def list_leads(slug: str, request: Request, limit: int = 100) -> LeadsListRespon
         count=len(raw),
         leads=items,
         masked=not is_admin,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic endpoint — public read-only snapshot for debugging from browser
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/api/v1/diagnostic",
+    response_model=DiagnosticResponse,
+    summary="Public snapshot of API config (CORS, features, counts)",
+    tags=["meta"],
+)
+def diagnostic() -> DiagnosticResponse:
+    """
+    Safe to expose publicly:
+      - version, sprint, mode (live/mock)
+      - configured CORS allowed origins (so you can see why a browser is blocked)
+      - feature flags (ensemble, research, fact-check) — boolean only, no secrets
+      - aggregate counts (no PII)
+    """
+    from .core.storage import leads_store, runs_store
+    return DiagnosticResponse(
+        version=API_VERSION,
+        sprint=SPRINT,
+        mode="mock" if _workflow._mock_mode else "live",
+        cors_allowed_origins=list(_DEFAULT_ALLOWED_ORIGINS) + _extra_origins,
+        features={
+            "ensemble_gate_enabled": os.getenv("ENSEMBLE_GATE_ENABLED", "false").lower() in {"true", "1", "yes"},
+            "idea_enricher_research": os.getenv("IDEA_ENRICHER_RESEARCH", "false").lower() in {"true", "1", "yes"},
+            "fact_check_enabled": os.getenv("FACT_CHECK_ENABLED", "false").lower() in {"true", "1", "yes"},
+            "turnstile_required": bool(os.getenv("TURNSTILE_SECRET_KEY")),
+            "gate_run_secret_required": bool(os.getenv("GATE_RUN_SECRET")),
+            "openai_key_present": bool(os.getenv("OPENAI_API_KEY")),
+            "google_key_present": bool(os.getenv("GOOGLE_API_KEY")),
+            "anthropic_key_present": bool(os.getenv("ANTHROPIC_API_KEY")),
+            "persistent_storage": bool(os.getenv("DATABASE_PATH")),
+        },
+        leads_count_total=leads_store.count(),
+        runs_count_total=len(runs_store.values()),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Admin: import leads from a localStorage backup
+# Used to rescue leads that were saved client-side because the API was
+# unreachable (CORS / NEXT_PUBLIC_API_URL not set on the deploy yet, etc.)
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/api/v1/admin/import-leads",
+    response_model=LeadImportResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Import leads from a client-side backup (admin only)",
+    tags=["admin"],
+    responses={
+        401: {"model": ErrorDetail, "description": "Missing or invalid X-Gate-Secret"},
+        422: {"model": ErrorDetail, "description": "Invalid payload"},
+    },
+)
+def import_leads(body: LeadImportRequest, request: Request) -> LeadImportResponse:
+    """
+    Bulk-import leads that were stored in the browser's localStorage but never
+    confirmed by the server. Requires X-Gate-Secret. De-duplicates by
+    (slug, email) — already-stored pairs are skipped.
+
+    Payload format mirrors localStorage entries the LeadForm writes:
+        { "leads": [{ "slug", "email", "name", "ts_iso" }, ...] }
+    """
+    # Layer 6: must have admin secret
+    secret = os.getenv("GATE_RUN_SECRET")
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Admin endpoint disabled (GATE_RUN_SECRET not set on server).",
+        )
+    if request.headers.get("X-Gate-Secret") != secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing X-Gate-Secret",
+        )
+
+    from .core.storage import leads_store
+
+    imported = 0
+    skipped = 0
+    by_slug: Dict[str, int] = defaultdict(int)
+    ip = _client_ip(request)
+
+    # Pre-compute existing (slug, email) set for dedup
+    seen = set()
+    for slug in {item.slug for item in body.leads}:
+        for existing in leads_store.list_by_slug(slug):
+            seen.add((slug, existing["email"]))
+
+    for item in body.leads:
+        key = (item.slug, item.email)
+        if key in seen:
+            skipped += 1
+            continue
+        leads_store.add(
+            slug=item.slug,
+            email=item.email,
+            name=item.name,
+            ip=f"import-{ip[:30]}",  # tag as imported, not the real client IP
+            user_agent=f"backup-import ts={item.ts_iso or ''}",
+        )
+        seen.add(key)
+        imported += 1
+        by_slug[item.slug] += 1
+
+    logger.info(
+        "admin import-leads: imported=%d skipped=%d by_slug=%s",
+        imported, skipped, dict(by_slug),
+    )
+    return LeadImportResponse(
+        imported=imported,
+        skipped_duplicates=skipped,
+        by_slug=dict(by_slug),
     )
 
 

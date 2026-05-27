@@ -171,6 +171,43 @@ class LeadsStatsResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Diagnostics (helps debug CORS / env / version issues from a browser)
+# ---------------------------------------------------------------------------
+
+
+class DiagnosticResponse(BaseModel):
+    version: str
+    sprint: str
+    mode: str  # "live" | "mock"
+    cors_allowed_origins: List[str]
+    features: Dict[str, bool]
+    leads_count_total: int
+    runs_count_total: int
+
+
+# ---------------------------------------------------------------------------
+# Admin import (rescue leads stuck in localStorage)
+# ---------------------------------------------------------------------------
+
+
+class LeadImportItem(BaseModel):
+    slug: str = Field(min_length=1, max_length=80)
+    email: str = Field(min_length=5, max_length=200)
+    name: Optional[str] = Field(default=None, max_length=120)
+    ts_iso: Optional[str] = Field(default=None, description="ISO 8601 timestamp")
+
+
+class LeadImportRequest(BaseModel):
+    leads: List[LeadImportItem] = Field(max_length=500)
+
+
+class LeadImportResponse(BaseModel):
+    imported: int
+    skipped_duplicates: int
+    by_slug: Dict[str, int]
+
+
+# ---------------------------------------------------------------------------
 # Response — agent info
 # ---------------------------------------------------------------------------
 
