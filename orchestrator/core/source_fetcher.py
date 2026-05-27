@@ -61,6 +61,7 @@ class FetchedItem:
     summary: str           # short snippet (<=400 chars)
     body: str              # longer content (<=MAX_CHARS_PER_SOURCE)
     fetched_at: int = field(default_factory=lambda: int(time.time()))
+    published_at: Optional[int] = None  # unix ts of ORIGINAL publication (from feed pubDate, HN time, reddit created_utc...)
 
     def to_dict(self) -> dict:
         return {
@@ -70,7 +71,26 @@ class FetchedItem:
             "summary": self.summary,
             "body": self.body,
             "fetched_at": self.fetched_at,
+            "published_at": self.published_at,
         }
+
+
+def _parse_rfc822_or_iso(s: str) -> Optional[int]:
+    """Parse RFC 822 (RSS pubDate) or ISO 8601 (Atom updated) -> unix ts. None on failure."""
+    if not s:
+        return None
+    from email.utils import parsedate_to_datetime
+    from datetime import datetime
+    s = s.strip()
+    try:
+        return int(parsedate_to_datetime(s).timestamp())
+    except (TypeError, ValueError):
+        pass
+    # ISO 8601: 2026-05-27T14:30:00Z or with offset
+    try:
+        return int(datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp())
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +209,7 @@ def fetch_rss(feed_url: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[Fetche
         title = (item.findtext("title") or "").strip()
         desc = _html_to_text((item.findtext("description") or "").strip())
         link = (item.findtext("link") or "").strip()
+        published_at = _parse_rfc822_or_iso(item.findtext("pubDate") or "")
         if not title and not desc:
             continue
         items.append(
@@ -198,6 +219,7 @@ def fetch_rss(feed_url: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[Fetche
                 title=_truncate(title, 200),
                 summary=_truncate(desc, 400),
                 body=_truncate(desc, MAX_CHARS_PER_SOURCE),
+                published_at=published_at,
             )
         )
     if items:
@@ -210,6 +232,11 @@ def fetch_rss(feed_url: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[Fetche
         # link element has href attribute
         link_el = entry.find("a:link", ns)
         link = link_el.get("href", "") if link_el is not None else ""
+        published_at = _parse_rfc822_or_iso(
+            entry.findtext("a:published", default="", namespaces=ns)
+            or entry.findtext("a:updated", default="", namespaces=ns)
+            or ""
+        )
         if not title and not summary:
             continue
         items.append(
@@ -219,6 +246,7 @@ def fetch_rss(feed_url: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[Fetche
                 title=_truncate(title, 200),
                 summary=_truncate(summary, 400),
                 body=_truncate(summary, MAX_CHARS_PER_SOURCE),
+                published_at=published_at,
             )
         )
     return items
@@ -251,6 +279,7 @@ def fetch_hn_top(max_items: int = MAX_ITEMS_PER_FEED) -> List[FetchedItem]:
         url = d.get("url", f"https://news.ycombinator.com/item?id={hid}")
         text = _html_to_text(d.get("text") or "")
         score = d.get("score", 0)
+        published_at = d.get("time")  # HN time is unix ts already
         summary = f"[{score} points] {title}"
         body = _truncate(f"{title}\n\n{text}\n\nDiscussion: https://news.ycombinator.com/item?id={hid}", MAX_CHARS_PER_SOURCE)
         items.append(
@@ -260,6 +289,7 @@ def fetch_hn_top(max_items: int = MAX_ITEMS_PER_FEED) -> List[FetchedItem]:
                 title=_truncate(title, 200),
                 summary=_truncate(summary, 400),
                 body=body,
+                published_at=int(published_at) if published_at else None,
             )
         )
     return items
@@ -294,6 +324,7 @@ def fetch_reddit(subreddit: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[Fe
         score = d.get("score", 0)
         permalink = "https://reddit.com" + d.get("permalink", "")
         external_url = d.get("url", permalink)
+        created_utc = d.get("created_utc")  # float unix ts
         if not title:
             continue
         items.append(
@@ -303,6 +334,7 @@ def fetch_reddit(subreddit: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[Fe
                 title=_truncate(title, 200),
                 summary=_truncate(f"r/{subreddit} [{score} upvotes] — {title}", 400),
                 body=_truncate(f"{title}\n\n{selftext}\n\nDiscussion: {permalink}", MAX_CHARS_PER_SOURCE),
+                published_at=int(created_utc) if created_utc else None,
             )
         )
     return items

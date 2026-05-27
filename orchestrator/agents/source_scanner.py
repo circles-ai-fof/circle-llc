@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 from ..core.base_agent import BaseAgent
 from ..core.source_fetcher import FetchedItem
@@ -76,6 +76,7 @@ class Signal:
     suggested_topic: str
     source_kind: str = ""  # filled by caller
     items_seen: int = 0    # how many items were in the batch when this signal emerged
+    published_at: Optional[int] = None  # earliest published_at among evidence items
 
 
 class SourceScannerAgent(BaseAgent):
@@ -104,6 +105,9 @@ class SourceScannerAgent(BaseAgent):
                 score = float(s.get("score", 0))
                 if score < 0.5:
                     continue
+                # Capture earliest published_at from supporting items
+                pubs = [it.published_at for it in items if it.published_at]
+                published_at = max(pubs) if pubs else None
                 signals.append(
                     Signal(
                         theme=str(s.get("theme", ""))[:200].strip(),
@@ -113,6 +117,7 @@ class SourceScannerAgent(BaseAgent):
                         suggested_topic=str(s.get("suggested_topic", ""))[:300].strip(),
                         source_kind=items[0].source_kind if items else "",
                         items_seen=len(items),
+                        published_at=published_at,
                     )
                 )
             except (TypeError, ValueError) as e:
@@ -155,25 +160,31 @@ class SourceScannerAgent(BaseAgent):
             it = non_empty[0]
             return [
                 Signal(
-                    theme=f"Mock single-source signal from {it.source_kind}",
+                    theme=(it.title[:120] or f"Item de {it.source_kind}"),
                     score=0.60,
-                    excerpt=f"Single item: {it.title[:120]}",
+                    excerpt=(it.summary or it.body[:300] or it.title or "")[:300],
                     evidence_urls=[it.url],
-                    suggested_topic=it.title or f"Topic from {it.source_kind}",
+                    suggested_topic=it.title or f"Tema de {it.source_kind}",
                     source_kind=it.source_kind,
                     items_seen=1,
+                    published_at=it.published_at,
                 )
             ]
-        items = non_empty  # for downstream block below
+        items = non_empty
         first = items[0]
+        joined_titles = "; ".join(it.title[:50] for it in items[:3] if it.title)
+        # Earliest published_at across evidence (more recent = trendier)
+        pubs = [it.published_at for it in items if it.published_at]
+        published_at = max(pubs) if pubs else None
         return [
             Signal(
-                theme=f"Mock signal from {first.source_kind}",
+                theme=(first.title[:120] or f"Tema recurrente en {first.source_kind}"),
                 score=0.72,
-                excerpt=f"Detected pattern across {len(items)} items: {first.title[:80]}",
+                excerpt=f"{len(items)} items relacionados — {joined_titles[:280]}",
                 evidence_urls=[it.url for it in items[:3]],
-                suggested_topic=f"Mock topic derived from {first.source_kind} signals",
+                suggested_topic=first.title or f"Tema recurrente en {first.source_kind}",
                 source_kind=first.source_kind,
                 items_seen=len(items),
+                published_at=published_at,
             )
         ]

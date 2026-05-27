@@ -8,6 +8,7 @@ type Signal = {
   id: number;
   source_id: number | null;
   source_kind: string;
+  source_name: string | null;
   theme: string;
   score: number;
   excerpt: string;
@@ -16,6 +17,7 @@ type Signal = {
   feedback: string | null;
   promoted_run_id: string | null;
   trend_score: number;
+  published_at: number | null;
   created_at: number;
 };
 
@@ -143,6 +145,25 @@ export default function SenalesPage() {
   );
 }
 
+function formatRelativeDate(ts: number | null | undefined, prefix: string): string | null {
+  if (!ts) return null;
+  const now = Date.now() / 1000;
+  const diffSec = Math.max(0, now - ts);
+  const diffDays = Math.floor(diffSec / 86400);
+  const diffHours = Math.floor(diffSec / 3600);
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffDays >= 1) {
+    return `${prefix} hace ${diffDays} ${diffDays === 1 ? "día" : "días"}`;
+  }
+  if (diffHours >= 1) {
+    return `${prefix} hace ${diffHours} ${diffHours === 1 ? "hora" : "horas"}`;
+  }
+  if (diffMin >= 1) {
+    return `${prefix} hace ${diffMin} min`;
+  }
+  return `${prefix} hace instantes`;
+}
+
 function SignalCard({
   signal,
   onFeedback,
@@ -154,6 +175,9 @@ function SignalCard({
 }) {
   const scoreColor =
     signal.score >= 0.8 ? "#00E5A0" : signal.score >= 0.6 ? "#FFB800" : "#94a3b8";
+  const publishedLabel = formatRelativeDate(signal.published_at, "publicado");
+  const capturedLabel = formatRelativeDate(signal.created_at, "capturado");
+  const sourceLabel = signal.source_name || `Fuente ${signal.source_kind}`;
   return (
     <div
       style={{
@@ -164,14 +188,21 @@ function SignalCard({
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Source line — prominent */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+            <span style={{ color: "#00D4FF", fontSize: 12, fontWeight: 600 }}>
+              📡 {sourceLabel}
+            </span>
             <span style={{
-              padding: "2px 8px", background: "rgba(0,212,255,0.1)",
-              color: "#00D4FF", borderRadius: 4, fontSize: 10, fontFamily: "monospace", textTransform: "uppercase",
+              padding: "1px 6px", background: "rgba(0,212,255,0.1)",
+              color: "#00D4FF", borderRadius: 3, fontSize: 9, fontFamily: "monospace", textTransform: "uppercase",
             }}>
               {signal.source_kind}
             </span>
+          </div>
+          {/* Badges row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
             <span style={{ color: scoreColor, fontSize: 13, fontWeight: 700, fontFamily: "monospace" }}>
               score {signal.score.toFixed(2)}
             </span>
@@ -185,6 +216,16 @@ function SignalCard({
                 🔥 trend +{signal.trend_score.toFixed(0)}
               </span>
             )}
+            {publishedLabel && (
+              <span style={{ color: "#94a3b8", fontSize: 11, fontFamily: "monospace" }} title="Fecha de publicación original del contenido">
+                🗓️ {publishedLabel}
+              </span>
+            )}
+            {!publishedLabel && capturedLabel && (
+              <span style={{ color: "#64748b", fontSize: 11, fontFamily: "monospace" }} title="Fecha en la que el cazador capturó la señal">
+                ⚲ {capturedLabel}
+              </span>
+            )}
             {signal.promoted_run_id && (
               <span style={{
                 padding: "2px 8px", background: "rgba(0,229,160,0.1)",
@@ -194,8 +235,8 @@ function SignalCard({
               </span>
             )}
           </div>
-          <h3 style={{ color: "#fff", fontSize: 16, fontWeight: 600, marginBottom: 6 }}>{signal.theme}</h3>
-          <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.5, marginBottom: 8 }}>{signal.excerpt}</p>
+          <h3 style={{ color: "#fff", fontSize: 17, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>{signal.theme}</h3>
+          <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.55, marginBottom: 8 }}>{signal.excerpt}</p>
           {signal.suggested_topic && (
             <div style={{
               marginTop: 8, padding: 10, background: "#0B0F1A",
@@ -262,6 +303,11 @@ function SignalCard({
           <button
             onClick={onPromote}
             disabled={!!signal.promoted_run_id}
+            title={
+              signal.promoted_run_id
+                ? "Esta señal ya generó una corrida"
+                : "Promueve esta señal a una corrida completa del workflow. Se envía un prompt potenciado al cazador con: tema, fuente, fecha de publicación, score, trend y resumen."
+            }
             style={{
               marginTop: 4, padding: "8px 12px",
               background: signal.promoted_run_id ? "#1e293b" : "#00D4FF",
@@ -272,6 +318,11 @@ function SignalCard({
           >
             {signal.promoted_run_id ? "Ya promovida" : "→ Promover a idea"}
           </button>
+          {!signal.promoted_run_id && (
+            <span style={{ color: "#64748b", fontSize: 9, textAlign: "center", lineHeight: 1.3 }}>
+              con prompt potenciado
+            </span>
+          )}
         </div>
       </div>
     </div>

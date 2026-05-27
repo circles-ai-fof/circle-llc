@@ -161,6 +161,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
             logger.info("storage: migrated signals.trend_score column")
         except sqlite3.OperationalError as e:
             logger.warning("storage: migration trend_score failed: %s", e)
+    # M3.2 follow-up: original publication timestamp of the source item
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
+    if "published_at" not in cols:
+        try:
+            conn.execute("ALTER TABLE signals ADD COLUMN published_at INTEGER")
+            logger.info("storage: migrated signals.published_at column")
+        except sqlite3.OperationalError as e:
+            logger.warning("storage: migration published_at failed: %s", e)
 
 
 @contextmanager
@@ -587,6 +595,7 @@ class SignalsStore:
         excerpt: str,
         evidence_urls: List[str],
         suggested_topic: str,
+        published_at: Optional[int] = None,
     ) -> int:
         _ensure_init()
         ts = int(time.time())
@@ -597,9 +606,9 @@ class SignalsStore:
             with _conn() as c:
                 cur = c.execute(
                     "INSERT INTO signals(source_id,source_kind,theme,score,excerpt,"
-                    "evidence_json,suggested_topic,trend_score,created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?)",
-                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic, trend, ts),
+                    "evidence_json,suggested_topic,trend_score,published_at,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic, trend, published_at, ts),
                 )
                 return int(cur.lastrowid)
         new_id = max([s["id"] for s in _memory_signals], default=0) + 1
@@ -608,7 +617,7 @@ class SignalsStore:
             "theme": theme, "score": score, "excerpt": excerpt,
             "evidence_json": ev_json, "suggested_topic": suggested_topic,
             "feedback": None, "promoted_run_id": None,
-            "trend_score": trend, "created_at": ts,
+            "trend_score": trend, "published_at": published_at, "created_at": ts,
         })
         return new_id
 
@@ -645,7 +654,7 @@ class SignalsStore:
             with _conn() as c:
                 rows = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,created_at "
                     "FROM signals WHERE score>=? "
                     "ORDER BY trend_score DESC, score DESC, created_at DESC LIMIT ?",
                     (min_score, limit),
@@ -665,7 +674,7 @@ class SignalsStore:
             with _conn() as c:
                 row = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,created_at "
                     "FROM signals WHERE id=?", (signal_id,),
                 ).fetchone()
                 return _signal_row_to_dict(dict(row)) if row else None
@@ -773,8 +782,9 @@ def _signal_row_to_dict(row: Dict) -> Dict:
         row["evidence_urls"] = json.loads(row.pop("evidence_json"))
     except Exception:  # noqa: BLE001
         row["evidence_urls"] = []
-    # Ensure trend_score is always present (legacy memory rows may lack it)
+    # Ensure trend_score + published_at are always present (legacy rows may lack)
     row.setdefault("trend_score", 0)
+    row.setdefault("published_at", None)
     return row
 
 

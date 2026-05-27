@@ -1127,6 +1127,7 @@ def scan_sources(body: ScanRunRequest, request: Request) -> ScanRunResponse:
                 source_id=src["id"], source_kind=sig.source_kind,
                 theme=sig.theme, score=sig.score, excerpt=sig.excerpt,
                 evidence_urls=sig.evidence_urls, suggested_topic=sig.suggested_topic,
+                published_at=sig.published_at,
             )
             signals_created += 1
             # Auto-promote
@@ -1156,11 +1157,16 @@ def scan_sources(body: ScanRunRequest, request: Request) -> ScanRunResponse:
 )
 def list_signals(request: Request, limit: int = 100, min_score: float = 0.0) -> SignalsListResponse:
     _require_user(request)
-    from .core.storage import signals_store
+    from .core.storage import signals_store, sources_store
     if limit < 1 or limit > 500:
         raise HTTPException(status_code=422, detail="limit must be 1-500")
     rows = signals_store.list(limit=limit, min_score=min_score)
-    items = [SignalItem(**r) for r in rows]
+    # Join source_name from sources table for nicer UI display
+    source_names = {s["id"]: s["name"] for s in sources_store.list()}
+    items: List[SignalItem] = []
+    for r in rows:
+        r["source_name"] = source_names.get(r.get("source_id")) if r.get("source_id") else None
+        items.append(SignalItem(**r))
     return SignalsListResponse(total=len(items), items=items)
 
 
@@ -1245,8 +1251,33 @@ def run_gate_from_sources(body: RunFromSourcesRequest, request: Request) -> RunG
         sig = signals_store.get(body.signal_id)
         if not sig:
             raise HTTPException(status_code=404, detail="signal not found")
-        final_topic = final_topic or sig["suggested_topic"] or sig["theme"]
-        evidence_parts.append(f"Signal: {sig['theme']}\n{sig['excerpt']}")
+        # POTENTIATED PROMPT — frame the topic as a sharper LATAM-anchored hypothesis
+        # rather than just passing the raw signal title. This gives the hunter
+        # explicit context about WHERE the signal came from + WHEN it was published.
+        from .core.storage import sources_store
+        source = sources_store.get(sig["source_id"]) if sig.get("source_id") else None
+        source_label = source["name"] if source else sig["source_kind"]
+        published_label = ""
+        if sig.get("published_at"):
+            from datetime import datetime, timezone
+            try:
+                pub_dt = datetime.fromtimestamp(sig["published_at"], tz=timezone.utc)
+                published_label = f" (publicado {pub_dt.strftime('%Y-%m-%d')})"
+            except Exception:  # noqa: BLE001
+                pass
+        final_topic = final_topic or (
+            f"{sig['suggested_topic'] or sig['theme']}"
+            f" — señal capturada en {source_label}{published_label}"
+        )
+        # Rich evidence block: theme, source attribution, publication date, excerpt
+        evidence_parts.append(
+            f"=== SEÑAL DEL CAZADOR ===\n"
+            f"Tema: {sig['theme']}\n"
+            f"Fuente: {source_label} ({sig['source_kind']})\n"
+            f"Publicado: {published_label or 'fecha desconocida'}\n"
+            f"Score de detección: {sig['score']:.2f} | Trend: +{int(sig.get('trend_score', 0))} (apariciones recurrentes)\n"
+            f"Resumen: {sig['excerpt']}\n"
+        )
         for u in sig["evidence_urls"][:5]:
             item = fetch_url(u)
             if item:

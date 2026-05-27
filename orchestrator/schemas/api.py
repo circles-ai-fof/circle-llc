@@ -291,6 +291,7 @@ class SignalItem(BaseModel):
     id: int
     source_id: Optional[int] = None
     source_kind: str
+    source_name: Optional[str] = None  # joined from sources table for nicer UI
     theme: str
     score: float
     excerpt: str
@@ -299,6 +300,7 @@ class SignalItem(BaseModel):
     feedback: Optional[str] = None
     promoted_run_id: Optional[str] = None
     trend_score: float = 0
+    published_at: Optional[int] = None  # original publication ts of the source content
     created_at: int
 
 
