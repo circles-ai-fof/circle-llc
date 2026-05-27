@@ -15,6 +15,7 @@ type Signal = {
   suggested_topic: string;
   feedback: string | null;
   promoted_run_id: string | null;
+  trend_score: number;
   created_at: number;
 };
 
@@ -174,6 +175,16 @@ function SignalCard({
             <span style={{ color: scoreColor, fontSize: 13, fontWeight: 700, fontFamily: "monospace" }}>
               score {signal.score.toFixed(2)}
             </span>
+            {signal.trend_score >= 1 && (
+              <span style={{
+                padding: "2px 8px", background: "rgba(255,184,0,0.1)",
+                color: "#FFB800", borderRadius: 4, fontSize: 11, fontFamily: "monospace", fontWeight: 700,
+              }}
+              title={`Tema reaparece ${signal.trend_score} ${signal.trend_score === 1 ? 'vez' : 'veces'} en últimos 7 días`}
+              >
+                🔥 trend +{signal.trend_score.toFixed(0)}
+              </span>
+            )}
             {signal.promoted_run_id && (
               <span style={{
                 padding: "2px 8px", background: "rgba(0,229,160,0.1)",
