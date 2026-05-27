@@ -25,3 +25,8 @@ Thumbs.db
 .pytest_cache/
 htmlcov/
 .mypy_cache/
+
+# SQLite WAL/SHM files
+*.db-wal
+*.db-shm
+data/
