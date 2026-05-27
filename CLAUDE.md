@@ -45,11 +45,11 @@ circle-llc/
 
 | | |
 |---|---|
-| Tests verdes | **391** |
-| Commits en GitHub | 34 |
+| Tests verdes | **400** |
+| Commits en GitHub | 37 |
 | ADRs | 14 |
 | Reglas R01-R29 | 29 |
-| Endpoints API | 24 |
+| Endpoints API | 26 |
 | Páginas dashboard | 11 |
 | circles-ai.ai live | ✅ |
 | /f/techpulse-latam live | ✅ |
