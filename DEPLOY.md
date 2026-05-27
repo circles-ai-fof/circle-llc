@@ -56,6 +56,12 @@ EXTRA_ALLOWED_ORIGINS=https://circles-ai.ai,https://www.circles-ai.ai,https://da
 # Comma-separated emails — these are the only users who can access the dashboard.
 # Anyone NOT on this list gets 403 + their attempt is logged for audit.
 ALLOWED_EMAILS=crisan312@hotmail.com,jfnunez@asiservy.com,cristian.molina.ia.soporte@gmail.com
+
+# Cazador autónomo (ADR-014 follow-up) — opcional
+# Cada cuánto el background loop escanea TODAS las fuentes activas.
+# 0 (default) = desactivado. Cuando lo prendas: >= 15 min (el server clampa).
+# Recomendado en prod: 360 (6 h). Subir gradualmente si la calidad mejora.
+AUTOSCAN_INTERVAL_MINUTES=0
 ```
 
 **Important**: generate `GATE_RUN_SECRET` with `openssl rand -hex 32` — anyone with this header can run \$0.06 calls or view full lead emails.
@@ -94,13 +100,44 @@ The dashboard lives in `dashboard/` and is a **separate Vercel project**.
 
 1. **https://vercel.com/new** → Import the same `circles-ai-fof/circle-llc` repo
 2. In the import wizard, set **Root Directory** to `dashboard`
+   (Vercel autodetects `dashboard/vercel.json` and Next.js framework.)
 3. Framework: Next.js (auto)
-4. Add env var (same as landing):
+4. Add env vars (Production + Preview + Development checked):
    ```
    NEXT_PUBLIC_API_URL=https://<your-railway-domain>
    ```
 5. Deploy
-6. Optionally assign a domain like `dashboard.circles-ai.ai`
+6. Optionally assign a domain like `dashboard.circles-ai.ai`:
+   - Project → Domains → Add → `dashboard.circles-ai.ai`
+   - On your DNS: add a CNAME `dashboard` → `cname.vercel-dns.com`
+
+#### Post-deploy smoke checklist
+
+After the dashboard is live, verify these 6 things in order:
+
+| # | URL                                  | What to expect |
+|---|--------------------------------------|----------------|
+| 1 | `/login`                             | "Solicitar acceso" form. Type one of `ALLOWED_EMAILS`. |
+| 2 | After login                          | Redirected to `/cazar`. Top-right shows your email + logout. |
+| 3 | `/cazar/fuentes`                     | "Fuentes" list (seeded sources from `seed_sources.py`). |
+| 4 | `/cazar/señales`                     | Empty until you click "↻ Refresh" on a source or wait for autoscan. |
+| 5 | `/cazar/señales` → dropdowns         | "Ordenar" + "Fuente" filters work. Server returns 422 if you tamper. |
+| 6 | `/cazar` (pipeline)                  | 5 columns. Auto-refresh every 8s. Empty until your first run. |
+
+If `/cazar` is blank with `connect-src` CSP errors in the browser console:
+the `NEXT_PUBLIC_API_URL` env var is missing → Vercel Settings → Env Vars →
+add → **Redeploy** (NEXT_PUBLIC_* needs a rebuild, env reload is not enough).
+
+#### Don't forget: CORS on Railway side
+
+The dashboard's domain MUST be on the backend's allowed origins, or
+every fetch will 403/CORS-fail silently. In Railway → service → Variables:
+
+```
+EXTRA_ALLOWED_ORIGINS=https://dashboard.circles-ai.ai,https://<vercel-preview-domain>.vercel.app
+```
+
+(One line, comma-separated. Restart the service.)
 
 ### Verify lead capture end-to-end
 
