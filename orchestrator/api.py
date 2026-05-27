@@ -51,8 +51,17 @@ from .schemas.api import (
     MeResponse,
     PendingReviewItem,
     PendingReviewResponse,
+    RunFromSourcesRequest,
     RunGateRequest,
     RunGateResponse,
+    ScanRunRequest,
+    ScanRunResponse,
+    SignalFeedback,
+    SignalItem,
+    SignalsListResponse,
+    SourceCreate,
+    SourceItem,
+    SourcesListResponse,
 )
 from .core.anti_bot import (
     check_dwell,
@@ -1004,6 +1013,228 @@ def list_auth_attempts(request: Request, limit: int = 200) -> AuthAttemptsRespon
         total=auth_store.count_attempts(),
         items=[AuthAttemptItem(**it) for it in items],
     )
+
+
+# ---------------------------------------------------------------------------
+# Sources + Signals (R28 / ADR-011 — autonomous hunter)
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/api/v1/sources",
+    response_model=SourcesListResponse,
+    summary="List configured sources for the hunter",
+    tags=["hunter"],
+)
+def list_sources(request: Request, active_only: bool = False) -> SourcesListResponse:
+    _require_user(request)
+    from .core.storage import sources_store
+    rows = sources_store.list(active_only=active_only)
+    items = [
+        SourceItem(
+            id=r["id"], kind=r["kind"], target=r["target"], name=r["name"],
+            active=bool(r["active"]), last_scanned_at=r["last_scanned_at"],
+            created_at=r["created_at"],
+        )
+        for r in rows
+    ]
+    return SourcesListResponse(total=len(items), items=items)
+
+
+@app.post(
+    "/api/v1/sources",
+    response_model=SourceItem,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a source to the hunter catalog",
+    tags=["hunter"],
+)
+def add_source(body: SourceCreate, request: Request) -> SourceItem:
+    _require_user(request)
+    from .core.storage import sources_store
+    new_id = sources_store.add(kind=body.kind, target=body.target, name=body.name)
+    row = sources_store.get(new_id)
+    if not row:
+        raise HTTPException(status_code=500, detail="Failed to read back created source")
+    return SourceItem(
+        id=row["id"], kind=row["kind"], target=row["target"], name=row["name"],
+        active=bool(row["active"]), last_scanned_at=row["last_scanned_at"],
+        created_at=row["created_at"],
+    )
+
+
+@app.delete(
+    "/api/v1/sources/{source_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a source",
+    tags=["hunter"],
+)
+def delete_source(source_id: int, request: Request) -> None:
+    _require_user(request)
+    from .core.storage import sources_store
+    sources_store.delete(source_id)
+
+
+@app.post(
+    "/api/v1/sources/scan",
+    response_model=ScanRunResponse,
+    summary="Run the hunter pipeline: fetch sources + extract signals",
+    tags=["hunter"],
+)
+def scan_sources(body: ScanRunRequest, request: Request) -> ScanRunResponse:
+    """
+    Manual scan trigger. For each configured (or specified) source:
+      1. Fetch new content via source_fetcher
+      2. Pass batch to source_scanner agent (1 LLM call per source)
+      3. Persist signals scoring >= 0.5
+      4. Optionally auto-promote signals >= threshold by invoking idea_hunter
+    """
+    _require_user(request)
+    from .core.source_fetcher import fetch_by_kind
+    from .core.storage import sources_store, signals_store
+    from .agents.source_scanner import SourceScannerAgent
+
+    # Pick which sources to scan
+    if body.source_ids:
+        sources = [s for s in (sources_store.get(sid) for sid in body.source_ids) if s]
+    else:
+        sources = sources_store.list(active_only=True)
+
+    scanner = SourceScannerAgent(mock_mode=_workflow._mock_mode, client=None if _workflow._mock_mode else _workflow._idea_hunter._client)
+
+    items_fetched_total = 0
+    signals_created = 0
+    auto_promoted: List[str] = []
+
+    for src in sources:
+        items = fetch_by_kind(src["kind"], src["target"])
+        items_fetched_total += len(items)
+        if not items:
+            sources_store.mark_scanned(src["id"])
+            continue
+        new_signals = scanner.scan(items)
+        for sig in new_signals:
+            signal_id = signals_store.add(
+                source_id=src["id"], source_kind=sig.source_kind,
+                theme=sig.theme, score=sig.score, excerpt=sig.excerpt,
+                evidence_urls=sig.evidence_urls, suggested_topic=sig.suggested_topic,
+            )
+            signals_created += 1
+            # Auto-promote
+            if body.auto_promote_threshold > 0 and sig.score >= body.auto_promote_threshold:
+                # Build evidence context from the signal
+                ctx = f"Signal: {sig.theme}\n{sig.excerpt}\nEvidence URLs:\n" + "\n".join(sig.evidence_urls)
+                run = _workflow.run(sig.suggested_topic or sig.theme)
+                signals_store.mark_promoted(signal_id, str(run.run_id))
+                auto_promoted.append(str(run.run_id))
+                response = _serialize_run(run)
+                _runs[response.run_id] = response
+        sources_store.mark_scanned(src["id"])
+
+    return ScanRunResponse(
+        scanned_sources=len(sources),
+        items_fetched=items_fetched_total,
+        signals_created=signals_created,
+        auto_promoted_runs=auto_promoted,
+    )
+
+
+@app.get(
+    "/api/v1/signals",
+    response_model=SignalsListResponse,
+    summary="List collected signals",
+    tags=["hunter"],
+)
+def list_signals(request: Request, limit: int = 100, min_score: float = 0.0) -> SignalsListResponse:
+    _require_user(request)
+    from .core.storage import signals_store
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=422, detail="limit must be 1-500")
+    rows = signals_store.list(limit=limit, min_score=min_score)
+    items = [SignalItem(**r) for r in rows]
+    return SignalsListResponse(total=len(items), items=items)
+
+
+@app.post(
+    "/api/v1/signals/{signal_id}/feedback",
+    summary="Thumbs up/down a signal (calibrates future scoring)",
+    tags=["hunter"],
+)
+def signal_feedback(signal_id: int, body: SignalFeedback, request: Request) -> Dict:
+    _require_user(request)
+    from .core.storage import signals_store
+    if signals_store.get(signal_id) is None:
+        raise HTTPException(status_code=404, detail="signal not found")
+    new_value: Optional[str] = body.feedback if body.feedback in ("up", "down") else None
+    signals_store.set_feedback(signal_id, new_value)
+    return {"signal_id": signal_id, "feedback": new_value}
+
+
+@app.post(
+    "/api/v1/gate/run-from-sources",
+    response_model=RunGateResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Run the full workflow seeded by a topic, URLs, or a signal",
+    tags=["hunter", "gate"],
+)
+def run_gate_from_sources(body: RunFromSourcesRequest, request: Request) -> RunGateResponse:
+    """
+    Three modes:
+      - topic: same as POST /gate/run
+      - urls:  fetch each URL, build evidence context, pass to idea_hunter
+      - signal_id: load the signal + its evidence URLs, pass to idea_hunter
+    """
+    _require_user(request)
+    from .core.source_fetcher import fetch_url
+    from .core.storage import signals_store
+
+    if not (body.topic or body.urls or body.signal_id):
+        raise HTTPException(status_code=422, detail="Provide one of: topic, urls, signal_id")
+
+    # Build evidence + final topic
+    evidence_parts: List[str] = []
+    final_topic = body.topic or ""
+
+    if body.signal_id:
+        sig = signals_store.get(body.signal_id)
+        if not sig:
+            raise HTTPException(status_code=404, detail="signal not found")
+        final_topic = final_topic or sig["suggested_topic"] or sig["theme"]
+        evidence_parts.append(f"Signal: {sig['theme']}\n{sig['excerpt']}")
+        for u in sig["evidence_urls"][:5]:
+            item = fetch_url(u)
+            if item:
+                evidence_parts.append(f"\n--- {item.title} ({u}) ---\n{item.body}")
+
+    if body.urls:
+        for u in body.urls[:10]:
+            item = fetch_url(u)
+            if item:
+                evidence_parts.append(f"--- {item.title} ({u}) ---\n{item.body}")
+                if not final_topic:
+                    final_topic = item.title
+
+    if not final_topic:
+        raise HTTPException(status_code=422, detail="Could not derive a topic from inputs")
+
+    evidence_context = "\n\n".join(evidence_parts) if evidence_parts else None
+
+    # Patch the workflow's idea_hunter to use the evidence context once
+    # (we don't change the workflow signature — too invasive — so we wrap)
+    original_generate = _workflow._idea_hunter.generate
+    def _generate_with_context(topic: str, feedback: str | None = None):
+        return original_generate(topic, feedback=feedback, evidence_context=evidence_context)
+    _workflow._idea_hunter.generate = _generate_with_context  # type: ignore
+    try:
+        run = _workflow.run(topic=final_topic)
+    finally:
+        _workflow._idea_hunter.generate = original_generate  # restore
+    response = _serialize_run(run)
+    _runs[response.run_id] = response
+
+    # If seeded by a signal, mark promotion
+    if body.signal_id:
+        signals_store.mark_promoted(body.signal_id, response.run_id)
+    return response
 
 
 # ---------------------------------------------------------------------------

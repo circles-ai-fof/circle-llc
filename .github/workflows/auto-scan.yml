@@ -1,0 +1,48 @@
+name: Hunter Auto-Scan
+# R28 / ADR-011 — every 6h, ask the backend to scan configured sources.
+# Signals scoring >= 0.85 are auto-promoted into full workflow runs.
+#
+# Required GitHub secrets:
+#   AUTO_SCAN_API_URL  — the Railway API URL (no trailing slash)
+#   AUTO_SCAN_TOKEN    — a valid session token (login as crisan312@hotmail.com
+#                        and paste the token here; renew every 7 days)
+#
+# Disable this workflow if you want manual-only operation: change `on.schedule`
+# to `on: workflow_dispatch` only.
+
+on:
+  schedule:
+    # Every 6 hours at minute 17 (off-peak)
+    - cron: '17 */6 * * *'
+  workflow_dispatch:  # manual trigger via the GitHub UI
+
+jobs:
+  scan:
+    name: Trigger backend scan + auto-promote
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: POST /api/v1/sources/scan
+        env:
+          API_URL: ${{ secrets.AUTO_SCAN_API_URL }}
+          TOKEN: ${{ secrets.AUTO_SCAN_TOKEN }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$TOKEN" ]; then
+            echo "::error::AUTO_SCAN_API_URL and AUTO_SCAN_TOKEN secrets must be set"
+            exit 1
+          fi
+          set -e
+          RESP=$(curl --silent --show-error --max-time 300 \
+            -w "\nHTTP_CODE:%{http_code}" \
+            -X POST "$API_URL/api/v1/sources/scan" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"auto_promote_threshold": 0.85}')
+          BODY=$(echo "$RESP" | sed '$d')
+          CODE=$(echo "$RESP" | tail -n1 | sed 's/HTTP_CODE://')
+          echo "HTTP $CODE"
+          echo "$BODY" | head -c 2000
+          if [ "$CODE" -ge 400 ]; then
+            echo "::error::Scan failed with HTTP $CODE"
+            exit 1
+          fi

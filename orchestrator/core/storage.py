@@ -71,6 +71,36 @@ CREATE TABLE IF NOT EXISTS auth_attempts (
 );
 CREATE INDEX IF NOT EXISTS idx_auth_attempts_ts ON auth_attempts(ts);
 CREATE INDEX IF NOT EXISTS idx_auth_attempts_email ON auth_attempts(email);
+
+-- R28 / ADR-011 — autonomous hunter (sources + signals)
+CREATE TABLE IF NOT EXISTS sources (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind            TEXT NOT NULL,         -- url|rss|hn|reddit|github_trending|product_hunt
+    target          TEXT NOT NULL,         -- url or subreddit name
+    name            TEXT NOT NULL,         -- display name for the UI
+    active          INTEGER NOT NULL DEFAULT 1,
+    last_scanned_at INTEGER,
+    created_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sources_active ON sources(active);
+
+CREATE TABLE IF NOT EXISTS signals (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id         INTEGER,
+    source_kind       TEXT NOT NULL,
+    theme             TEXT NOT NULL,
+    score             REAL NOT NULL,
+    excerpt           TEXT NOT NULL,
+    evidence_json     TEXT NOT NULL,       -- JSON array of urls
+    suggested_topic   TEXT NOT NULL,
+    feedback          TEXT,                -- 'up' | 'down' | NULL
+    promoted_run_id   TEXT,                -- run_id if promoted to idea_hunter
+    created_at        INTEGER NOT NULL,
+    FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_signals_score ON signals(score DESC);
+CREATE INDEX IF NOT EXISTS idx_signals_feedback ON signals(feedback);
+CREATE INDEX IF NOT EXISTS idx_signals_ts ON signals(created_at DESC);
 """
 
 # Singleton path; resolved at first import after env load
@@ -418,17 +448,223 @@ class AuthStore:
         _memory_auth_attempts.clear()
 
 
+# ---------------------------------------------------------------------------
+# Sources + Signals (R28 / ADR-011 — autonomous hunter)
+# ---------------------------------------------------------------------------
+
+
+_memory_sources: List[Dict] = []
+_memory_signals: List[Dict] = []
+
+
+class SourcesStore:
+    """CRUD for the source catalog."""
+
+    def add(self, kind: str, target: str, name: str) -> int:
+        _ensure_init()
+        ts = int(time.time())
+        if _db_path:
+            with _conn() as c:
+                cur = c.execute(
+                    "INSERT INTO sources(kind,target,name,active,created_at) "
+                    "VALUES(?,?,?,1,?)",
+                    (kind, target, name, ts),
+                )
+                return int(cur.lastrowid)
+        new_id = (max([s["id"] for s in _memory_sources], default=0) + 1)
+        _memory_sources.append({
+            "id": new_id, "kind": kind, "target": target, "name": name,
+            "active": 1, "last_scanned_at": None, "created_at": ts,
+        })
+        return new_id
+
+    def list(self, active_only: bool = False) -> List[Dict]:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                q = "SELECT id,kind,target,name,active,last_scanned_at,created_at FROM sources"
+                if active_only:
+                    q += " WHERE active=1"
+                q += " ORDER BY created_at DESC"
+                return [dict(r) for r in c.execute(q).fetchall()]
+        rows = _memory_sources
+        if active_only:
+            rows = [r for r in rows if r["active"]]
+        return sorted(rows, key=lambda r: r["created_at"], reverse=True)
+
+    def get(self, source_id: int) -> Optional[Dict]:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                row = c.execute(
+                    "SELECT id,kind,target,name,active,last_scanned_at,created_at "
+                    "FROM sources WHERE id=?", (source_id,)
+                ).fetchone()
+                return dict(row) if row else None
+        for r in _memory_sources:
+            if r["id"] == source_id:
+                return dict(r)
+        return None
+
+    def mark_scanned(self, source_id: int) -> None:
+        _ensure_init()
+        ts = int(time.time())
+        if _db_path:
+            with _conn() as c:
+                c.execute("UPDATE sources SET last_scanned_at=? WHERE id=?", (ts, source_id))
+        else:
+            for r in _memory_sources:
+                if r["id"] == source_id:
+                    r["last_scanned_at"] = ts
+                    return
+
+    def set_active(self, source_id: int, active: bool) -> None:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                c.execute("UPDATE sources SET active=? WHERE id=?", (1 if active else 0, source_id))
+        else:
+            for r in _memory_sources:
+                if r["id"] == source_id:
+                    r["active"] = 1 if active else 0
+                    return
+
+    def delete(self, source_id: int) -> None:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                c.execute("DELETE FROM sources WHERE id=?", (source_id,))
+        else:
+            _memory_sources[:] = [r for r in _memory_sources if r["id"] != source_id]
+
+    def clear(self) -> None:
+        if _db_path:
+            with _conn() as c:
+                c.execute("DELETE FROM sources")
+        _memory_sources.clear()
+
+
+class SignalsStore:
+    """Append-mostly store. Signals come from source_scanner runs."""
+
+    def add(
+        self,
+        source_id: Optional[int],
+        source_kind: str,
+        theme: str,
+        score: float,
+        excerpt: str,
+        evidence_urls: List[str],
+        suggested_topic: str,
+    ) -> int:
+        _ensure_init()
+        ts = int(time.time())
+        ev_json = json.dumps(evidence_urls, ensure_ascii=False)
+        if _db_path:
+            with _conn() as c:
+                cur = c.execute(
+                    "INSERT INTO signals(source_id,source_kind,theme,score,excerpt,"
+                    "evidence_json,suggested_topic,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?)",
+                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic, ts),
+                )
+                return int(cur.lastrowid)
+        new_id = max([s["id"] for s in _memory_signals], default=0) + 1
+        _memory_signals.append({
+            "id": new_id, "source_id": source_id, "source_kind": source_kind,
+            "theme": theme, "score": score, "excerpt": excerpt,
+            "evidence_json": ev_json, "suggested_topic": suggested_topic,
+            "feedback": None, "promoted_run_id": None, "created_at": ts,
+        })
+        return new_id
+
+    def list(self, limit: int = 100, min_score: float = 0.0) -> List[Dict]:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                rows = c.execute(
+                    "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
+                    "suggested_topic,feedback,promoted_run_id,created_at "
+                    "FROM signals WHERE score>=? ORDER BY created_at DESC LIMIT ?",
+                    (min_score, limit),
+                ).fetchall()
+                return [_signal_row_to_dict(dict(r)) for r in rows]
+        rows = [r for r in _memory_signals if r["score"] >= min_score]
+        rows = sorted(rows, key=lambda r: r["created_at"], reverse=True)[:limit]
+        return [_signal_row_to_dict(dict(r)) for r in rows]
+
+    def get(self, signal_id: int) -> Optional[Dict]:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                row = c.execute(
+                    "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
+                    "suggested_topic,feedback,promoted_run_id,created_at "
+                    "FROM signals WHERE id=?", (signal_id,),
+                ).fetchone()
+                return _signal_row_to_dict(dict(row)) if row else None
+        for r in _memory_signals:
+            if r["id"] == signal_id:
+                return _signal_row_to_dict(dict(r))
+        return None
+
+    def set_feedback(self, signal_id: int, feedback: Optional[str]) -> None:
+        _ensure_init()
+        if feedback not in (None, "up", "down"):
+            raise ValueError(f"feedback must be up|down|None, got {feedback!r}")
+        if _db_path:
+            with _conn() as c:
+                c.execute("UPDATE signals SET feedback=? WHERE id=?", (feedback, signal_id))
+        else:
+            for r in _memory_signals:
+                if r["id"] == signal_id:
+                    r["feedback"] = feedback
+                    return
+
+    def mark_promoted(self, signal_id: int, run_id: str) -> None:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                c.execute("UPDATE signals SET promoted_run_id=? WHERE id=?", (run_id, signal_id))
+        else:
+            for r in _memory_signals:
+                if r["id"] == signal_id:
+                    r["promoted_run_id"] = run_id
+                    return
+
+    def clear(self) -> None:
+        if _db_path:
+            with _conn() as c:
+                c.execute("DELETE FROM signals")
+        _memory_signals.clear()
+
+
+def _signal_row_to_dict(row: Dict) -> Dict:
+    """Parse the evidence_json column back into a list."""
+    try:
+        row["evidence_urls"] = json.loads(row.pop("evidence_json"))
+    except Exception:  # noqa: BLE001
+        row["evidence_urls"] = []
+    return row
+
+
 # Module-level singletons used by api.py
 leads_store = LeadsStore()
 runs_store = RunsStore()
 auth_store = AuthStore()
+sources_store = SourcesStore()
+signals_store = SignalsStore()
 
 
 __all__ = [
     "leads_store",
     "runs_store",
     "auth_store",
+    "sources_store",
+    "signals_store",
     "LeadsStore",
     "RunsStore",
     "AuthStore",
+    "SourcesStore",
+    "SignalsStore",
 ]

@@ -35,10 +35,12 @@ def _reset_anti_bot_state():
     ab.TIERS["public_form"] = (1000, 60, 10000)
     ab.TIERS["expensive_llm"] = (1000, 300, 10000)
     ab.reset_stores()
-    # Also wipe lead + run + auth stores so tests can't pollute each other
+    # Also wipe lead + run + auth + sources + signals stores
     st.leads_store.clear()
     st.runs_store.clear()
     st.auth_store.clear()
+    st.sources_store.clear()
+    st.signals_store.clear()
     # Also clear the legacy in-process rate-limit store inside api.py
     try:
         from orchestrator import api as _api
@@ -55,6 +57,8 @@ def _reset_anti_bot_state():
     st2.leads_store.clear()
     st2.runs_store.clear()
     st2.auth_store.clear()
+    st2.sources_store.clear()
+    st2.signals_store.clear()
     try:
         from orchestrator import api as _api2
         _api2._rate_limit_store.clear()

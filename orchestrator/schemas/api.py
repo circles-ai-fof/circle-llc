@@ -246,6 +246,75 @@ class AuthAttemptsResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Sources + Signals (R28 / ADR-011 — autonomous hunter)
+# ---------------------------------------------------------------------------
+
+
+class SourceCreate(BaseModel):
+    kind: str = Field(pattern="^(url|rss|hn|reddit|github_trending|product_hunt)$")
+    target: str = Field(default="", max_length=500)
+    name: str = Field(min_length=1, max_length=120)
+
+
+class SourceItem(BaseModel):
+    id: int
+    kind: str
+    target: str
+    name: str
+    active: bool
+    last_scanned_at: Optional[int] = None
+    created_at: int
+
+
+class SourcesListResponse(BaseModel):
+    total: int
+    items: List[SourceItem]
+
+
+class SignalItem(BaseModel):
+    id: int
+    source_id: Optional[int] = None
+    source_kind: str
+    theme: str
+    score: float
+    excerpt: str
+    evidence_urls: List[str]
+    suggested_topic: str
+    feedback: Optional[str] = None
+    promoted_run_id: Optional[str] = None
+    created_at: int
+
+
+class SignalsListResponse(BaseModel):
+    total: int
+    items: List[SignalItem]
+
+
+class SignalFeedback(BaseModel):
+    feedback: str = Field(pattern="^(up|down|clear)$")
+
+
+class ScanRunRequest(BaseModel):
+    source_ids: Optional[List[int]] = Field(default=None, description="If omitted: scan all active sources")
+    auto_promote_threshold: float = Field(default=0.0, ge=0.0, le=1.0, description="Auto-promote signals with score >= this (0 disables)")
+
+
+class ScanRunResponse(BaseModel):
+    scanned_sources: int
+    items_fetched: int
+    signals_created: int
+    auto_promoted_runs: List[str]
+
+
+class RunFromSourcesRequest(BaseModel):
+    """Run the full workflow seeded by either: a topic, a list of URLs,
+    or a specific signal_id (which carries its own evidence + suggested_topic)."""
+    topic: Optional[str] = Field(default=None, min_length=5, max_length=500)
+    urls: Optional[List[str]] = Field(default=None, max_length=10)
+    signal_id: Optional[int] = Field(default=None, ge=1)
+
+
+# ---------------------------------------------------------------------------
 # Response — agent info
 # ---------------------------------------------------------------------------
 

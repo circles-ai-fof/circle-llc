@@ -130,6 +130,15 @@ Cada UNSUPPORTED baja specificity_score en 0.5, puede re-disparar refinement loo
 Activación: FACT_CHECK_ENABLED=true + GOOGLE_API_KEY.
 NO es debate: es fact-check single-shot binario.
 
+## R28 — Autonomous Hunter Sources + Signals (ADR-011)
+Las fuentes externas (RSS, HN, Reddit, GitHub trending, Product Hunt) se administran
+en tabla `sources`. El agente `source_scanner` (reactivado desde `_deferred/`) las
+escanea y produce `signals` con score 0.0-1.0 + evidence_urls.
+Manual: founder revisa, marca 👍/👎, decide qué promover a workflow completo.
+Auto: GitHub Actions cron (cada 6h) promueve signals con score ≥ 0.85.
+Cap de costo: ~$0.02/source/scan + $0.06/auto-promoted-run. ~$20/mes worst case.
+NO se integra X/Twitter ($100/mo) ni LinkedIn (API restricted) — esperan a M4+.
+
 ## R27 — Closed-Beta Email Allowlist Auth (ADR-010)
 Dashboard pages exigen sesión emitida por POST /api/v1/auth/login.
 Solo emails en ALLOWED_EMAILS (env var) reciben token. Tokens duran 7 días.

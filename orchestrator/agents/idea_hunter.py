@@ -54,15 +54,35 @@ class IdeaHunterAgent(BaseAgent):
     def system_prompt(self) -> str:
         return _SYSTEM
 
-    def generate(self, topic: str, feedback: str | None = None) -> IdeaSpec:
+    def generate(
+        self,
+        topic: str,
+        feedback: str | None = None,
+        evidence_context: str | None = None,
+    ) -> IdeaSpec:
         """
         Generate one startup idea from a topic.
-        Optional `feedback` (ADR-007) tells the model what to fix from a prior attempt
-        when the specificity refinement loop re-invokes hunter.
+
+        Args:
+            topic: short description / trend
+            feedback: optional refinement loop feedback (ADR-007)
+            evidence_context: optional anchoring text from external sources
+                (RSS, HN, Reddit) — ADR-011. Helps the hunter ground its idea
+                in real-world signals instead of generating from parametric
+                knowledge alone.
         """
         if self._mock_mode:
             return self._mock_generate(topic)
         prompt = f"Generate a startup idea for this topic/trend: {topic}"
+        if evidence_context:
+            # Cap context to avoid blowing the prompt budget
+            ctx = evidence_context[:6000]
+            prompt += (
+                f"\n\nGround the idea in this REAL evidence collected from external "
+                f"sources. Reference concrete pain points from the evidence in the "
+                f"problem_statement and proposed_solution. Do NOT invent numbers if "
+                f"the evidence provides them.\n\n=== EVIDENCE ===\n{ctx}\n=== END EVIDENCE ==="
+            )
         if feedback:
             prompt += (
                 f"\n\nPrevious attempt was flagged as not specific enough. "
