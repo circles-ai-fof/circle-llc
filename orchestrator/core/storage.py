@@ -102,6 +102,22 @@ CREATE TABLE IF NOT EXISTS signals (
 CREATE INDEX IF NOT EXISTS idx_signals_score ON signals(score DESC);
 CREATE INDEX IF NOT EXISTS idx_signals_feedback ON signals(feedback);
 CREATE INDEX IF NOT EXISTS idx_signals_ts ON signals(created_at DESC);
+
+-- R30 / ADR-013 — bitácora de links analizados
+CREATE TABLE IF NOT EXISTS links_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    url             TEXT NOT NULL,
+    source_file     TEXT,                -- nombre del archivo de donde salió (whatsapp/txt/docx) o NULL
+    status          TEXT NOT NULL,       -- 'pending' | 'analyzed' | 'rejected' | 'error'
+    idea_summary    TEXT,
+    sector          TEXT,
+    area            TEXT,
+    rejection_reason TEXT,
+    created_at      INTEGER NOT NULL,
+    analyzed_at     INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_links_status ON links_log(status);
+CREATE INDEX IF NOT EXISTS idx_links_ts ON links_log(created_at DESC);
 """
 
 # Singleton path; resolved at first import after env load
@@ -762,12 +778,130 @@ def _signal_row_to_dict(row: Dict) -> Dict:
     return row
 
 
+# ---------------------------------------------------------------------------
+# Links log — bitácora de URLs extraídos de archivos + analizados por LLM (R30)
+# ---------------------------------------------------------------------------
+
+
+_memory_links: List[Dict] = []
+
+
+class LinksLogStore:
+    """Audit log of every URL the system ever saw (from file imports etc.)."""
+
+    def add(self, url: str, source_file: Optional[str] = None) -> int:
+        _ensure_init()
+        ts = int(time.time())
+        if _db_path:
+            with _conn() as c:
+                cur = c.execute(
+                    "INSERT INTO links_log(url,source_file,status,created_at) "
+                    "VALUES(?,?,'pending',?)",
+                    (url, source_file, ts),
+                )
+                return int(cur.lastrowid)
+        new_id = max([l["id"] for l in _memory_links], default=0) + 1
+        _memory_links.append({
+            "id": new_id, "url": url, "source_file": source_file,
+            "status": "pending", "idea_summary": None, "sector": None, "area": None,
+            "rejection_reason": None, "created_at": ts, "analyzed_at": None,
+        })
+        return new_id
+
+    def update_analysis(
+        self,
+        link_id: int,
+        status: str,
+        idea_summary: Optional[str] = None,
+        sector: Optional[str] = None,
+        area: Optional[str] = None,
+        rejection_reason: Optional[str] = None,
+    ) -> None:
+        _ensure_init()
+        if status not in ("pending", "analyzed", "rejected", "error"):
+            raise ValueError(f"invalid status: {status}")
+        ts = int(time.time())
+        if _db_path:
+            with _conn() as c:
+                c.execute(
+                    "UPDATE links_log SET status=?, idea_summary=?, sector=?, area=?, "
+                    "rejection_reason=?, analyzed_at=? WHERE id=?",
+                    (status, idea_summary, sector, area, rejection_reason, ts, link_id),
+                )
+        else:
+            for r in _memory_links:
+                if r["id"] == link_id:
+                    r.update({
+                        "status": status, "idea_summary": idea_summary,
+                        "sector": sector, "area": area,
+                        "rejection_reason": rejection_reason, "analyzed_at": ts,
+                    })
+                    return
+
+    def list(self, status: Optional[str] = None, limit: int = 200) -> List[Dict]:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                if status:
+                    rows = c.execute(
+                        "SELECT id,url,source_file,status,idea_summary,sector,area,"
+                        "rejection_reason,created_at,analyzed_at FROM links_log "
+                        "WHERE status=? ORDER BY created_at DESC LIMIT ?",
+                        (status, limit),
+                    ).fetchall()
+                else:
+                    rows = c.execute(
+                        "SELECT id,url,source_file,status,idea_summary,sector,area,"
+                        "rejection_reason,created_at,analyzed_at FROM links_log "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+                return [dict(r) for r in rows]
+        rows = _memory_links
+        if status:
+            rows = [r for r in rows if r["status"] == status]
+        return sorted(rows, key=lambda r: r["created_at"], reverse=True)[:limit]
+
+    def stats(self) -> Dict[str, int]:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                rows = c.execute(
+                    "SELECT status, COUNT(*) AS n FROM links_log GROUP BY status"
+                ).fetchall()
+                return {r["status"]: int(r["n"]) for r in rows}
+        from collections import Counter
+        return dict(Counter(r["status"] for r in _memory_links))
+
+    def get(self, link_id: int) -> Optional[Dict]:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                row = c.execute(
+                    "SELECT id,url,source_file,status,idea_summary,sector,area,"
+                    "rejection_reason,created_at,analyzed_at FROM links_log WHERE id=?",
+                    (link_id,),
+                ).fetchone()
+                return dict(row) if row else None
+        for r in _memory_links:
+            if r["id"] == link_id:
+                return dict(r)
+        return None
+
+    def clear(self) -> None:
+        if _db_path:
+            with _conn() as c:
+                c.execute("DELETE FROM links_log")
+        _memory_links.clear()
+
+
 # Module-level singletons used by api.py
 leads_store = LeadsStore()
 runs_store = RunsStore()
 auth_store = AuthStore()
 sources_store = SourcesStore()
 signals_store = SignalsStore()
+links_log_store = LinksLogStore()
 
 
 __all__ = [
@@ -776,9 +910,11 @@ __all__ = [
     "auth_store",
     "sources_store",
     "signals_store",
+    "links_log_store",
     "LeadsStore",
     "RunsStore",
     "AuthStore",
     "SourcesStore",
     "SignalsStore",
+    "LinksLogStore",
 ]

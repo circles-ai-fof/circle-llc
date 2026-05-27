@@ -332,6 +332,78 @@ class RunFromSourcesRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Links log (R30 / ADR-013) — bitácora de URLs extraídos + analizados
+# ---------------------------------------------------------------------------
+
+
+class LinkLogItem(BaseModel):
+    id: int
+    url: str
+    source_file: Optional[str] = None
+    status: str
+    idea_summary: Optional[str] = None
+    sector: Optional[str] = None
+    area: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    created_at: int
+    analyzed_at: Optional[int] = None
+
+
+class LinksLogResponse(BaseModel):
+    total: int
+    by_status: Dict[str, int]
+    items: List[LinkLogItem]
+
+
+class FileImportResponse(BaseModel):
+    filename: str
+    urls_found: int
+    urls_added: int
+    sources_created: int
+    skipped_duplicates: int
+
+
+class AnalyzeBatchRequest(BaseModel):
+    link_ids: Optional[List[int]] = Field(default=None, max_length=50)
+    max_to_analyze: int = Field(default=10, ge=1, le=50)
+
+
+class AnalyzeBatchResponse(BaseModel):
+    analyzed: int
+    rejected: int
+    errors: int
+
+
+# ---------------------------------------------------------------------------
+# Pipeline view (R30) — runs grouped by phase for the kanban dashboard
+# ---------------------------------------------------------------------------
+
+
+class RunSummary(BaseModel):
+    run_id: str
+    idea_title: str
+    verdict: str
+    confidence: float
+    landing_slug: str
+    needs_human_review: bool
+    has_override: bool
+    cost_usd_estimated: float
+    steps_used: int
+
+
+class PipelineColumnResponse(BaseModel):
+    phase: str
+    label: str
+    count: int
+    runs: List[RunSummary]
+
+
+class PipelineResponse(BaseModel):
+    total_runs: int
+    columns: List[PipelineColumnResponse]
+
+
+# ---------------------------------------------------------------------------
 # Response — agent info
 # ---------------------------------------------------------------------------
 

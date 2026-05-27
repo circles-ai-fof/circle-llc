@@ -319,6 +319,9 @@ export default function FuentesPage() {
         )}
       </section>
 
+      {/* File import */}
+      <FileImportSection onImported={refresh} />
+
       {/* Cron hint */}
       <section
         style={{
@@ -336,6 +339,84 @@ export default function FuentesPage() {
     </main>
   );
 }
+
+function FileImportSection({ onImported }: { onImported: () => void }) {
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setResult(null);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await authFetch("/api/v1/sources/import-file", {
+        method: "POST",
+        body: fd,
+      });
+      if (!r.ok) {
+        const b = await r.json().catch(() => ({}));
+        throw new Error(b.detail || `HTTP ${r.status}`);
+      }
+      const d = await r.json();
+      setResult(
+        `✓ ${d.urls_found} URLs encontradas · ${d.sources_created} fuentes nuevas creadas · ${d.skipped_duplicates} duplicadas omitidas`,
+      );
+      onImported();
+    } catch (e2) {
+      setError(e2 instanceof Error ? e2.message : String(e2));
+    } finally {
+      setUploading(false);
+      e.target.value = ""; // allow re-upload of same file
+    }
+  };
+
+  return (
+    <section
+      style={{
+        marginTop: 20,
+        background: "#0F1525",
+        border: "1px solid #1e293b",
+        borderRadius: 12,
+        padding: 20,
+      }}
+    >
+      <h3 style={{ color: "#94a3b8", fontSize: 12, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 4 }}>
+        📥 Importar archivo de chat / notas
+      </h3>
+      <p style={{ color: "#64748b", fontSize: 12, marginBottom: 12 }}>
+        Sube un export de WhatsApp (.txt), notas en texto plano (.txt/.csv) o Word (.docx).
+        Extraemos los URLs y los registramos en la <a href="/cazar/bitacora" style={{ color: "#00D4FF" }}>bitácora</a> + los agregamos como fuentes.
+        Después puedes analizarlos con LLM (resumen, sector, área) o descartar los irrelevantes.
+      </p>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          type="file"
+          accept=".txt,.csv,.docx"
+          onChange={handleFile}
+          disabled={uploading}
+          style={{
+            color: "#94a3b8",
+            fontSize: 13,
+            cursor: uploading ? "wait" : "pointer",
+          }}
+        />
+        {uploading && <span style={{ color: "#00D4FF", fontSize: 12 }}>Procesando…</span>}
+      </div>
+      {result && (
+        <div style={{ color: "#00E5A0", fontSize: 13, marginTop: 10 }}>{result}</div>
+      )}
+      {error && (
+        <div style={{ color: "#FF4444", fontSize: 13, marginTop: 10 }}>✗ {error}</div>
+      )}
+    </section>
+  );
+}
+
 
 function Th({ children = null }: { children?: React.ReactNode }) {
   return (

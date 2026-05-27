@@ -139,6 +139,16 @@ Auto: GitHub Actions cron (cada 6h) promueve signals con score ≥ 0.85.
 Cap de costo: ~$0.02/source/scan + $0.06/auto-promoted-run. ~$20/mes worst case.
 NO se integra X/Twitter ($100/mo) ni LinkedIn (API restricted) — esperan a M4+.
 
+## R30 — File Upload + Links Bitácora + Pipeline View (ADR-013)
++ POST /api/v1/sources/import-file acepta .txt/.csv/.docx (max 5MB), extrae
+  URLs via regex stdlib, registra en links_log + crea sources tipo `url`.
++ Tabla `links_log` con status pending → analyzed | rejected | error.
++ Agente link_analyzer single-call por URL — output: summary+sector+area
+  o rejection_reason. Activación batch via POST /api/v1/links/analyze.
++ GET /api/v1/pipeline agrupa runs en 5 columnas (pending_review / iterate /
+  pass / kill / overridden). Dashboard /pipeline con auto-refresh 8s.
++ Análisis NO es automático — el founder decide cuándo gastar LLM.
+
 ## R29 — Trend Score + Single-Item Signals + New Source Kinds (ADR-012)
 + Tres kinds nuevos GRATIS: youtube (RSS de canal), bluesky (XRPC público),
   telegram (canales públicos via t.me/s/). Sin auth.

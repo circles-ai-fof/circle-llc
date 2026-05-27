@@ -22,7 +22,7 @@ from collections import defaultdict
 from typing import Dict, List
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -64,6 +64,14 @@ from .schemas.api import (
     SourceQuality,
     SourcesListResponse,
     SourcesQualityResponse,
+    AnalyzeBatchRequest,
+    AnalyzeBatchResponse,
+    FileImportResponse,
+    LinkLogItem,
+    LinksLogResponse,
+    PipelineColumnResponse,
+    PipelineResponse,
+    RunSummary,
 )
 from .core.anti_bot import (
     check_dwell,
@@ -1274,6 +1282,249 @@ def run_gate_from_sources(body: RunFromSourcesRequest, request: Request) -> RunG
     if body.signal_id:
         signals_store.mark_promoted(body.signal_id, response.run_id)
     return response
+
+
+# ---------------------------------------------------------------------------
+# File import + Links bitácora + Pipeline (R30 / ADR-013)
+# ---------------------------------------------------------------------------
+
+
+_MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
+_ALLOWED_FILE_EXTS = (".txt", ".csv", ".docx")
+
+
+@app.post(
+    "/api/v1/sources/import-file",
+    response_model=FileImportResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a .txt / WhatsApp chat / .docx, extract URLs, add as sources",
+    tags=["hunter"],
+    responses={
+        400: {"model": ErrorDetail, "description": "Invalid file (too big / wrong type / empty)"},
+    },
+)
+async def import_file(request: Request, file: UploadFile = File(...)) -> FileImportResponse:
+    """
+    Accepts .txt, .csv, WhatsApp exports (.txt), .docx. Reads up to 5 MB,
+    extracts URLs, then:
+      - logs each URL in links_log (status='pending') for the bitácora
+      - creates a new `url`-kind source per URL (named from the filename)
+      - skips duplicates (already in sources table)
+    Triggers no LLM calls — analysis is on-demand via /api/v1/links/analyze.
+    """
+    _require_user(request)
+    from .core.file_parser import extract_urls, parse_file
+    from .core.storage import links_log_store, sources_store
+
+    filename = (file.filename or "upload").strip()
+    if not filename.lower().endswith(_ALLOWED_FILE_EXTS):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Solo se aceptan archivos {_ALLOWED_FILE_EXTS}",
+        )
+
+    content = await file.read(_MAX_UPLOAD_BYTES + 1)
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Archivo demasiado grande (max {_MAX_UPLOAD_BYTES // 1024 // 1024} MB)",
+        )
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Archivo vacío")
+
+    text = parse_file(filename, content)
+    if not text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se pudo extraer texto del archivo (¿requiere python-docx para .docx?)",
+        )
+
+    urls = extract_urls(text)
+    urls_added = 0
+    sources_created = 0
+    skipped = 0
+    existing_targets = {s["target"] for s in sources_store.list() if s["kind"] == "url"}
+
+    for i, url in enumerate(urls):
+        # Always log to the bitácora
+        links_log_store.add(url=url, source_file=filename)
+        urls_added += 1
+        # Add to sources iff not already a `url`-kind source with same target
+        if url in existing_targets:
+            skipped += 1
+            continue
+        # Derive a friendly name: <filename> · #N · domain
+        try:
+            from urllib.parse import urlparse
+            domain = urlparse(url).hostname or "url"
+        except Exception:  # noqa: BLE001
+            domain = "url"
+        name = f"{filename} · #{i+1} · {domain}"[:120]
+        sources_store.add(kind="url", target=url, name=name)
+        existing_targets.add(url)
+        sources_created += 1
+
+    return FileImportResponse(
+        filename=filename,
+        urls_found=len(urls),
+        urls_added=urls_added,
+        sources_created=sources_created,
+        skipped_duplicates=skipped,
+    )
+
+
+@app.get(
+    "/api/v1/links",
+    response_model=LinksLogResponse,
+    summary="Bitácora de links extraídos/analizados",
+    tags=["hunter"],
+)
+def list_links(
+    request: Request,
+    status_filter: str = "",
+    limit: int = 200,
+) -> LinksLogResponse:
+    _require_user(request)
+    from .core.storage import links_log_store
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=422, detail="limit must be 1-500")
+    sf = status_filter or None
+    if sf and sf not in ("pending", "analyzed", "rejected", "error"):
+        raise HTTPException(status_code=422, detail="status must be pending|analyzed|rejected|error")
+    rows = links_log_store.list(status=sf, limit=limit)
+    return LinksLogResponse(
+        total=len(rows),
+        by_status=links_log_store.stats(),
+        items=[LinkLogItem(**r) for r in rows],
+    )
+
+
+@app.post(
+    "/api/v1/links/analyze",
+    response_model=AnalyzeBatchResponse,
+    summary="Analizar links pendientes — fetch + LLM categorización",
+    tags=["hunter"],
+)
+def analyze_links(body: AnalyzeBatchRequest, request: Request) -> AnalyzeBatchResponse:
+    """
+    Runs link_analyzer on pending links (or a specific list of link_ids).
+    Costs ~$0.005-0.01 per link in live mode; 0 in mock mode.
+    Use `max_to_analyze` to bound a single call.
+    """
+    _require_user(request)
+    from .agents.link_analyzer import LinkAnalyzerAgent
+    from .core.source_fetcher import fetch_url
+    from .core.storage import links_log_store
+
+    # Pick links to analyze
+    if body.link_ids:
+        candidates = [links_log_store.get(lid) for lid in body.link_ids]
+        candidates = [c for c in candidates if c and c["status"] == "pending"]
+    else:
+        candidates = links_log_store.list(status="pending", limit=body.max_to_analyze)
+    candidates = candidates[: body.max_to_analyze]
+
+    analyzer = LinkAnalyzerAgent(
+        mock_mode=_workflow._mock_mode,
+        client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+    )
+
+    analyzed_count = 0
+    rejected_count = 0
+    error_count = 0
+
+    for link in candidates:
+        try:
+            fetched = fetch_url(link["url"])
+            if not fetched:
+                links_log_store.update_analysis(
+                    link["id"], status="rejected",
+                    rejection_reason="No se pudo descargar la página",
+                )
+                rejected_count += 1
+                continue
+            result = analyzer.analyze(fetched)
+            links_log_store.update_analysis(
+                link["id"], status=result.status,
+                idea_summary=result.idea_summary, sector=result.sector,
+                area=result.area, rejection_reason=result.rejection_reason,
+            )
+            if result.status == "analyzed":
+                analyzed_count += 1
+            elif result.status == "rejected":
+                rejected_count += 1
+            else:
+                error_count += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("analyze_links: failed for %s: %s", link["url"], e)
+            links_log_store.update_analysis(
+                link["id"], status="error", rejection_reason=f"analyzer exception: {e}",
+            )
+            error_count += 1
+
+    return AnalyzeBatchResponse(
+        analyzed=analyzed_count, rejected=rejected_count, errors=error_count,
+    )
+
+
+@app.get(
+    "/api/v1/pipeline",
+    response_model=PipelineResponse,
+    summary="Vista kanban: runs agrupados por fase actual",
+    tags=["hunter"],
+)
+def pipeline(request: Request) -> PipelineResponse:
+    """
+    Returns a phase-by-phase view of every EvidenceGate run:
+      - 'pending_review'  : ensemble disagreement, needs human verdict
+      - 'iterate'         : verdict=iterate (kept active for re-test)
+      - 'pass'            : verdict=pass (ready to build)
+      - 'kill'            : verdict=kill (archived)
+      - 'overridden'      : human override recorded
+    """
+    _require_user(request)
+    from .core.storage import runs_store
+
+    columns_def = [
+        ("pending_review", "🟡 Revisión humana"),
+        ("iterate", "🔁 Iterar"),
+        ("pass", "✅ Aprobada"),
+        ("kill", "❌ Rechazada"),
+        ("overridden", "⚖️ Override humano"),
+    ]
+    bucket: Dict[str, List[RunSummary]] = {p: [] for p, _ in columns_def}
+
+    all_runs = runs_store.values()
+    for r in all_runs:
+        summary = RunSummary(
+            run_id=r.run_id,
+            idea_title=r.idea_title,
+            verdict=r.verdict,
+            confidence=r.confidence,
+            landing_slug=r.landing_slug,
+            needs_human_review=r.needs_human_review,
+            has_override=bool(r.human_override),
+            cost_usd_estimated=r.cost_usd_estimated,
+            steps_used=r.steps_used,
+        )
+        if r.human_override:
+            bucket["overridden"].append(summary)
+        elif r.needs_human_review:
+            bucket["pending_review"].append(summary)
+        else:
+            bucket.setdefault(r.verdict, []).append(summary)
+
+    return PipelineResponse(
+        total_runs=len(all_runs),
+        columns=[
+            PipelineColumnResponse(
+                phase=phase, label=label,
+                count=len(bucket.get(phase, [])),
+                runs=bucket.get(phase, []),
+            )
+            for phase, label in columns_def
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------
