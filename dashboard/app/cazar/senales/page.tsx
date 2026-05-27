@@ -146,6 +146,40 @@ export default function SenalesPage() {
     }
   };
 
+  const cleanRescan = async () => {
+    if (
+      !confirm(
+        "Re-escaneo limpio: 1) borra mocks viejos, 2) ejecuta scan de todas las fuentes activas, 3) refresca la vista. ¿Continuar?"
+      )
+    )
+      return;
+    try {
+      // Step 1: cleanup mocks
+      const cleanResp = await authFetch("/api/v1/signals/cleanup-mocks", { method: "POST" });
+      if (!cleanResp.ok) throw new Error(`Cleanup HTTP ${cleanResp.status}`);
+      const cleanData = await cleanResp.json();
+      // Step 2: scan all active sources
+      const scanResp = await authFetch("/api/v1/sources/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!scanResp.ok) throw new Error(`Scan HTTP ${scanResp.status}`);
+      const scanData = await scanResp.json();
+      alert(
+        `✓ Re-escaneo limpio completo:\n` +
+        `• Mocks borrados: ${cleanData.deleted}\n` +
+        `• Fuentes escaneadas: ${scanData.scanned_sources}\n` +
+        `• Items obtenidos: ${scanData.items_fetched}\n` +
+        `• Señales nuevas: ${scanData.signals_created}\n` +
+        `• Auto-analizadas: ${scanData.signals_auto_analyzed || 0}`
+      );
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const cleanupMocks = async () => {
     if (
       !confirm(
@@ -359,6 +393,17 @@ export default function SenalesPage() {
         </select>
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button
+            onClick={cleanRescan}
+            title="Borra mocks viejos y ejecuta un nuevo scan de todas las fuentes activas. Operación completa en un click."
+            style={{
+              padding: "6px 14px", background: "rgba(167,139,250,0.08)",
+              color: "#A78BFA", border: "1px solid #A78BFA", borderRadius: 6, fontSize: 13,
+              cursor: "pointer", fontWeight: 600,
+            }}
+          >
+            🔄 Re-escanear limpio
+          </button>
           <button
             onClick={cleanupMocks}
             title="Borra placeholders 'Mock signal from ...' que quedaron de pruebas viejas."

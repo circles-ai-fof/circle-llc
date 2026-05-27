@@ -96,6 +96,7 @@ AGENTS = [
     "market_validator.jsonl",
     "landing_generator.jsonl",
     "gate_decider.jsonl",
+    "idea_analyzer.jsonl",
 ]
 
 
@@ -275,6 +276,7 @@ class TestCaseIdConventions:
         "market_validator.jsonl": re.compile(r"^mv-\d{3}$"),
         "landing_generator.jsonl": re.compile(r"^lg-\d{3}$"),
         "gate_decider.jsonl": re.compile(r"^gd-\d{3}$"),
+        "idea_analyzer.jsonl": re.compile(r"^ia-\d{3}$"),
     }
 
     @pytest.mark.parametrize("filename", AGENTS)

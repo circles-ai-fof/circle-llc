@@ -291,18 +291,19 @@ class TestGoldenCasesExistence:
         "market_validator.jsonl",
         "landing_generator.jsonl",
         "gate_decider.jsonl",
+        "idea_analyzer.jsonl",
     ])
     def test_file_exists_and_nonempty(self, filename):
         path = GOLDEN_DIR / filename
         assert path.exists(), f"{filename} does not exist at {path}"
         assert path.stat().st_size > 100, f"{filename} appears empty or too small"
 
-    def test_total_golden_cases_at_least_150(self):
-        """Sum of all golden cases across all agents must be ≥ 150 (5 agents × 30)."""
+    def test_total_golden_cases_at_least_180(self):
+        """Sum of all golden cases across all agents must be ≥ 180 (6 agents × 30)."""
         total = 0
         for filename in ["idea_hunter.jsonl", "idea_maturer.jsonl",
                          "market_validator.jsonl", "landing_generator.jsonl",
-                         "gate_decider.jsonl"]:
+                         "gate_decider.jsonl", "idea_analyzer.jsonl"]:
             cases = _load_jsonl(filename)
             total += len(cases)
-        assert total >= 150, f"Total golden cases = {total}, expected ≥ 150"
+        assert total >= 180, f"Total golden cases = {total}, expected ≥ 180"
