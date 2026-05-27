@@ -271,6 +271,22 @@ class SourcesListResponse(BaseModel):
     items: List[SourceItem]
 
 
+class SourceQuality(BaseModel):
+    source_id: int
+    name: str
+    kind: str
+    signals_total: int
+    signals_up: int
+    signals_down: int
+    signals_promoted: int
+    avg_score: float
+    quality_score: float
+
+
+class SourcesQualityResponse(BaseModel):
+    items: List[SourceQuality]
+
+
 class SignalItem(BaseModel):
     id: int
     source_id: Optional[int] = None

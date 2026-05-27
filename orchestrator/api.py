@@ -61,7 +61,9 @@ from .schemas.api import (
     SignalsListResponse,
     SourceCreate,
     SourceItem,
+    SourceQuality,
     SourcesListResponse,
+    SourcesQualityResponse,
 )
 from .core.anti_bot import (
     check_dwell,
@@ -1152,6 +1154,43 @@ def list_signals(request: Request, limit: int = 100, min_score: float = 0.0) -> 
     rows = signals_store.list(limit=limit, min_score=min_score)
     items = [SignalItem(**r) for r in rows]
     return SignalsListResponse(total=len(items), items=items)
+
+
+@app.get(
+    "/api/v1/sources/quality",
+    response_model=SourcesQualityResponse,
+    summary="Per-source signal quality metrics (R29 source quality scoring)",
+    tags=["hunter"],
+)
+def sources_quality(request: Request) -> SourcesQualityResponse:
+    """
+    Compute per-source quality from the signals + feedback history.
+    Useful to decide which sources to keep, prune, or boost.
+    """
+    _require_user(request)
+    from .core.storage import signals_store, sources_store
+    by_id = {s["id"]: s for s in sources_store.list()}
+    items: List[SourceQuality] = []
+    for q in signals_store.quality_by_source():
+        src = by_id.get(q["source_id"])
+        if not src:
+            continue
+        items.append(
+            SourceQuality(
+                source_id=q["source_id"],
+                name=src["name"],
+                kind=src["kind"],
+                signals_total=int(q["signals_total"]),
+                signals_up=int(q["signals_up"] or 0),
+                signals_down=int(q["signals_down"] or 0),
+                signals_promoted=int(q["signals_promoted"] or 0),
+                avg_score=float(q["avg_score"] or 0.0),
+                quality_score=float(q["quality_score"]),
+            )
+        )
+    # Sort best-first
+    items.sort(key=lambda x: x.quality_score, reverse=True)
+    return SourcesQualityResponse(items=items)
 
 
 @app.post(

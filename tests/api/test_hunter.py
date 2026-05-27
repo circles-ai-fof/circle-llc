@@ -159,3 +159,60 @@ def test_run_from_sources_with_topic_works(client, auth):
     body = r.json()
     assert body["status"] == "completed"
     assert body["verdict"] in ("pass", "kill", "iterate")
+
+
+# ---------------------------------------------------------------------------
+# M3.1 — Source quality scoring (R29)
+# ---------------------------------------------------------------------------
+
+
+def test_sources_quality_empty_when_no_sources(client, auth):
+    r = client.get("/api/v1/sources/quality", headers=auth)
+    assert r.status_code == 200
+    assert r.json()["items"] == []
+
+
+def test_sources_quality_aggregates_feedback(client, auth):
+    # Create one source
+    add = client.post(
+        "/api/v1/sources", headers=auth,
+        json={"kind": "rss", "target": "https://x.test/feed", "name": "Feed One"},
+    )
+    sid = add.json()["id"]
+    # Inject signals tied to that source with mixed feedback
+    from orchestrator.core.storage import signals_store
+    s1 = signals_store.add(sid, "rss", "Tema A", 0.7, "ex", ["u1"], "topic A")
+    s2 = signals_store.add(sid, "rss", "Tema B", 0.6, "ex", ["u2"], "topic B")
+    s3 = signals_store.add(sid, "rss", "Tema C", 0.8, "ex", ["u3"], "topic C")
+    signals_store.set_feedback(s1, "up")
+    signals_store.set_feedback(s2, "up")
+    signals_store.set_feedback(s3, "down")
+    signals_store.mark_promoted(s1, "run-abc")
+
+    r = client.get("/api/v1/sources/quality", headers=auth)
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert len(items) == 1
+    q = items[0]
+    assert q["source_id"] == sid
+    assert q["signals_total"] == 3
+    assert q["signals_up"] == 2
+    assert q["signals_down"] == 1
+    assert q["signals_promoted"] == 1
+    assert 0.0 <= q["quality_score"] <= 1.0
+
+
+def test_sources_quality_requires_auth(client):
+    r = client.get("/api/v1/sources/quality")
+    assert r.status_code == 401
+
+
+def test_signals_listed_with_trend_score(client, auth):
+    """Signals API returns trend_score field (default 0)."""
+    from orchestrator.core.storage import signals_store
+    signals_store.add(None, "hn", "Some theme keyword", 0.7, "ex", ["u"], "topic")
+    r = client.get("/api/v1/signals", headers=auth)
+    items = r.json()["items"]
+    assert items
+    assert "trend_score" in items[0]
+    assert items[0]["trend_score"] == 0  # first signal -> no prior signals

@@ -38,6 +38,13 @@ const KIND_PLACEHOLDERS: Record<string, string> = {
 
 export default function FuentesPage() {
   const [sources, setSources] = useState<Source[]>([]);
+  const [quality, setQuality] = useState<Record<number, {
+    quality_score: number;
+    signals_total: number;
+    signals_up: number;
+    signals_down: number;
+    signals_promoted: number;
+  }>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -52,9 +59,19 @@ export default function FuentesPage() {
     setLoading(true);
     setError(null);
     try {
-      const r = await authFetch("/api/v1/sources");
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setSources((await r.json()).items);
+      const [rSources, rQuality] = await Promise.all([
+        authFetch("/api/v1/sources"),
+        authFetch("/api/v1/sources/quality"),
+      ]);
+      if (!rSources.ok) throw new Error(`HTTP ${rSources.status}`);
+      setSources((await rSources.json()).items);
+      if (rQuality.ok) {
+        type Q = { source_id: number; quality_score: number; signals_total: number; signals_up: number; signals_down: number; signals_promoted: number };
+        const q: Q[] = (await rQuality.json()).items;
+        const m: Record<number, Q> = {};
+        q.forEach((it) => { m[it.source_id] = it; });
+        setQuality(m);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -244,11 +261,14 @@ export default function FuentesPage() {
                 <Th>Tipo</Th>
                 <Th>Target</Th>
                 <Th>Último scan</Th>
+                <Th>Calidad</Th>
                 <Th></Th>
               </tr>
             </thead>
             <tbody>
-              {sources.map((s) => (
+              {sources.map((s) => {
+                const q = quality[s.id];
+                return (
                 <tr key={s.id} style={{ borderBottom: "1px solid #1e293b" }}>
                   <Td>{s.name}</Td>
                   <Td>
@@ -262,6 +282,25 @@ export default function FuentesPage() {
                   <Td mono>{s.target || "—"}</Td>
                   <Td>{s.last_scanned_at ? new Date(s.last_scanned_at * 1000).toLocaleString() : "Nunca"}</Td>
                   <Td>
+                    {q ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <span style={{
+                          color: q.quality_score >= 0.6 ? "#00E5A0" : q.quality_score >= 0.3 ? "#FFB800" : "#FF4444",
+                          fontFamily: "monospace", fontSize: 12, fontWeight: 700,
+                        }}
+                        title={`Calidad: ${(q.quality_score * 100).toFixed(0)}% (combinado de up rate + promoted rate + volumen)`}
+                        >
+                          {(q.quality_score * 100).toFixed(0)}%
+                        </span>
+                        <span style={{ color: "#64748b", fontSize: 10, fontFamily: "monospace" }}>
+                          {q.signals_total} sigs · 👍{q.signals_up} 👎{q.signals_down} · 🚀{q.signals_promoted}
+                        </span>
+                      </div>
+                    ) : (
+                      <span style={{ color: "#64748b", fontSize: 11 }}>sin data</span>
+                    )}
+                  </Td>
+                  <Td>
                     <button
                       onClick={() => deleteSource(s.id)}
                       style={{
@@ -273,7 +312,8 @@ export default function FuentesPage() {
                     </button>
                   </Td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}

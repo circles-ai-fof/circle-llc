@@ -688,6 +688,68 @@ class SignalsStore:
                 c.execute("DELETE FROM signals")
         _memory_signals.clear()
 
+    def quality_by_source(self) -> List[Dict]:
+        """
+        Aggregate signal stats per source_id:
+          { source_id, signals_total, signals_up, signals_down,
+            signals_promoted, avg_score, quality_score }
+        quality_score is a heuristic in [0,1]: rewards up-rate AND volume.
+        """
+        _ensure_init()
+        rows: List[Dict] = []
+        if _db_path:
+            with _conn() as c:
+                cur = c.execute(
+                    "SELECT source_id, "
+                    "COUNT(*) AS signals_total, "
+                    "SUM(CASE WHEN feedback='up' THEN 1 ELSE 0 END) AS signals_up, "
+                    "SUM(CASE WHEN feedback='down' THEN 1 ELSE 0 END) AS signals_down, "
+                    "SUM(CASE WHEN promoted_run_id IS NOT NULL THEN 1 ELSE 0 END) AS signals_promoted, "
+                    "AVG(score) AS avg_score "
+                    "FROM signals "
+                    "WHERE source_id IS NOT NULL "
+                    "GROUP BY source_id"
+                ).fetchall()
+                rows = [dict(r) for r in cur]
+        else:
+            from collections import defaultdict
+            grouped: Dict[int, Dict] = defaultdict(lambda: {
+                "signals_total": 0, "signals_up": 0, "signals_down": 0,
+                "signals_promoted": 0, "score_sum": 0.0,
+            })
+            for s in _memory_signals:
+                if s.get("source_id") is None:
+                    continue
+                g = grouped[s["source_id"]]
+                g["signals_total"] += 1
+                if s.get("feedback") == "up":
+                    g["signals_up"] += 1
+                elif s.get("feedback") == "down":
+                    g["signals_down"] += 1
+                if s.get("promoted_run_id"):
+                    g["signals_promoted"] += 1
+                g["score_sum"] += s.get("score", 0)
+            rows = [
+                {
+                    "source_id": sid,
+                    "signals_total": g["signals_total"],
+                    "signals_up": g["signals_up"],
+                    "signals_down": g["signals_down"],
+                    "signals_promoted": g["signals_promoted"],
+                    "avg_score": (g["score_sum"] / g["signals_total"]) if g["signals_total"] else 0.0,
+                }
+                for sid, g in grouped.items()
+            ]
+        # Composite quality_score: up_rate (0..1) penalized by down votes,
+        # boosted by promotion rate, dampened when volume is low.
+        for r in rows:
+            total = max(1, r["signals_total"])
+            up_rate = (r["signals_up"] - r["signals_down"]) / total
+            promote_rate = r["signals_promoted"] / total
+            vol_factor = min(1.0, total / 10.0)  # full weight at >=10 signals
+            r["quality_score"] = max(0.0, min(1.0, (0.6 * up_rate + 0.4 * promote_rate) * vol_factor + 0.05))
+        return rows
+
 
 def _signal_row_to_dict(row: Dict) -> Dict:
     """Parse the evidence_json column back into a list."""
