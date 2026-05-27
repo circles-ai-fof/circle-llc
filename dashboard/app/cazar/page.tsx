@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { authFetch } from "@/lib/auth";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -90,12 +91,27 @@ const verdictColors = {
 };
 
 export default function CazarPage() {
+  // Suspense boundary required by Next 15 because the inner component uses
+  // useSearchParams() — without it, `next build` fails with
+  // "useSearchParams() should be wrapped in a suspense boundary".
+  return (
+    <Suspense fallback={null}>
+      <CazarPageInner />
+    </Suspense>
+  );
+}
+
+function CazarPageInner() {
+  const searchParams = useSearchParams();
+  const initialRunId = searchParams.get("run_id");
+
   const [topic, setTopic] = useState("");
   const [secret, setSecret] = useState("");
   const [running, setRunning] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1); // index in AGENTS
   const [result, setResult] = useState<RunResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadingExisting, setLoadingExisting] = useState<boolean>(!!initialRunId);
   const startedAt = useRef<number>(0);
 
   // While running, animate through agents
@@ -110,6 +126,33 @@ export default function CazarPage() {
     }, 5500); // ~5.5s per agent visual; actual call may be faster or slower
     return () => clearInterval(id);
   }, [running]);
+
+  // If we landed here with ?run_id=XXX (e.g. promoted from /cazar/señales),
+  // fetch the run and render its result instead of the empty form.
+  useEffect(() => {
+    if (!initialRunId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await authFetch(`/api/v1/gate/runs/${initialRunId}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status} — run no encontrado`);
+        const data = (await r.json()) as RunResponse;
+        if (!cancelled) {
+          setResult(data);
+          setCurrentStep(AGENTS.length); // mark all agents as completed
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      } finally {
+        if (!cancelled) setLoadingExisting(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialRunId]);
 
   const handleRun = async () => {
     if (!topic.trim()) return;
@@ -182,8 +225,26 @@ export default function CazarPage() {
         </p>
       </header>
 
+      {/* Loading existing run (came from /cazar/señales promote) */}
+      {loadingExisting && !result && !error && (
+        <section
+          style={{
+            background: "#0F1525",
+            border: "1px solid #1e293b",
+            borderRadius: 12,
+            padding: 24,
+            marginBottom: 20,
+            color: "#94a3b8",
+            textAlign: "center",
+            fontSize: 14,
+          }}
+        >
+          Cargando corrida {initialRunId?.slice(0, 8)}…
+        </section>
+      )}
+
       {/* Input */}
-      {!result && (
+      {!result && !loadingExisting && (
         <section
           style={{
             background: "#0F1525",
