@@ -49,6 +49,28 @@ CREATE TABLE IF NOT EXISTS gate_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_gate_review
     ON gate_runs(needs_human_review, has_override);
+
+-- R27 / ADR-010 — closed beta auth
+CREATE TABLE IF NOT EXISTS sessions (
+    token       TEXT PRIMARY KEY,
+    email       TEXT NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_email ON sessions(email);
+CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS auth_attempts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    email       TEXT NOT NULL,
+    ip          TEXT,
+    user_agent  TEXT,
+    ts          INTEGER NOT NULL,
+    allowed     INTEGER NOT NULL DEFAULT 0,
+    reason      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_auth_attempts_ts ON auth_attempts(ts);
+CREATE INDEX IF NOT EXISTS idx_auth_attempts_email ON auth_attempts(email);
 """
 
 # Singleton path; resolved at first import after env load
@@ -261,9 +283,152 @@ class RunsStore:
         _memory_runs.clear()
 
 
+# ---------------------------------------------------------------------------
+# Sessions + Auth attempts (closed beta auth, R27 / ADR-010)
+# ---------------------------------------------------------------------------
+
+
+_memory_sessions: Dict[str, Dict] = {}
+_memory_auth_attempts: List[Dict] = []
+
+
+class AuthStore:
+    """
+    Holds:
+      - sessions: token -> {email, expires_at}
+      - auth_attempts: append-only log of every login attempt
+    """
+
+    # ---- Sessions ----
+
+    def create_session(self, token: str, email: str, expires_at: int) -> None:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                c.execute(
+                    "INSERT OR REPLACE INTO sessions(token,email,expires_at,created_at) "
+                    "VALUES(?,?,?,?)",
+                    (token, email, expires_at, int(time.time())),
+                )
+        else:
+            _memory_sessions[token] = {
+                "email": email,
+                "expires_at": expires_at,
+                "created_at": int(time.time()),
+            }
+
+    def verify_session(self, token: str) -> Optional[Dict]:
+        """Returns {email, expires_at} if valid + unexpired, else None."""
+        _ensure_init()
+        now = int(time.time())
+        if _db_path:
+            with _conn() as c:
+                row = c.execute(
+                    "SELECT email, expires_at FROM sessions "
+                    "WHERE token=? AND expires_at > ?",
+                    (token, now),
+                ).fetchone()
+                return dict(row) if row else None
+        s = _memory_sessions.get(token)
+        if s and s["expires_at"] > now:
+            return {"email": s["email"], "expires_at": s["expires_at"]}
+        return None
+
+    def revoke_session(self, token: str) -> None:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                c.execute("DELETE FROM sessions WHERE token=?", (token,))
+        else:
+            _memory_sessions.pop(token, None)
+
+    def cleanup_expired(self) -> int:
+        """Remove sessions past their expiry. Returns count deleted."""
+        _ensure_init()
+        now = int(time.time())
+        if _db_path:
+            with _conn() as c:
+                cur = c.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
+                return cur.rowcount
+        n = 0
+        for t in list(_memory_sessions.keys()):
+            if _memory_sessions[t]["expires_at"] <= now:
+                del _memory_sessions[t]
+                n += 1
+        return n
+
+    # ---- Auth attempts ----
+
+    def log_attempt(
+        self,
+        email: str,
+        ip: Optional[str],
+        user_agent: Optional[str],
+        allowed: bool,
+        reason: str,
+    ) -> None:
+        _ensure_init()
+        ts = int(time.time())
+        if _db_path:
+            with _conn() as c:
+                c.execute(
+                    "INSERT INTO auth_attempts(email,ip,user_agent,ts,allowed,reason) "
+                    "VALUES(?,?,?,?,?,?)",
+                    (email, ip, user_agent, ts, 1 if allowed else 0, reason),
+                )
+        else:
+            _memory_auth_attempts.append(
+                {
+                    "email": email,
+                    "ip": ip,
+                    "user_agent": user_agent,
+                    "ts": ts,
+                    "allowed": allowed,
+                    "reason": reason,
+                }
+            )
+
+    def list_attempts(self, limit: int = 200) -> List[Dict]:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                rows = c.execute(
+                    "SELECT email,ip,user_agent,ts,allowed,reason FROM auth_attempts "
+                    "ORDER BY ts DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+                return [dict(r) for r in rows]
+        return sorted(_memory_auth_attempts, key=lambda x: x["ts"], reverse=True)[:limit]
+
+    def count_attempts(self) -> int:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                row = c.execute("SELECT COUNT(*) AS n FROM auth_attempts").fetchone()
+                return int(row["n"])
+        return len(_memory_auth_attempts)
+
+    def clear(self) -> None:
+        """Test-only."""
+        if _db_path:
+            with _conn() as c:
+                c.execute("DELETE FROM sessions")
+                c.execute("DELETE FROM auth_attempts")
+        _memory_sessions.clear()
+        _memory_auth_attempts.clear()
+
+
 # Module-level singletons used by api.py
 leads_store = LeadsStore()
 runs_store = RunsStore()
+auth_store = AuthStore()
 
 
-__all__ = ["leads_store", "runs_store", "LeadsStore", "RunsStore"]
+__all__ = [
+    "leads_store",
+    "runs_store",
+    "auth_store",
+    "LeadsStore",
+    "RunsStore",
+    "AuthStore",
+]

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { authFetch } from "@/lib/auth";
 
 type LeadItem = {
   slug: string;
@@ -26,7 +27,7 @@ export default function LeadsPage() {
 
   const refreshStats = async () => {
     try {
-      const r = await fetch(`${API}/api/v1/leads/stats`);
+      const r = await authFetch(`/api/v1/leads/stats`);
       if (!r.ok) throw new Error(`stats ${r.status}`);
       setStats(await r.json());
     } catch (e) {
@@ -38,7 +39,7 @@ export default function LeadsPage() {
     try {
       const headers: HeadersInit = {};
       if (secret) headers["X-Gate-Secret"] = secret;
-      const r = await fetch(`${API}/api/v1/leads/${slug}?limit=100`, { headers });
+      const r = await authFetch(`/api/v1/leads/${slug}?limit=100`, { headers });
       if (!r.ok) throw new Error(`list ${r.status}`);
       setList(await r.json());
     } catch (e) {

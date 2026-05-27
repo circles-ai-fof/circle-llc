@@ -51,9 +51,14 @@ GATE_RUN_SECRET=<generate-a-long-random-string>
 # TURNSTILE_SECRET_KEY=<add-after-creating-turnstile-site>
 
 EXTRA_ALLOWED_ORIGINS=https://circles-ai.ai,https://www.circles-ai.ai,https://dashboard.circles-ai.ai
+
+# Closed-beta dashboard auth (R27 / ADR-010)
+# Comma-separated emails — these are the only users who can access the dashboard.
+# Anyone NOT on this list gets 403 + their attempt is logged for audit.
+ALLOWED_EMAILS=crisan312@hotmail.com,jfnunez@asiservy.com,cristian.molina.ia.soporte@gmail.com
 ```
 
-**Important**: generate `GATE_RUN_SECRET` with `openssl rand -hex 32` — anyone with this header can run \$0.06 calls.
+**Important**: generate `GATE_RUN_SECRET` with `openssl rand -hex 32` — anyone with this header can run \$0.06 calls or view full lead emails.
 
 ### 4. Generate a public domain
 

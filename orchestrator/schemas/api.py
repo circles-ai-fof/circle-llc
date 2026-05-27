@@ -208,6 +208,44 @@ class LeadImportResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Auth (R27 / ADR-010) — closed beta allowlist
+# ---------------------------------------------------------------------------
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=5, max_length=200)
+
+
+class LoginResponse(BaseModel):
+    token: str
+    email: str
+    expires_at: int  # unix seconds
+
+
+class MeResponse(BaseModel):
+    email: str
+    expires_at: int
+
+
+class LogoutResponse(BaseModel):
+    revoked: bool
+
+
+class AuthAttemptItem(BaseModel):
+    email: str
+    ip: Optional[str] = None
+    user_agent: Optional[str] = None
+    ts: int
+    allowed: bool
+    reason: str
+
+
+class AuthAttemptsResponse(BaseModel):
+    total: int
+    items: List[AuthAttemptItem]
+
+
+# ---------------------------------------------------------------------------
 # Response — agent info
 # ---------------------------------------------------------------------------
 

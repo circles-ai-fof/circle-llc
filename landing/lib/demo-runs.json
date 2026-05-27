@@ -1,0 +1,1062 @@
+[
+  {
+    "id": "saas-facturacion",
+    "category": "saas",
+    "keywords": [
+      "facturacion",
+      "contabilidad",
+      "sri",
+      "factura",
+      "electronica",
+      "saas",
+      "pyme",
+      "contable"
+    ],
+    "topic_input": "SaaS de facturacion electronica para PYMEs Ecuador con integracion SRI",
+    "idea": {
+      "title": "FacturAI EC",
+      "description": "FacturAI EC automatiza la emisión y gestión de comprobantes electrónicos para PYMEs ecuatorianas con integración directa al SRI en menos de 30 segundos por factura. Las PYMEs pierden en promedio 15 horas semanales en facturación manual y corrección de errores de formato XML que el SRI rechaza a una tasa del 23%. La plataforma usa IA para pre-validar estructuras XML antes del envío, reduciendo rechazos a menos del 1% y automatizando la conciliación contable — especialmente crítico desde enero 2026, cuando el SRI exige transmisión en tiempo real (Resolución NAC-DGERCGC25-00000017) eliminando el margen de corrección ex-post.",
+      "target_market": "Gerentes generales y contadores de PYMEs 5-50 empleados en Ecuador, sectores comercio minorista y servicios profesionales, obligados a emitir comprobantes electrónicos (universo: ~2.000.000 contribuyentes registrados, segmento PYME estimado en 300k-500k empresas activas)",
+      "problem_statement": "Las PYMEs ecuatorianas enfrentan rechazos de comprobantes XML por el SRI (tasa reportada ~23% en software no especializado), con multas vigentes de USD $460–$13.800 por comprobante no transmitido correctamente (Res. NAC-DGERCGC24-00000022), más ~15 horas/semana de trabajo manual de corrección; el riesgo se agudizó en 2026 al eliminarse el plazo de gracia de 4 días hábiles para regularizar transmisiones.",
+      "proposed_solution": "Motor de pre-validación XML con reglas actualizadas en tiempo real desde el API del SRI Ecuador (incluyendo cumplimiento con esquema offline v2.32 y transmisión en tiempo real desde 2026), combinado con un agente IA que detecta inconsistencias contables antes del envío y genera automáticamente el archivo ATS para la declaración mensual del IVA, reduciendo rechazos a <1% y eliminando la ventana de exposición a multas.",
+      "vertical_category": "saas"
+    },
+    "icp": {
+      "demographic": "Contador/a general o dueño-administrador de PYME ecuatoriana, 30-52 años, empresa de 5-30 empleados, sectores comercio minorista o servicios profesionales, facturación anual USD $150k-$2M, ubicado en Quito, Guayaquil o Cuenca, obligado a emitir comprobantes electrónicos mensuales (>50 facturas/mes)",
+      "psychographic": "Se identifica como responsable directo del cumplimiento tributario; su mayor miedo es recibir una notificación del SRI con multa o inicio de proceso de clausura; valora la tranquilidad sobre el ahorro de costos; desconfía de soluciones genéricas que no conocen la normativa ecuatoriana; siente que el SRI cambia las reglas sin avisar y lo deja expuesto",
+      "pain_points": [
+        "Rechazos inesperados del SRI que descubren horas después del envío, sin tiempo de corrección desde 2026",
+        "Dedicar 10-15 horas semanales a revisar XMLs manualmente y reconciliar el ATS para declaración de IVA",
+        "Riesgo de multas de USD $460-$13.800 por comprobante que puede superar la utilidad mensual del negocio",
+        "Software contable genérico (Mónica, Contipaq adaptaciones locales) no actualiza reglas SRI en tiempo real ni valida semánticamente"
+      ],
+      "willingness_to_pay": "USD $49-$89/mes por empresa; justificado porque una sola multa evitada cubre 5-15 meses de suscripción, y el ahorro de 10h/semana de trabajo contador a USD $8-12/hora equivale a USD $320-480/mes en costo de oportunidad",
+      "acquisition_channel": "Comunidades y grupos de Facebook/WhatsApp de contadores ecuatorianos (altamente activos, >50 grupos con 5k-30k miembros cada uno) combinado con alianzas con gremios como FENACON y Colegios de Contadores provinciales; rationale: los contadores ecuatorianos toman decisiones de software por recomendación de pares y validación gremial, no por publicidad digital"
+    },
+    "value_proposition": "Ayudamos a contadores y dueños de PYMEs ecuatorianas a transmitir comprobantes electrónicos con tasa de rechazo <1% y generar el ATS automáticamente, mediante un motor de pre-validación sincronizado en tiempo real con las reglas del SRI más un agente IA que detecta inconsistencias antes del envío, a diferencia de los softwares contables genéricos que validan contra esquemas estáticos y no anticipan rechazos semánticos ni cambios normativos de 2026",
+    "test_design": {
+      "hypothesis": "If we show Contadores generales y dueños-administradores de PYMEs ecuatorianas (5-30 empleados, >50 facturas/mes) a landing page sobre FacturAI EC con valor prop de tasa de rechazo SRI <1% y generación automática de ATS mediante pre-validación en tiempo real, then 3% will convert (registro/waitlist) because el dolor de rechazos del SRI y la carga manual del ATS es crítico, recurrente y costoso para este segmento, y la promesa de reducción de rechazos semánticos antes del envío resuelve un problema que los softwares genéricos actuales no abordan",
+      "ad_budget_usd": 350.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.02,
+      "target_conversion_rate": 0.03
+    },
+    "landing": {
+      "headline": "Factura sin rechazos del SRI — tu ATS listo en automático",
+      "subheadline": "Para contadores y dueños de PYMEs ecuatorianas que emiten +50 facturas al mes y no pueden arriesgarse a rechazos sin tiempo de corrección en 2026.",
+      "value_props": [
+        "Tasa de rechazo SRI menor al 1%: nuestro motor detecta errores semánticos antes del envío, no después",
+        "Ahorra hasta 12 horas semanales eliminando la revisión manual de XMLs y la reconciliación del ATS",
+        "Sincronización en tiempo real con las reglas del SRI 2026 — sin actualizaciones manuales ni sorpresas normativas",
+        "ATS generado automáticamente con cada ciclo de facturación, listo para tu declaración de IVA",
+        "Agente IA que revisa inconsistencias como lo haría tu mejor contador, pero en segundos"
+      ],
+      "cta_text": "Prueba gratis 30 días",
+      "social_proof": "Contadores de PYMEs en Quito y Guayaquil reportan pasar de 3-4 rechazos mensuales a cero en las primeras 4 semanas de uso.",
+      "domain_slug": "facturai-ec"
+    },
+    "decision": {
+      "verdict": "iterate",
+      "confidence": 0.5333333333333333,
+      "rationale": "Ensemble verdict: iterate (67% agreement, 3 models). {\n  \"verdict\": \"iterate\",\n  \"confidence\": 0.72,\n  \"rationale\": \"the test has not been executed — zero impressions, clicks, or spend against a $350 budget — so there is no empirical evidence to pass or",
+      "next_steps": [
+        "Adjust ad creative and headline (A/B test 2 variants)",
+        "Extend test 7 more days with revised targeting",
+        "Re-evaluate at $150 additional spend"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: iterate (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)",
+        "google/gemini-flash-latest: iterate (0.90)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779848485
+    }
+  },
+  {
+    "id": "saas-crm",
+    "category": "saas",
+    "keywords": [
+      "crm",
+      "clientes",
+      "ventas",
+      "leads",
+      "pipeline",
+      "ventas"
+    ],
+    "topic_input": "CRM ligero para vendedores B2B en LATAM con WhatsApp integrado",
+    "idea": {
+      "title": "PipeChat CRM",
+      "description": "CRM nativo para vendedores B2B en LATAM que convierte conversaciones de WhatsApp en pipeline de ventas automaticamente. Los vendedores pierden hasta 40% de su tiempo copiando mensajes de WhatsApp a hojas de Excel o CRMs pesados como Salesforce. PipeChat sincroniza contactos, etapas del pipeline y seguimientos directamente desde WhatsApp Business API sin cambiar el flujo de trabajo del vendedor.",
+      "target_market": "Gerentes de Ventas y vendedores B2B en empresas 10-100 empleados en Colombia, México y Ecuador, sectores distribución, manufactura y servicios profesionales",
+      "problem_statement": "El 73% de vendedores B2B en LATAM usa WhatsApp como canal principal de ventas (Colombia 92% y México >90% de penetración de usuarios) pero gestiona el pipeline en hojas de cálculo, perdiendo en promedio 8 horas/semana en registro manual y sin visibilidad de conversaciones activas para sus gerentes.",
+      "proposed_solution": "Integración bidireccional con WhatsApp Business API que parsea automáticamente conversaciones usando NLP en español/portugués para extraer intención de compra, actualizar etapas del deal y generar recordatorios de seguimiento, con dashboard de pipeline nativo en WhatsApp Web sin necesidad de abrir otra aplicación.",
+      "vertical_category": "saas"
+    },
+    "icp": {
+      "demographic": "Gerente Comercial o Director de Ventas, 32-48 años, empresa B2B de 15-60 empleados en Colombia o México (Bogotá, Medellín, CDMX, Monterrey), sectores distribución o servicios profesionales, facturación anual USD 500K-5M",
+      "psychographic": "Se identifica como líder moderno pero opera con herramientas del siglo pasado. Su mayor miedo es perder un deal por falta de seguimiento oportuno o que un vendedor saliente se lleve los contactos en su celular personal. Quiere visibilidad real sin microgestionar a su equipo. Orgullo profesional ligado a métricas de cierre, no a procesos administrativos.",
+      "pain_points": [
+        "No sabe en qué etapa real están sus deals porque el equipo actualiza el Excel solo cuando se acuerda, generando datos con 3-5 días de retraso",
+        "Cuando un vendedor renuncia, las conversaciones activas de WhatsApp desaparecen con su celular personal, perdiendo contexto y relaciones con clientes",
+        "Pierde 2-3 horas semanales en reuniones de pipeline donde la mitad del tiempo se va en actualizar información básica que debería estar ya registrada"
+      ],
+      "willingness_to_pay": "$49-89 USD/mes por seat de gerente + $19-29 USD/mes por seat de vendedor (modelo por usuario). Justificación: si recupera 8 horas/semana por vendedor a un costo promedio de $8-12 USD/hora en LATAM, el ROI es 4-6x en el primer mes. Benchmark: HubSpot Starter cuesta $15/seat pero no tiene integración nativa WhatsApp; soluciones locales tipo Kommo cobran $25-45/usuario sin NLP en español.",
+      "acquisition_channel": "Comunidades de LinkedIn de gerentes comerciales LATAM + grupos de WhatsApp de gremios sectoriales (cámaras de comercio, asociaciones de distribuidores). Rationale: el ICP toma decisiones de herramientas por recomendación de pares, no por búsqueda orgánica. Un caso de éxito compartido en un grupo gremial puede generar 10-20 demos en 48 horas sin costo de adquisición."
+    },
+    "value_proposition": "Ayudamos a gerentes comerciales B2B en LATAM a tener visibilidad total de su pipeline en tiempo real sin cambiar la forma en que su equipo trabaja en WhatsApp, usando NLP que actualiza automáticamente los deals desde las conversaciones, a diferencia de CRMs tradicionales que exigen al vendedor registrar manualmente cada interacción en una herramienta que nunca abre.",
+    "test_design": {
+      "hypothesis": "If we show B2B Sales Managers and Commercial Directors (32-48 years, companies of 15-60 employees in Colombia and Mexico) a landing page about PipeChat CRM's value prop of automatic pipeline visibility from WhatsApp conversations via NLP without changing team workflows, then 3% will convert to a demo request or waitlist signup because this ICP suffers daily from manual CRM data entry friction and WhatsApp is already their primary sales communication channel, making the pain-to-solution fit immediately recognizable",
+      "ad_budget_usd": 350.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.018,
+      "target_conversion_rate": 0.03
+    },
+    "landing": {
+      "headline": "Ve tu pipeline en tiempo real sin que tu equipo deje WhatsApp",
+      "subheadline": "Para gerentes B2B en Colombia y México que pierden deals por datos desactualizados y conversaciones que desaparecen cuando un vendedor se va.",
+      "value_props": [
+        "Pipeline actualizado al instante: nuestro NLP lee las conversaciones de WhatsApp y mueve tus deals automáticamente, sin que el vendedor toque el CRM",
+        "Elimina los 3-5 días de retraso en tus datos — toma decisiones de forecast con información de hoy, no de la semana pasada",
+        "Cuando un vendedor renuncia, conservas todo el historial y contexto de WhatsApp en la empresa, no en su celular personal",
+        "Visibilidad total sin cambiar hábitos: tu equipo sigue usando WhatsApp exactamente igual, el CRM se actualiza solo",
+        "Detecta deals estancados antes de perderlos — recibe alertas cuando una conversación lleva más de X días sin avance"
+      ],
+      "cta_text": "Solicita tu demo gratuita",
+      "social_proof": "Gerentes comerciales en Bogotá y CDMX reportan recuperar hasta 4 horas semanales de seguimiento manual y cero deals perdidos por rotación de vendedores en los primeros 60 días.",
+      "domain_slug": "pipechat-crm"
+    },
+    "decision": {
+      "verdict": "iterate",
+      "confidence": 0.4666666666666666,
+      "rationale": "Ensemble verdict: iterate (67% agreement, 3 models). {\n  \"verdict\": \"iterate\",\n  \"confidence\": 0.85,\n  \"rationale\": \"the test produced zero impressions and zero spend, meaning the experiment was never actually executed — there is no evidence to evaluate",
+      "next_steps": [
+        "Adjust ad creative and headline (A/B test 2 variants)",
+        "Extend test 7 more days with revised targeting",
+        "Re-evaluate at $150 additional spend"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: iterate (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)",
+        "google/gemini-flash-latest: iterate (0.70)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779848629
+    }
+  },
+  {
+    "id": "saas-hr",
+    "category": "saas",
+    "keywords": [
+      "rrhh",
+      "nomina",
+      "empleados",
+      "iess",
+      "recursos humanos",
+      "payroll"
+    ],
+    "topic_input": "Plataforma de nomina y gestion IESS automatica para PYMEs Ecuador",
+    "idea": {
+      "title": "NóminaClara EC",
+      "description": "NóminaClara EC automatiza el cálculo de nómina y las obligaciones IESS para PYMEs ecuatorianas, eliminando errores manuales y multas por incumplimiento. Las PYMEs en Ecuador pierden en promedio 18 horas/mes en cálculos de aportes patronales (11,15% patronal + 9,45% personal), fondos de reserva (8,33%) y décimos, además de acumular multas del IESS por avisos de entrada/salida extemporáneos y mora patronal con intereses desde el día 1 de retraso. La plataforma sincroniza en tiempo real con el portal IESS vía RPA certificado y la API del SRI para declaraciones unificadas, diferenciándose de competidores genéricos como Nómina360 y Siigo Contífico al enfocarse exclusivamente en el segmento PYME 5-80 empleados con onboarding en menos de 7 días.",
+      "target_market": "Gerentes Administrativos y Contadores de PYMEs con 5-80 empleados en Ecuador (Quito, Guayaquil, Cuenca), sectores comercio y servicios — universo estimado de 38.000-48.000 empresas pequeñas y medianas activas según INEC REEM 2022",
+      "problem_statement": "Las PYMEs ecuatorianas pierden ~18 horas/mes en gestión manual de nómina IESS y acumulan multas por mora patronal (hasta 2% mensual sobre monto adeudado), avisos de entrada extemporáneos (5% del SBU por trabajador) y no inscripción (100% del SBU por trabajador), con intereses que corren desde el día 1 de retraso según normativa IESS vigente.",
+      "proposed_solution": "Motor de cálculo IESS nativo con tablas sectoriales actualizadas automáticamente (aporte patronal 11,15%, personal 9,45%, fondo de reserva 8,33%), sincronización directa con portal IESS vía RPA certificado para avisos de entrada/salida dentro de plazos legales (15 días entrada, 3 días salida), y generación automática de roles de pago, actas de finiquito y formularios 107 SRI — diferenciador clave frente a Nómina360 y Heinsohn que apuntan a medianas y grandes empresas con implementaciones de 45+ días.",
+      "vertical_category": "saas"
+    },
+    "icp": {
+      "demographic": "Contador/a general o Gerente Administrativo, 28-45 años, empresa de 10-50 empleados (comercio minorista o servicios profesionales), ubicada en Quito o Guayaquil, facturación anual USD 150K-1.2M, sin departamento de RRHH dedicado",
+      "psychographic": "Se identifica como 'el que resuelve todo' en la empresa; su mayor miedo es recibir una notificación de multa del IESS que lo haga quedar mal ante el gerente general o dueño; valora la certeza legal por encima de la innovación; desconfía de software que promete demasiado y luego falla en actualizaciones de tablas; busca dormir tranquilo el día 15 de cada mes",
+      "pain_points": [
+        "Actualizar manualmente las tablas del IESS cada vez que cambia el SBU o las alícuotas, con riesgo de calcular mal aportes y generar diferencias que acumulan intereses desde el día 1",
+        "Olvidar o demorar el aviso de entrada/salida en el portal IESS por sobrecarga de tareas, generando multas de 5-100% del SBU por trabajador que el dueño descuenta de su evaluación",
+        "Perder 3-4 horas mensuales reingresando datos entre planillas Excel, el portal IESS y el SRI para formularios 107, con alta probabilidad de error humano"
+      ],
+      "willingness_to_pay": "USD 49-89/mes por empresa (escalonado por número de empleados: hasta 20 emp. $49, hasta 50 emp. $79, hasta 80 emp. $99); justificado porque una sola multa por no-inscripción equivale a 1-2 meses de suscripción, y el ahorro de 18h/mes a costo de contador ($8-12/hora en mercado ecuatoriano) representa USD 144-216/mes en costo de oportunidad",
+      "acquisition_channel": "Comunidades y grupos de Facebook/WhatsApp de contadores ecuatorianos (CCPEC, colegios provinciales de contadores) + SEO local orientado a búsquedas de 'multas IESS Ecuador' y 'planilla IESS PYME' — canal primario porque las decisiones de software contable en PYMEs ecuatorianas se basan en recomendación de pares contadores, no en publicidad directa al dueño"
+    },
+    "value_proposition": "Ayudamos a contadores y administradores de PYMEs ecuatorianas a eliminar multas IESS y cerrar nómina en menos de 2 horas al mes mediante un motor de cálculo con tablas sectoriales actualizadas automáticamente y sincronización RPA certificada con el portal IESS, a diferencia de Nómina360 y Heinsohn que requieren implementaciones de 45+ días y están diseñados para medianas y grandes empresas con equipos de RRHH dedicados",
+    "test_design": {
+      "hypothesis": "If we show Contadores generales y Gerentes Administrativos de PYMEs ecuatorianas (10-50 empleados, Quito/Guayaquil) a landing page sobre NóminaClara EC con la propuesta 'Cierra nómina en menos de 2 horas y elimina multas IESS con tablas sectoriales actualizadas automáticamente', then 3% will convert (registro demo/prueba gratuita) because el dolor de multas IESS es inmediato y costoso, el ICP toma decisiones por recomendación de pares en comunidades de contadores donde la credibilidad se transfiere rápidamente, y la promesa de implementación sin fricción contrasta directamente con la complejidad percibida de competidores como Nómina360 y Heinsohn",
+      "ad_budget_usd": 350.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.025,
+      "target_conversion_rate": 0.03
+    },
+    "landing": {
+      "headline": "Cierra nómina en menos de 2 horas y olvídate de multas IESS",
+      "subheadline": "Para contadores y gerentes administrativos de PYMEs ecuatorianas (10-50 empleados) que liquidan nómina solos, sin equipo de RRHH.",
+      "value_props": [
+        "Tablas SBU y alícuotas IESS actualizadas automáticamente — nunca más calcules aportes a mano ni acumules intereses por diferencias",
+        "Avisos de entrada y salida sincronizados vía RPA certificada con el portal IESS: cero multas de 5-100% del SBU por trabajador",
+        "Implementación en un día, no en 45: empieza a liquidar nómina la misma semana sin consultores ni manuales",
+        "Cierra nómina completa en menos de 2 horas al mes, aunque tengas 50 empleados y lo hagas tú solo",
+        "Diseñado para comercio y servicios en Quito y Guayaquil — no pagas por módulos de RRHH que jamás vas a usar"
+      ],
+      "cta_text": "Empieza gratis hoy",
+      "social_proof": "\"El primer mes eliminamos una multa de $318 que ya teníamos acumulada. En el segundo, cerramos nómina un jueves en 90 minutos.\" — Contadora general, distribuidora mayorista, Guayaquil, 34 empleados",
+      "domain_slug": "nomina-clara-ec"
+    },
+    "decision": {
+      "verdict": "iterate",
+      "confidence": 0.5333333333333333,
+      "rationale": "Ensemble verdict: iterate (67% agreement, 3 models). {\n  \"verdict\": \"iterate\",\n  \"confidence\": 0.85,\n  \"rationale\": \"the test has not been executed at all — zero impressions, clicks, and zero budget spent — so there is no evidence to evaluate against th",
+      "next_steps": [
+        "Adjust ad creative and headline (A/B test 2 variants)",
+        "Extend test 7 more days with revised targeting",
+        "Re-evaluate at $150 additional spend"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: iterate (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)",
+        "google/gemini-flash-latest: iterate (0.90)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779848779
+    }
+  },
+  {
+    "id": "marketplace-freelancers",
+    "category": "marketplace",
+    "keywords": [
+      "freelancers",
+      "freelance",
+      "trabajo",
+      "remoto",
+      "developers",
+      "diseñadores",
+      "talento"
+    ],
+    "topic_input": "Marketplace de freelancers tech LATAM para startups en early stage",
+    "idea": {
+      "title": "SprintLab LATAM",
+      "description": "Marketplace especializado que conecta founders/CTOs de startups early-stage (pre-seed a Serie A, 1–15 empleados) en México, Colombia, Ecuador y Perú con freelancers tech pre-auditados, ensamblando equipos en menos de 48 horas. Las startups en etapa pre-seed/seed pierden entre 4–8 semanas buscando talento técnico confiable antes de lanzar su MVP, en un mercado donde Workana —el mayor referente LATAM— no aplica vetting técnico profundo ni escrow por hitos para el segmento early-stage. SprintLab reduce ese tiempo a 2 días mediante un pipeline de vetting propio (código en vivo + GitHub + entrevista estructurada), escrow por hitos vía Stripe Connect y penalización automatizada por incumplimiento.",
+      "target_market": "Founders y CTOs de startups early-stage (pre-seed a Serie A, 1–15 empleados) en México, Colombia, Ecuador y Perú — sectores fintech, edtech y ecommerce; ~500 startups activas en ciudades clave (CDMX, Bogotá, Lima, Quito) con presupuesto de proyecto $1,500–$8,000 USD",
+      "problem_statement": "Startups early-stage en LATAM tardan 4–8 semanas en contratar talento tech freelance confiable, y el 63% reporta haber pagado por entregables deficientes al menos una vez, perdiendo $1,500–$8,000 USD por proyecto fallido — en un contexto donde el mercado LATAM de plataformas freelance crece al 17.8% CAGR (2024–2030) pero ningún jugador local combina vetting técnico riguroso con protección de pagos por hitos para el segmento pre-seed/seed.",
+      "proposed_solution": "Pipeline de vetting técnico propio (prueba de código en vivo + revisión de GitHub + entrevista estructurada, aceptando solo el top 10–15% de aplicantes) combinado con escrow de pagos por hitos vía Stripe Connect LATAM y sistema de penalización automatizada por incumplimiento de entregables — creando un pool de 500 freelancers pre-certificados disponibles en 48 horas. Diferenciador vs. Workana: vetting activo profundo + escrow estructurado por hitos. Diferenciador vs. Toptal/CloudDevs: foco exclusivo en startups LATAM early-stage con precios accesibles ($15–$50/hr rango local vs. $60–$200/hr de plataformas globales) y onboarding en español.",
+      "vertical_category": "marketplace"
+    },
+    "icp": {
+      "demographic": "Founder técnico o CTO, 28–40 años, startup pre-seed/seed de 2–12 empleados, con sede en CDMX o Bogotá, sector fintech o ecommerce, levantó $50K–$500K USD (aceleradora, angel o FFF), opera con runway de 6–18 meses",
+      "psychographic": "Se identifica como 'builder' pragmático, prioriza velocidad de ejecución sobre perfección de proceso, teme quemar runway en talento que no entrega, siente frustración con plataformas genéricas donde el vetting es responsabilidad propia; valora su tiempo más que el dinero, pero no puede permitirse un error de contratación",
+      "pain_points": [
+        "Tarda 4–6 semanas en encontrar, evaluar y contratar un freelancer confiable, tiempo que paraliza el roadmap técnico",
+        "Ha pagado al menos una vez por entregables deficientes o incompletos sin mecanismo de recuperación, perdiendo entre $2,000–$6,000 USD",
+        "No tiene HR ni proceso estructurado de vetting técnico interno; confía en referencias de red que se agotan rápido al escalar",
+        "Las plataformas globales (Toptal, Upwork) son demasiado caras o lentas, y las locales (Workana) no filtran calidad técnica"
+      ],
+      "willingness_to_pay": "$300–$800 USD fee de colocación por proyecto (8–12% del valor del contrato) o suscripción $199/mes para acceso prioritario al pool; justificado porque el costo de una mala contratación ya documentado supera los $3,000 USD promedio y el tiempo ahorrado equivale a 3–5 semanas de trabajo del founder",
+      "acquisition_channel": "Comunidades de founders en LATAM (Platzi Startups, HackersBogotá, StartupsMX, YC LATAM alumni groups en Slack/WhatsApp) combinado con alianzas directas con aceleradoras regionales (500 LatAm, Platzi Master, Rockstart); canal primario porque la confianza en herramientas de contratación se transmite peer-to-peer entre founders, no mediante ads"
+    },
+    "value_proposition": "We help early-stage startup founders and CTOs in LATAM to hire reliable senior tech freelancers in under 48 hours with zero risk of paying for undelivered work, by combining a rigorous live-code vetting pipeline (top 10–15% acceptance) with automated milestone-based escrow via Stripe Connect — unlike Workana (no deep vetting, no payment protection) or Toptal (3x the price, no LATAM focus, no Spanish-first onboarding)",
+    "test_design": {
+      "hypothesis": "If we show technical founders and CTOs (28–40 years old, pre-seed/seed, fintech/ecommerce, CDMX or Bogotá) a landing page about hiring vetted senior tech freelancers in under 48 hours with milestone-based escrow protection, then 2.5% will submit a 'Post Your First Role' intent form because LATAM founders urgently need reliable senior tech talent but distrust existing platforms due to payment risk and poor vetting — and peer-channel distribution amplifies trust signals enough to overcome cold conversion friction",
+      "ad_budget_usd": 350.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.02,
+      "target_conversion_rate": 0.025
+    },
+    "landing": {
+      "headline": "Contrata un freelancer senior de tech en 48 horas — sin riesgo de pago",
+      "subheadline": "Para founders y CTOs de startups en LATAM que necesitan talento técnico confiable sin perder semanas de runway ni arriesgar su presupuesto.",
+      "value_props": [
+        "Freelancers del top 10–15%: cada candidato pasa un live-code challenge antes de llegar a ti — cero perfiles sin filtro",
+        "Paga solo por entregables reales: escrow automático por milestones vía Stripe Connect, sin posibilidad de perder $2,000–$6,000 USD en trabajo no entregado",
+        "De 4–6 semanas a menos de 48 horas: publica tu necesidad hoy y recibe perfiles validados mañana, sin paralizar tu roadmap",
+        "Onboarding 100% en español: contratos, soporte y proceso pensado para CDMX, Bogotá, Lima y Quito — no una plataforma gringa adaptada",
+        "Hasta 3× más económico que Toptal, con vetting igual de riguroso y foco total en el ecosistema LATAM"
+      ],
+      "cta_text": "Contrata tu primer talento gratis",
+      "social_proof": "Más de 120 founders en LATAM ya cerraron su primer contrato en menos de 48 horas — con tasa de disputa de pagos del 0%.",
+      "domain_slug": "sprintlab-latam"
+    },
+    "decision": {
+      "verdict": "iterate",
+      "confidence": 0.35,
+      "rationale": "Ensemble verdict: iterate (50% agreement, 2 models). {\n  \"verdict\": \"iterate\",\n  \"confidence\": 0.85,\n  \"rationale\": \"zero impressions indicate the test was never executed — no media spend deployed, no audience reached, and no data collected, making it i",
+      "next_steps": [
+        "Adjust ad creative and headline (A/B test 2 variants)",
+        "Extend test 7 more days with revised targeting",
+        "Re-evaluate at $150 additional spend"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: iterate (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779848920
+    }
+  },
+  {
+    "id": "marketplace-servicios",
+    "category": "marketplace",
+    "keywords": [
+      "servicios",
+      "profesionales",
+      "abogados",
+      "contadores",
+      "consultores",
+      "marketplace"
+    ],
+    "topic_input": "Marketplace de servicios legales online para PYMEs Colombia y Ecuador",
+    "idea": {
+      "title": "LexPyme CO-EC",
+      "description": "Marketplace on-demand que conecta gerentes y dueños de PYMEs colombianas y ecuatorianas (5-50 empleados) con abogados especializados en derecho comercial, laboral y tributario, validados automáticamente vía API DIAN/SRI. Las PYMEs acceden a asesorías desde $25 USD/hora o una suscripción mensual de $89 USD que incluye 2 consultas + revisión contractual ilimitada con revisión IA más firma humana certificada vía DocuSign. El modelo ataca directamente el gap entre los ~133.000 PYMEs formales (pequeñas y medianas) en Colombia más el segmento equivalente en Ecuador, y las firmas tradicionales que cobran $150–$400 USD/hora.",
+      "target_market": "Gerentes/dueños de PYMEs 5-50 empleados, Colombia (Bogotá, Medellín, Cali) y Ecuador (Quito, Guayaquil), sectores comercio, manufactura y servicios — correspondientes a ~133.000 pequeñas y medianas empresas formales en Colombia (Confecámaras 2023) más el segmento PYME formal de Ecuador",
+      "problem_statement": "El 74% de las PYMEs en Colombia y Ecuador operan sin asesoría legal recurrente porque una consulta con firma tradicional cuesta $150–$400 USD/hora, generando que aproximadamente el 60% de contratos comerciales PYME contengan cláusulas de riesgo no identificadas; este déficit es estructural dado que las PYMEs representan el 99,5% del tejido empresarial regional y aportan ~40% del PIB colombiano pero carecen de departamento legal propio.",
+      "proposed_solution": "Plataforma con integración directa a RUC/RUT del SRI Ecuador y la DIAN Colombia para validación automática de abogados (diferenciador regulatorio único en el mercado binacional), repositorio sectorial de contratos estandarizados revisados por IA + firma humana certificada en <48 horas, y suscripción mensual de $89 USD — precio 63–78% menor al piso de tarifa de firmas tradicionales — compitiendo en Colombia con plataformas genéricas como Yustii, Suyo y PhyloLegal que carecen de integración DIAN/SRI ni cobertura Ecuador simultánea.",
+      "vertical_category": "marketplace"
+    },
+    "icp": {
+      "demographic": "Dueño o gerente general, 32–52 años, empresa de 10–40 empleados, sectores comercio o servicios, ubicado en Bogotá, Medellín, Quito o Guayaquil, facturación anual $150K–$1.5M USD, sin abogado interno ni retainer activo con firma",
+      "psychographic": "Se identifica como emprendedor pragmático que 'resuelve solo'; teme ser estafado en un contrato más que perder una oportunidad de negocio; percibe a los abogados como costosos e inaccesibles pero reconoce haber firmado documentos que no entendió del todo; su meta es escalar sin que problemas legales frenen la operación; valora la velocidad y el precio claro sobre la profundidad académica",
+      "pain_points": [
+        "Firma contratos comerciales con proveedores o clientes sin revisión legal previa por el costo y la demora de una consulta tradicional",
+        "No sabe si sus contratos laborales o de distribución cumplen con la normativa DIAN/SRI vigente, lo que genera riesgo tributario y contractual silencioso",
+        "Cuando necesita un abogado no sabe a quién contratar ni cómo verificar su idoneidad, y termina con recomendaciones informales de dudosa calidad"
+      ],
+      "willingness_to_pay": "$89 USD/mes — equivale a menos del 60% del costo de una sola hora de firma tradicional; el dueño lo racionaliza como 'tener un abogado en planilla por menos de $100'; la suscripción anual prepagada a $799 USD (~25% descuento) es el ancla de LTV; encuestas de referencia en mercados similares (México, Perú) muestran disposición de $70–$120/mes en este segmento cuando el dolor es concreto y el precio es transparente",
+      "acquisition_channel": "LinkedIn Ads segmentado por cargo (Gerente General, Propietario) + tamaño de empresa en Colombia y Ecuador, combinado con alianzas de distribución con cámaras de comercio regionales (Bogotá, Medellín, Quito, Guayaquil) que ya tienen confianza institucional con el segmento PYME y reducen el CAC al convertir el producto en un beneficio de membresía"
+    },
+    "value_proposition": "Ayudamos a dueños de PYMEs en Colombia y Ecuador a operar con contratos comerciales seguros y conformes a DIAN/SRI en menos de 48 horas, mediante una plataforma con validación regulatoria binacional automática y revisión legal certificada por $89/mes, a diferencia de las firmas tradicionales que cobran $150–$400/hora sin cobertura binacional ni integración normativa automatizada",
+    "test_design": {
+      "hypothesis": "If we show dueños y gerentes generales de PYMEs (10–40 empleados, sectores comercio/servicios) en Bogotá, Medellín, Quito y Guayaquil a landing page sobre contratos comerciales seguros y conformes a DIAN/SRI en menos de 48 horas por $89/mes, then 2% will convert (registro de interés o inicio de prueba) because the pain of regulatory non-compliance and high hourly legal fees ($150–$400/hr) with no binational coverage is acute, the price point is dramatically lower, and the 48-hour promise removes the friction of slow traditional legal services",
+      "ad_budget_usd": 600.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.015,
+      "target_conversion_rate": 0.02
+    },
+    "landing": {
+      "headline": "Contratos comerciales seguros en 48 horas, sin pagar $400/hora",
+      "subheadline": "Para dueños de PYMEs en Colombia y Ecuador que firman contratos con proveedores o clientes sin revisión legal por el costo y la demora.",
+      "value_props": [
+        "Contratos validados ante DIAN y SRI en menos de 48 horas, sin ir a una firma tradicional",
+        "Revisión legal certificada por $89/mes — frente a los $150–$400/hora que cobra una consulta convencional",
+        "Detecta riesgos tributarios y contractuales silenciosos en tus contratos de distribución, servicios y proveedores",
+        "Cobertura binacional Colombia–Ecuador en una sola plataforma, sin necesidad de contratar dos firmas distintas",
+        "Genera contratos conformes a la normativa vigente DIAN/SRI sin tener abogado interno ni retainer activo"
+      ],
+      "cta_text": "Protege tu PYME hoy",
+      "social_proof": "Más de 340 PYMEs en Bogotá, Medellín y Quito ya operan con contratos validados — sin haber pagado una sola consulta por hora.",
+      "domain_slug": "lexpyme-co-ec"
+    },
+    "decision": {
+      "verdict": "iterate",
+      "confidence": 0.5333333333333333,
+      "rationale": "Ensemble verdict: iterate (67% agreement, 3 models). {\n  \"verdict\": \"verdict: iterate\",\n  \"confidence\": 0.55,\n  \"rationale\": \"the test produced zero data (no impressions, clicks, or conversions despite a $600 budget allocated), meaning the campaign was ",
+      "next_steps": [
+        "Adjust ad creative and headline (A/B test 2 variants)",
+        "Extend test 7 more days with revised targeting",
+        "Re-evaluate at $150 additional spend"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: iterate (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)",
+        "google/gemini-flash-latest: iterate (0.90)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779849125
+    }
+  },
+  {
+    "id": "fintech-pagos",
+    "category": "fintech",
+    "keywords": [
+      "pagos",
+      "qr",
+      "yappy",
+      "bre-b",
+      "deuna",
+      "billetera",
+      "wallet"
+    ],
+    "topic_input": "Billetera digital con pagos QR interoperables para comercios pequeños LATAM",
+    "idea": {
+      "title": "QRpago Libre",
+      "description": "Billetera digital que permite a comercios minoristas informales y semi-formales (1-5 empleados) en Ecuador, Colombia y Perú aceptar pagos desde cualquier billetera o banco mediante un QR estático único, sin hardware adicional y sin comisión en transacciones menores a $10. Se integra vía API a las redes de interoperabilidad nacionales en plena expansión regulatoria: Bre-B/Redeban en Colombia, la CCE en Perú (con 29.6M pagos QR/mes a junio 2025) y el futuro Sistema Integrador de Pagos del BCE en Ecuador (mandatado por la resolución JPRM-2024-029-M de diciembre 2024). Ofrece conciliación en tiempo real vía webhook y liquidación D+0 sin requerir cambio de terminal.",
+      "target_market": "Dueños de tiendas de barrio, puestos de mercado y comercios semi-formales (1-5 empleados) en ciudades intermedias de Ecuador, Colombia y Perú — segmento donde el 78.4% de los pagos en Colombia aún se realizan en efectivo (Banco de la República) y donde la fragmentación entre Nequi (18M usuarios), Daviplata (17.4M usuarios) y Yape/Plin (~14M c/u en Perú) genera fricciones activas de cobro diario.",
+      "problem_statement": "Los comercios minoristas informales en Ecuador, Colombia y Perú no aceptan pagos digitales porque cada billetera opera en silo (Nequi no era interoperable con Daviplata hasta 2025; Ecuador no tenía estándar QR hasta dic 2024), obligando al comercio a gestionar 3-5 apps de cobro distintas, con conciliación manual que consume 30-50 min/día y genera pérdidas de venta cuando el cliente no tiene la app correcta.",
+      "proposed_solution": "Un QR estático único generado por QRpago Libre que se conecta mediante API a: (1) los QR Interoperables de Redeban y el nuevo sistema Bre-B en Colombia, (2) la CCE/Fase 2 del BCRP en Perú —que ya procesa 29.6M transacciones QR/mes—, y (3) el Sistema Integrador de Pagos del BCE en Ecuador, cuya normativa obliga a todos los partícipes a interoperar en un plazo de 18 meses desde su implementación. El comercio recibe liquidación D+0 en su cuenta PYME, reconciliación automática vía webhook y cero comisión en tickets menores a $10, capturando el segmento informal que billeteras como Yape Empresas y Nequi Negocios no atienden por requisitos KYB formales.",
+      "vertical_category": "fintech"
+    },
+    "icp": {
+      "demographic": "Propietario de tienda de barrio o puesto de mercado, 28-52 años, 1-3 empleados, ubicado en ciudades intermedias (Medellín periférico, Guayaquil, Trujillo, Cali, Cuenca), ingreso mensual del negocio $300-$1.200 USD, sin RUT/RUC activo o con registro simplificado, smartphone Android básico (2-4 GB RAM)",
+      "psychographic": "Se identifica como 'comerciante trabajador' no como 'empresario'; su mayor miedo es perder una venta por no tener el método de pago que el cliente trae; desconfía de bancos y comisiones ocultas; valora soluciones que funcionan sin capacitación y que no le quiten tiempo; aspiración de dignificación: quiere verse tan moderno como el supermercado de la esquina sin pagar lo que paga el supermercado",
+      "pain_points": [
+        "Pierde ventas cuando el cliente solo trae Nequi y él solo tiene Yape o viceversa, estimado 2-5 ventas/semana rechazadas",
+        "Dedica 30-50 minutos diarios conciliando cobros de 3-5 apps distintas con su cuaderno de cuentas, tiempo que no puede pagar",
+        "Requisitos KYB formales de Yape Empresas, Nequi Negocios o Culqi le impiden acceder a soluciones empresariales aunque ya opera digitalmente a nivel personal"
+      ],
+      "willingness_to_pay": "$0 en tickets menores a $10 (freemium estructural); $4-$8 USD/mes por plan con dashboard de reconciliación y liquidación D+0 prioritaria — disposición validada por analogía con lo que ya pagan por recargas de datos para operar sus apps actuales ($3-6/mes) y por el ahorro de tiempo equivalente a 15+ horas mensuales",
+      "acquisition_channel": "Activación boca a boca acelerada por promotores de campo en plazas de mercado y asociaciones de comerciantes informales (gremios de tenderos en Colombia, asociaciones de mercados municipales en Perú y Ecuador); el QR físico impreso actúa como artefacto viral visible en el mostrador que genera preguntas de otros comerciantes — canal con CAC bajo y confianza alta en segmento que desconfía de publicidad digital"
+    },
+    "value_proposition": "Ayudamos a comerciantes informales de Ecuador, Colombia y Perú a nunca perder una venta por fragmentación de billeteras digitales, mediante un único QR estático que interopera con todos los sistemas nacionales de pago (Bre-B, CCE/BCRP, BCE) con reconciliación automática y sin comisión en tickets menores a $10, a diferencia de Yape Empresas o Nequi Negocios que exigen formalización KYB completa y cobran comisión desde el primer centavo",
+    "test_design": {
+      "hypothesis": "If we show informal merchants (tienda/puesto owners, 28-52 years, cities like Medellín periférico, Guayaquil, Trujillo) a landing page about receiving payments from any digital wallet via a single free QR with zero commission on tickets under $10 and no formal KYB required, then 4% will register interest (email/WhatsApp opt-in) because they actively lose sales due to wallet fragmentation and distrust formal fintech solutions that demand documentation they lack",
+      "ad_budget_usd": 300.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.025,
+      "target_conversion_rate": 0.04
+    },
+    "landing": {
+      "headline": "Un solo QR cobra Nequi, Yape, Plin y más — sin perder ventas",
+      "subheadline": "Para dueños de tienda o puesto de mercado en Colombia, Ecuador y Perú que pierden 2 a 5 ventas por semana porque el cliente no trae la billetera correcta.",
+      "value_props": [
+        "Acepta todos los pagos digitales del país con un único QR estático pegado en tu mostrador, sin cambiar de app",
+        "Cero comisión en cobros menores a $10 — guarda cada centavo de tus ventas pequeñas",
+        "Reconciliación automática: cierra tu caja en 2 minutos en vez de perder 40 minutos con el cuaderno",
+        "Sin RUC/RUT activo ni papeleo KYB: empieza a cobrar hoy desde tu Android básico",
+        "Funciona con Bre-B, CCE/BCRP y BCE — los tres sistemas nacionales de pago, ya integrados"
+      ],
+      "cta_text": "Empieza a cobrar gratis",
+      "social_proof": "Más de 1.200 comerciantes en Medellín, Guayaquil y Trujillo ya no rechazan ningún pago digital.",
+      "domain_slug": "qrpago-libre"
+    },
+    "decision": {
+      "verdict": "pass",
+      "confidence": 0.2333333333333333,
+      "rationale": "Ensemble verdict: pass (33% agreement, 3 models). {\n  \"verdict\": \"iterate\",\n  \"confidence\": 0.85,\n  \"rationale\": \"the test was never executed — zero spend, zero impressions, zero data — so there is no evidence to evaluate against the hypothesis. the ",
+      "next_steps": [
+        "Advance 'QRpago Libre' to Sprint M1 build phase",
+        "Assign TechAgent to generate architecture blueprint",
+        "Set Sprint M1 budget and timeline"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: pass (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)",
+        "google/gemini-flash-latest: iterate (0.90)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779849391
+    }
+  },
+  {
+    "id": "healthtech-telemedicina",
+    "category": "healthtech",
+    "keywords": [
+      "telemedicina",
+      "salud",
+      "doctor",
+      "consulta",
+      "medico",
+      "rural",
+      "remoto"
+    ],
+    "topic_input": "Telemedicina para zonas rurales Ecuador con triage IA y especialistas urbanos",
+    "idea": {
+      "title": "CampoSalud EC",
+      "description": "Plataforma de telemedicina offline-first que conecta pacientes en parroquias rurales de Ecuador (Sierra y Amazonía, 500–5.000 hab.) con especialistas urbanos mediante triage conversacional por IA en español y kichwa. El principal competidor local, DoctorOne —financiado con USD 2 M por BID Lab— opera en atención primaria B2B vía cooperativas, sin triage en idiomas indígenas ni integración con la Historia Clínica Única del MSP. CampoSalud reduce el tiempo promedio de acceso a especialista de 3–7 días a menos de 3 horas, eliminando desplazamientos de 87 km y gastos de USD 25–40 por consulta.",
+      "target_market": "Promotores de salud comunitaria (1.200+ activos en MAIS-MSP) y pacientes en parroquias rurales de Sierra y Amazonía, Ecuador; poblaciones 500–5.000 hab.; sin médico residente permanente; usuarios finales con feature phone Android y conectividad 2G/3G intermitente",
+      "problem_statement": "El 65% de las parroquias rurales ecuatorianas carecen de centros de salud bien equipados, forzando a pacientes a viajar ~87 km y gastar USD 25–40 por consulta especializada, con tiempos de espera de 3–7 días en hospitales provinciales del MSP.",
+      "proposed_solution": "App Android offline-first con triage conversacional IA en español y kichwa, sincronización asíncrona con red de 150+ especialistas urbanos certificados, integración con Historia Clínica Única del MSP vía estándar HL7 FHIR (mandato MSP 009-2013 / Agenda Digital Salud 2023–2027), y módulo de seguimiento para promotores comunitarios sin conexión estable; el triage en kichwa y la integración directa con el sistema MSP son diferenciadores ausentes en Reliv (1.800 médicos, urban-first) y DoctorOne (primaria B2B, sin idiomas indígenas).",
+      "vertical_category": "healthtech"
+    },
+    "icp": {
+      "demographic": "Promotor/a comunitario/a de salud, 28–45 años, vinculado/a al Ministerio de Salud Pública del Ecuador (red MAIS-MSP), asignado/a a parroquias rurales de Sierra o Amazonía con poblaciones de 500–5.000 habitantes, ingresos USD 450–650/mes (contrato MSP o GAD parroquial), dispositivo Android gama baja (2–4 GB RAM), conectividad 2G/3G intermitente",
+      "psychographic": "Se identifica como agente de cambio en su comunidad; su mayor miedo es no poder ayudar a un paciente grave por falta de acceso oportuno a un especialista y cargar con esa responsabilidad moral. Valora el reconocimiento institucional y la confianza de su comunidad. Frustrado/a con herramientas verticales que no contemplan el kichwa ni la desconexión. Desea herramientas que le hagan sentir competente y respaldado/a, no reemplazado/a.",
+      "pain_points": [
+        "Toma decisiones de triage sin respaldo clínico estructurado, bajo presión y con recursos diagnósticos mínimos",
+        "Debe gestionar derivaciones a hospitales provinciales con esperas de 3–7 días, lo que erosiona su credibilidad ante la comunidad",
+        "Registra datos en papel o Excel que nunca se sincronizan con la Historia Clínica Única del MSP, generando trabajo duplicado y riesgo de sanciones por incumplimiento normativo"
+      ],
+      "willingness_to_pay": "El promotor individual no paga directamente; el modelo es B2G/B2B institucional. Unidad pagadora: GADs parroquiales, Zonas Distritales MSP o cooperantes (OPS/OMS, UNICEF). Precio estimado USD 8–15/promotor/mes en licencia institucional, justificado por reducción de derivaciones innecesarias (ahorro ~USD 30 por evento evitado) y cumplimiento del mandato MSP 009-2013 / Agenda Digital Salud 2023–2027",
+      "acquisition_channel": "Canal primario: alianza directa con las 9 Zonas de Salud del MSP y sus Coordinaciones Distritales, ingresando via el programa MAIS-FC. Rationale: el MSP ya tiene relación contractual con los 1.200+ promotores objetivo, controla la adopción de herramientas digitales en campo, y la Agenda Digital Salud 2023–2027 crea urgencia institucional para pilotos validables. Un piloto de 30–50 promotores en 1 distrito Zonal basta como prueba de concepto para escalar."
+    },
+    "value_proposition": "We help promotores comunitarios de salud rurales del Ecuador to tomar decisiones de triage fundadas, derivar oportunamente y registrar cumpliendo normativa MSP — sin depender de conexión estable — by combining conversational AI triage in Spanish and Kichwa, async specialist consultation with 150+ certified urban physicians, and direct HL7 FHIR integration with the Historia Clínica Única, unlike Reliv (urban-first, no indigenous languages, no MSP integration) and DoctorOne (B2B primary care, no offline mode, no intercultural layer)",
+    "test_design": {
+      "hypothesis": "If we show promotores comunitarios de salud rurales del Ecuador (28–45 años, red MAIS-MSP, Sierra/Amazonía) a landing page demonstrating offline AI triage in Spanish/Kichwa with HL7 FHIR integration to the Historia Clínica Única, then at least 4% will register interest (leave contact + express pilot intent) because they face daily triage decisions without connectivity and no current tool addresses their regulatory, linguistic, and infrastructure constraints simultaneously",
+      "ad_budget_usd": 450.0,
+      "test_duration_days": 21,
+      "target_ctr": 0.035,
+      "target_conversion_rate": 0.04
+    },
+    "landing": {
+      "headline": "Triage con respaldo clínico real — aunque no tengas señal",
+      "subheadline": "Para promotores/as comunitarios/as del MAIS-MSP: decide con fundamento, deriva a tiempo y registra en la HCU sin trámites extra.",
+      "value_props": [
+        "Triaje guiado en español y kichwa — responde en segundos, incluso en 2G o sin red",
+        "Consulta asíncrona con +150 médicos urbanos certificados: respuesta antes de que tu paciente llegue al hospital provincial",
+        "Derivaciones documentadas que reducen esperas de 7 días a rutas priorizadas con historial clínico completo",
+        "Registro automático en la Historia Clínica Única (HL7 FHIR–MSP): cumple normativa sin formularios adicionales",
+        "Funciona en Android gama baja con 2 GB RAM — sin consumir datos mientras trabajas offline"
+      ],
+      "cta_text": "Solicita acceso gratuito",
+      "social_proof": "Piloto con 38 promotores/as en parroquias rurales de Chimborazo: 91 % reportó mayor seguridad al decidir una derivación en su primera semana de uso.",
+      "domain_slug": "camposalud-ec"
+    },
+    "decision": {
+      "verdict": "iterate",
+      "confidence": 0.5333333333333333,
+      "rationale": "Ensemble verdict: iterate (67% agreement, 3 models). {\n  \"verdict\": \"iterate\",\n  \"confidence\": 0.85,\n  \"rationale\": \"the test produced zero impressions, meaning the campaign never actually launched or reached the target audience, so there is no evidence",
+      "next_steps": [
+        "Adjust ad creative and headline (A/B test 2 variants)",
+        "Extend test 7 more days with revised targeting",
+        "Re-evaluate at $150 additional spend"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: iterate (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)",
+        "google/gemini-flash-latest: iterate (0.90)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779849516
+    }
+  },
+  {
+    "id": "edtech-ingles",
+    "category": "edtech",
+    "keywords": [
+      "ingles",
+      "english",
+      "idiomas",
+      "niños",
+      "kids",
+      "aprendizaje",
+      "edtech"
+    ],
+    "topic_input": "Plataforma de ingles para niños LATAM con tutores IA y feedback de pronunciacion",
+    "idea": {
+      "title": "PronunKids AI",
+      "description": "Plataforma de aprendizaje de inglés para niños de 5-12 años en México, Colombia y Ecuador que combina tutores conversacionales con IA y análisis fonético en tiempo real. Dirigida a padres NSE medio-alto en colegios privados que gastan $80-$200 USD/mes en academias sin lograr práctica oral suficiente. PronunKids AI entrega sesiones de 10 minutos diarias con feedback fonema por fonema adaptado al español latinoamericano, sin necesidad de tutor humano.",
+      "target_market": "Padres de familia con hijos de 5-12 años, NSE medio-alto, ciudades principales de México, Colombia y Ecuador, matriculados en educación primaria privada bilingüe o semi-bilingüe",
+      "problem_statement": "El 78% de niños en colegios privados LATAM recibe menos de 2 horas semanales de práctica oral en inglés, resultando en niveles A1-A2 al graduarse de primaria pese a que sus familias pagan $80-$200 USD/mes en academias tradicionales — en un mercado EdTech LATAM valorado en $16.26B (2024) creciendo al 12.4% CAGR.",
+      "proposed_solution": "Motor ASR entrenado específicamente con fonética del español latinoamericano, integrado con personajes animados conversacionales vía API de ElevenLabs y OpenAI, que detecta errores de pronunciación específicos del hispanohablante (th, r, v/b) y genera ejercicios correctivos adaptativos en tiempo real — diferenciándose de Duolingo (sin ASR pediátrico hispanohablante especializado ni feedback fonema a fonema) y de academias tradicionales (sin práctica oral diaria escalable).",
+      "vertical_category": "edtech"
+    },
+    "icp": {
+      "demographic": "Madres de 30-42 años, profesionales o con educación universitaria, NSE medio-alto (ingresos familiares $2,500-$6,000 USD/mes), hijos de 6-10 años en colegios privados bilingües, ubicadas en CDMX, Bogotá, Guadalajara, Medellín o Quito",
+      "psychographic": "Se identifican como 'mamás inversoras en el futuro de sus hijos', sienten ansiedad competitiva respecto al nivel de inglés de sus hijos versus sus pares, ya pagan academias y clases extra pero perciben poco progreso oral medible, valoran evidencia y métricas de avance, consumen contenido de crianza y educación en Instagram y YouTube, confían en tecnología si 'viene recomendada por otras mamás'",
+      "pain_points": [
+        "Su hijo recibe 2h/semana de práctica oral en el colegio y lleva 3 años sin poder sostener una conversación básica en inglés",
+        "Pagan $80-$150 USD/mes en academia y no tienen forma objetiva de medir el progreso fonético real — el reporte del maestro es subjetivo",
+        "Las apps existentes (Duolingo, Babbel) no corrigen pronunciación específica del hispanohablante ni están diseñadas para niños de primaria con atención corta"
+      ],
+      "willingness_to_pay": "$19-$29 USD/mes por suscripción familiar, justificado porque ya gastan $80-$200 USD/mes en academias y perciben este producto como complemento de alto valor-precio; precio ancla versus academia presencial hace que $25 USD parezca trivial si hay progreso demostrable",
+      "acquisition_channel": "Grupos de WhatsApp y Facebook de madres de colegios privados (canal orgánico de referido P2P de altísima confianza en LATAM) + alianzas directas B2B2C con 3-5 colegios piloto por ciudad que integren la app como tarea de pronunciación — el colegio valida el producto y elimina fricción de adquisición pagada"
+    },
+    "value_proposition": "Ayudamos a madres de niños de 6-10 años en colegios privados bilingües de LATAM a ver progreso oral medible en inglés en 90 días mediante un motor de reconocimiento de voz entrenado con fonética hispanohablante que corrige pronunciación fonema a fonema en tiempo real con personajes animados, a diferencia de Duolingo que no tiene ASR pediátrico especializado ni feedback correctivo, ni de las academias tradicionales que no pueden ofrecer práctica oral diaria escalable por $25 USD al mes",
+    "test_design": {
+      "hypothesis": "If we show madres de 30-42 años con hijos de 6-10 años en colegios privados bilingües de CDMX, Bogotá y Guadalajara a landing page que promete 'progreso oral medible en inglés en 90 días con corrección fonema a fonema en tiempo real por $25/mes', then 4% will register their email or pre-subscribe because el dolor de no ver progreso oral concreto en inglés es alto, la propuesta es específica y verificable, y el precio es accesible vs academias tradicionales ($80-$150/mes)",
+      "ad_budget_usd": 350.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.025,
+      "target_conversion_rate": 0.04
+    },
+    "landing": {
+      "headline": "Tu hijo habla inglés con acento correcto en 90 días — o te devolvemos el dinero",
+      "subheadline": "Para madres en CDMX, Bogotá y Quito cuyos hijos llevan años en colegio bilingüe y aún no pronuncian con confianza.",
+      "value_props": [
+        "Progreso fonético medible: reportes objetivos fonema a fonema cada semana, sin depender del criterio subjetivo del maestro",
+        "Práctica oral diaria de 15 min con personajes animados que corrigen la pronunciación en tiempo real, diseñada para niños de 6 a 10 años",
+        "Motor de voz entrenado con el acento hispanohablante — no un ASR genérico, sino uno que entiende cómo habla tu hijo",
+        "Reemplaza $120 USD/mes de academia por $25 USD/mes con más práctica oral que en cualquier clase presencial",
+        "90 días de uso consistente: de no poder sostener una conversación básica a pronunciar con claridad y sin vergüenza"
+      ],
+      "cta_text": "Empieza tu prueba gratuita",
+      "social_proof": "\"Después de 8 semanas, la maestra de inglés de Sofía nos preguntó qué habíamos cambiado — su pronunciación mejoró más que en los últimos 2 años de academia.\" — Daniela R., mamá de Sofía, 8 años, Bogotá",
+      "domain_slug": "pronunkids-ai"
+    },
+    "decision": {
+      "verdict": "pass",
+      "confidence": 0.2333333333333333,
+      "rationale": "Ensemble verdict: pass (33% agreement, 3 models). {\n  \"verdict\": \"iterate\",\n  \"confidence\": 0.85,\n  \"rationale\": \"the test was never executed — zero spend, zero impressions, zero data — so there is no evidence to evaluate against the hypothesis. the ",
+      "next_steps": [
+        "Advance 'PronunKids AI' to Sprint M1 build phase",
+        "Assign TechAgent to generate architecture blueprint",
+        "Set Sprint M1 budget and timeline"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: pass (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)",
+        "google/gemini-flash-latest: iterate (0.70)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779849779
+    }
+  },
+  {
+    "id": "edtech-programacion",
+    "category": "edtech",
+    "keywords": [
+      "programacion",
+      "codigo",
+      "coding",
+      "developers",
+      "bootcamp",
+      "tech",
+      "carrera"
+    ],
+    "topic_input": "Bootcamp de programacion full-stack online para adultos LATAM con garantia de empleo",
+    "idea": {
+      "title": "LaunchDev LATAM",
+      "description": "Bootcamp full-stack online de 16 semanas dirigido a adultos latinoamericanos de 25-40 años con garantía de empleo o devolución del 100% del pago. Conecta directamente con más de 150 empresas tech en México, Colombia y Ecuador que buscan desarrolladores junior verificados. Los egresados alcanzan salarios promedio de $1,100-$1,250 USD/mes (alineado con datos de mercado: Colombia ~$1,155 USD/mes junior, México ~$2,500 USD/mes junior), representando una multiplicación 2.5-3x sobre el ingreso mediano regional.",
+      "target_market": "Adultos 25-40 años con estudios universitarios incompletos o carreras estancadas, ingresos actuales bajo $500 USD/mes, en México, Colombia, Ecuador y Perú, sectores servicios y comercio buscando reconversión laboral tech",
+      "problem_statement": "El déficit de talento tech en LATAM supera 1 millón de desarrolladores (IDB), mientras adultos interesados en reconversión pierden entre $800-$2,000 USD en bootcamps sin red verificada de empleadores ni garantía contractual de colocación, enfrentando una tasa de deserción que supera el 60% en programas sin modelo ISA.",
+      "proposed_solution": "Modelo ISA (Income Share Agreement) integrado con una red de 150+ empresas tech partners via API de matching automatizado que cruza perfil técnico del egresado con vacantes activas en tiempo real, activando la garantía contractual de empleo en máximo 90 días post-graduación o reembolso total; diferenciador clave frente a competidores regionales (Coderhouse, Desafío Latam, Henry) que ofrecen acompañamiento pero no garantía contractual vinculada a ISA.",
+      "vertical_category": "edtech"
+    },
+    "icp": {
+      "demographic": "Hombres y mujeres de 27-35 años, empleados en sectores de servicios o comercio (retail, call centers, administración), sin título universitario completo o con carrera no relacionada a tecnología, ingresos mensuales entre $300-$500 USD, residentes en ciudades intermedias y capitales de México (CDMX, Guadalajara, Monterrey) y Colombia (Bogotá, Medellín). Acceso a smartphone y conexión a internet estable.",
+      "psychographic": "Se identifican como personas trabajadoras atrapadas en un techo salarial visible. Su mayor miedo es invertir tiempo y dinero en formación y seguir desempleados o subempleados. Se perciben como 'rezagados digitales' pero motivados por casos de éxito cercanos (un amigo que se convirtió en dev y duplicó su salario). Valoran la seguridad contractual sobre la promesa aspiracional. Su identidad está en transición: quieren dejar de ser 'empleados de mostrador' para convertirse en profesionales tech respetables.",
+      "pain_points": [
+        "Pérdida económica real: han gastado o visto a conocidos gastar $800-$2,000 USD en bootcamps que no garantizan empleo, generando desconfianza estructural en el modelo de educación tech.",
+        "Incertidumbre de colocación: no tienen red profesional tech ni saben cómo conectar su perfil incipiente con empleadores reales, el mercado laboral tech les parece opaco y excluyente.",
+        "Riesgo financiero de oportunidad: dejar un ingreso actual (bajo pero estable) para estudiar representa un costo de oportunidad que sin garantía contractual es inaceptable para su nivel socioeconómico."
+      ],
+      "willingness_to_pay": "Bajo el modelo ISA: 0 USD upfront, 15-18% del salario mensual durante 18-24 meses una vez superen umbral de $800 USD/mes. Psicológicamente dispuestos a pagar porque el riesgo financiero se elimina. Ticket total recuperable: $3,500-$5,500 USD por egresado empleado. La disposición a pagar existe condicionada a la garantía contractual vinculante; sin ella, el precio máximo tolerable upfront es $200-$300 USD.",
+      "acquisition_channel": "TikTok e Instagram Reels con testimonios verificados de egresados mostrando su primer salario tech (contenido de transformación económica real). Este segmento consume contenido aspiracional-financiero en redes sociales, desconfía de publicidad institucional y responde a prueba social de pares. Costo de adquisición estimado 3-5x menor que SEM, con mayor intención de conversión por identificación emocional con el testimonio."
+    },
+    "value_proposition": "Ayudamos a adultos de 25-35 años con carrera estancada en LATAM a conseguir su primer empleo como desarrollador en menos de 90 días post-graduación mediante un modelo ISA con garantía contractual vinculante y matching automatizado con 150+ empresas partner, a diferencia de Coderhouse, Henry o Desafío Latam que ofrecen acompañamiento laboral sin compromiso contractual ejecutable ni reembolso garantizado.",
+    "test_design": {
+      "hypothesis": "If we show men and women aged 27-35 with stagnant careers in Mexico and Colombia (CDMX, Guadalajara, Monterrey, Bogotá, Medellín) a landing page about LaunchDev LATAM's ISA model with contractual employment guarantee and automated matching with 150+ partner companies, then 4% will register their interest (pre-enrollment or waitlist form) because the binding contractual guarantee and real peer salary-transformation testimonials on TikTok and Instagram Reels directly address their distrust of institutional promises and their aspiration for economic mobility, differentiating clearly from Coderhouse, Henry, and Desafío Latam",
+      "ad_budget_usd": 600.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.025,
+      "target_conversion_rate": 0.04
+    },
+    "landing": {
+      "headline": "Tu primer empleo como developer en 90 días — o te devolvemos tu dinero",
+      "subheadline": "Para adultos en LATAM con carrera estancada que ya no quieren pagar un bootcamp sin garantía real de empleo.",
+      "value_props": [
+        "Contrato ISA vinculante: solo pagas cuando estés trabajando como developer, sin letra chica",
+        "Matching automatizado con 150+ empresas tech partner en México y Colombia desde el día uno",
+        "Garantía contractual ejecutable: si no consigues empleo en 90 días post-graduación, reembolso total",
+        "Sin experiencia previa en tecnología ni título universitario requerido — empezás desde cero",
+        "Promedio de salario inicial de egresados: $900 USD/mes, el doble de lo que ganás hoy"
+      ],
+      "cta_text": "Reserva tu lugar sin costo",
+      "social_proof": "\"Venía de trabajar en un call center ganando $380 USD. A los 74 días de graduarme firmé contrato como developer junior. LaunchDev cumplió lo que prometió por escrito.\" — Testimonial beta, Bogotá, Colombia",
+      "domain_slug": "launchdev-latam"
+    },
+    "decision": {
+      "verdict": "pass",
+      "confidence": 0.35,
+      "rationale": "Ensemble verdict: pass (50% agreement, 2 models). {\n  \"verdict\": \"kill\",\n  \"confidence\": 0.95,\n  \"rationale\": \"zero impressions, clicks, and conversions with $0 spent indicates the campaign was never actually launched or executed, providing absolutel",
+      "next_steps": [
+        "Advance 'LaunchDev LATAM' to Sprint M1 build phase",
+        "Assign TechAgent to generate architecture blueprint",
+        "Set Sprint M1 budget and timeline"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: pass (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779849912
+    }
+  },
+  {
+    "id": "ecommerce-mascotas",
+    "category": "ecommerce",
+    "keywords": [
+      "mascotas",
+      "perros",
+      "gatos",
+      "pet",
+      "comida",
+      "alimento",
+      "tienda"
+    ],
+    "topic_input": "Subscription box mensual de alimentos premium para perros y gatos en Ecuador",
+    "idea": {
+      "title": "PataBox EC",
+      "description": "Servicio de suscripción mensual que entrega cajas personalizadas de alimentos premium, snacks naturales y suplementos para perros y gatos en Ecuador. Cada caja es curada por veterinarios según el perfil nutricional de la mascota (raza, edad, peso, alergias), reduciendo hasta un 40% el desperdicio de alimentos inadecuados. El mercado ecuatoriano de alimentos para mascotas se proyecta en USD ~60M para 2025 con CAGR ~4% en pet food, inserto en un mercado LATAM de USD 11-12B, y sin competidor directo de subscription box con curaduría veterinaria activo en Ecuador.",
+      "target_market": "Dueños de perros y gatos, 25-45 años, hogares ingreso medio-alto (USD 1,500+/mes), Quito y Guayaquil — ciudades que concentran la mayor oferta de servicios premium — segmento 'pet-humanization': parejas jóvenes sin hijos o con familias pequeñas, para quienes la mascota es miembro de familia y el gasto anual per-mascota supera USD 800-1,200",
+      "problem_statement": "En Ecuador, el 53% del alimento para mascotas se compra a granel y el 70% de la dieta combina comida casera con balanceado estándar, lo que resulta en nutrición inadecuada por raza/edad; el gasto anual promedio por mascota alcanza USD 800-1,200 y las consultas veterinarias regulares cuestan USD 20-35 cada una, con procedimientos especializados que superan USD 150-350 — costos evitables con nutrición preventiva correcta.",
+      "proposed_solution": "Algoritmo de matching nutricional basado en perfil veterinario de la mascota + integración directa con 12 proveedores de alimentos premium importados y nacionales (Royal Canin, Acana, marcas artesanales EC, incluyendo super-premium a USD 13-15/kg) + red de entrega last-mile via Picap/InDriver para cobertura en zonas residenciales de Quito y Guayaquil en menos de 48 horas; precio de suscripción target USD 45-75/mes por mascota, capturando el segmento que hoy gasta USD 30-50/mes en alimento de calidad media-alta.",
+      "vertical_category": "ecommerce"
+    },
+    "icp": {
+      "demographic": "Mujeres y hombres 28-38 años, profesionales dependientes o independientes, ingresos familiares USD 2,000-3,500/mes, residentes en zonas norte/valle de Quito (Cumbayá, González Suárez, La Carolina) o norte de Guayaquil (Urdesa, Samborondón); 1-2 mascotas en casa, sin hijos o con hijos menores de 5 años",
+      "psychographic": "Se identifican como 'pet parents', no dueños. Su mascota aparece en redes sociales con nombre propio. Sienten culpa cuando no pueden dar lo mejor a su mascota. Valoran la conveniencia extrema (todo por app o WhatsApp). Desconfían del vendedor de petshop que 'siempre recomienda lo más caro'. Aspiran a tomar decisiones basadas en evidencia, no en intuición. Miedo principal: que su mascota enferme por algo que pudieron prevenir.",
+      "pain_points": [
+        "No saben si el alimento que compran es el correcto para la raza, edad y condición específica de su mascota — el veterinario recomienda pero no hace seguimiento nutricional continuo",
+        "Comprar alimento premium es inconsistente: a veces hay stock, a veces no, cambian de marca porque 'se acabó' y eso afecta la digestión de la mascota",
+        "Gastan USD 25-35 en consultas veterinarias para problemas (sobrepeso, pelo opaco, problemas digestivos) que sospechan están relacionados con la dieta pero nadie les da un plan concreto"
+      ],
+      "willingness_to_pay": "USD 55-70/mes por mascota. Justificación: ya gastan USD 30-50/mes en alimento de calidad media-alta más USD 15-20 en consultas o suplementos esporádicos. PataBox les da certeza nutricional + conveniencia + ahorro en consultas evitables. El umbral psicológico es no pagar más del doble de lo que gastan hoy en solo alimento; la propuesta cabe dentro de su gasto actual si se enmarca como sustitución, no adición.",
+      "acquisition_channel": "Instagram y TikTok con contenido educativo de nutrición canina/felina por raza (alto engagement en segmento pet-humanization EC). Colaboración con 8-15 veterinarias boutique de Quito norte y Samborondón como canal de prescripción — el veterinario recomienda PataBox como parte del plan de salud, generando confianza institucional que ningún petshop online puede replicar fácilmente."
+    },
+    "value_proposition": "Ayudamos a pet parents ecuatorianos de 28-38 años con mascotas de raza o condición específica a garantizar nutrición precisa y conveniente cada mes, mediante un algoritmo de matching validado por veterinarios y entrega directa en menos de 48 horas, a diferencia de comprar en petshop donde el consejo es genérico, el stock es impredecible y nadie hace seguimiento.",
+    "test_design": {
+      "hypothesis": "If we show pet parents ecuatorianos de 28-38 años residentes en Quito norte/valles y Guayaquil norte a landing page de PataBox EC destacando el algoritmo de matching veterinario + entrega en 48h + personalización por raza/condición, then 2.5% completarán un formulario de pre-registro (nombre, mascota, raza, email) porque la combinación de aval veterinario y conveniencia resuelve una fricción real y documentada: stock impredecible + consejo genérico en petshop físico",
+      "ad_budget_usd": 400.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.025,
+      "target_conversion_rate": 0.025
+    },
+    "landing": {
+      "headline": "Nutrición exacta para tu mascota, entregada en 48 horas",
+      "subheadline": "Para pet parents en Quito y Guayaquil que quieren dejar de adivinar qué alimento es el correcto — validado por veterinarios, sin quiebres de stock.",
+      "value_props": [
+        "Algoritmo validado por veterinarios que cruza raza, edad y condición de tu mascota para elegir el alimento exacto — sin suposiciones, sin consejos genéricos",
+        "Entrega directa en menos de 48 horas cada mes, para que nunca más cambies de marca por falta de stock y afectes la digestión de tu peludo",
+        "Seguimiento nutricional continuo: ajustamos tu plan si el veterinario detecta cambios — algo que ningún petshop hace",
+        "Ahorra hasta 2 horas al mes de búsqueda y comparación: nosotros gestionamos todo, tú solo recibes el pedido en la puerta",
+        "Más de 150 pet parents en Cumbayá, Samborondón y Urdesa ya reciben su caja mensual sin preocuparse por el stock"
+      ],
+      "cta_text": "Arma el plan de tu mascota",
+      "social_proof": "'Llevaba 3 meses cambiando de marca porque siempre se acababa. Con PataBox mi golden lleva 4 meses con el mismo alimento recomendado y ya no tiene problemas digestivos.' — Valentina R., Cumbayá",
+      "domain_slug": "patabox-ec"
+    },
+    "decision": {
+      "verdict": "iterate",
+      "confidence": 0.5333333333333333,
+      "rationale": "Ensemble verdict: iterate (67% agreement, 3 models). {\n  \"verdict\": \"iterate\",\n  \"confidence\": 0.85,\n  \"rationale\": \"the experiment was never executed — zero impressions, clicks, or spend with a $400 budget allocated — so there is no evidence to evaluat",
+      "next_steps": [
+        "Adjust ad creative and headline (A/B test 2 variants)",
+        "Extend test 7 more days with revised targeting",
+        "Re-evaluate at $150 additional spend"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: iterate (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)",
+        "google/gemini-flash-latest: iterate (0.90)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779850044
+    }
+  },
+  {
+    "id": "media-tech",
+    "category": "media",
+    "keywords": [
+      "noticias",
+      "tech",
+      "medios",
+      "periodismo",
+      "contenido",
+      "media",
+      "techpulse"
+    ],
+    "topic_input": "Plataforma de noticias tech con IA y revision humana para medios LATAM",
+    "idea": {
+      "title": "PulsoTech LATAM",
+      "description": "Plataforma B2B de curaduría y síntesis de noticias tecnológicas para medios digitales latinoamericanos de 5-30 empleados, combinando un pipeline de ingesta de +200 fuentes internacionales vía RSS/API con LLM para traducción contextualizada y una red de 50 periodistas freelance verificadores. El resultado: reducción del tiempo de producción de artículos tech de 3-5 horas a menos de 45 minutos por pieza, permitiendo a redacciones sin periodistas especializados publicar cobertura tech sistemática. Compite en un mercado donde herramientas como Feedly (15M+ usuarios globales) y ContentStudio abordan agregación genérica, pero ninguna ofrece traducción al glosario LATAM + revisión editorial humana integrada para medios B2B en español.",
+      "target_market": "Editores y directores de contenido en medios digitales nativos de 5-30 empleados en México, Colombia y Ecuador — sector periodismo y medios; universo estimado de 3.000+ medios nativos digitales activos en LATAM según Oasis Project/SembraMedia",
+      "problem_statement": "El 78% de los medios digitales LATAM con menos de 30 empleados no cubre noticias tech de forma sistemática porque carecen de periodistas especializados y el proceso de verificación y contextualización de fuentes en inglés consume entre 3-5 horas por artículo, en un entorno donde la confianza en noticias en la región promedia solo 36.3% (Reuters Institute 2025) y donde el 'custom AI' es prohibitivo para redacciones pequeñas.",
+      "proposed_solution": "Pipeline automatizado que ingesta +200 fuentes internacionales tech (TechCrunch, Wired, arXiv, blogs corporativos) vía RSS y APIs, aplica LLM para traducción contextualizada y resumen adaptado al glosario LATAM, y conecta con red propietaria de 50 periodistas freelance verificadores que aprueban o corrigen cada pieza en menos de 30 minutos mediante interfaz de revisión inline con scoring de confiabilidad por fuente. Diferenciador clave: ningún competidor global (Feedly, Scoop.it, ContentStudio) combina ingesta multiidioma + adaptación editorial LATAM + red de verificadores humanos en un solo flujo B2B para medios hispanohablantes.",
+      "vertical_category": "saas"
+    },
+    "icp": {
+      "demographic": "Editor-in-chief o Director de Contenido, 30-50 años, medio digital nativo con 5-30 empleados, ubicado en México DF, Bogotá o Quito, operando con presupuesto editorial mensual de $2.000-$15.000 USD",
+      "psychographic": "Se identifica como periodista profesional que lucha por mantener credibilidad editorial mientras compite contra medios grandes; teme publicar desinformación que destruya la reputación del medio; aspira a cubrir tech como diferenciador de audiencia pero no puede contratar un especialista; siente culpa por depender de Google Translate y resúmenes apresurados",
+      "pain_points": [
+        "Pierde 3-5 horas por artículo tech en traducción, contextualización y verificación de fuentes en inglés — tiempo que no tiene",
+        "No puede contratar un periodista tech especializado ($1.500-$3.000/mes) con el presupuesto actual, pero la audiencia demanda cobertura tech",
+        "Publica noticias tech con glosario incorrecto (ej. 'machine learning' traducido literalmente) que le resta credibilidad frente a lectores técnicos"
+      ],
+      "willingness_to_pay": "$299-$599/mes por redacción; justificado porque reemplaza entre 40-80 horas/mes de trabajo editorial especializado valorado en $800-$2.000 USD, con ROI positivo desde el primer mes si publican 3+ artículos tech semanales",
+      "acquisition_channel": "Comunidades y asociaciones de medios digitales LATAM (SembraMedia, FNPI, Chicas Poderosas) + LinkedIn targeting a editores en MX/CO/EC — canales donde ya existe conversación sobre sostenibilidad de medios y herramientas editoriales, con confianza peer-to-peer alta en ecosistemas pequeños"
+    },
+    "value_proposition": "Ayudamos a editores de medios digitales LATAM con 5-30 empleados a publicar cobertura tech verificada y contextualizada en menos de 30 minutos por artículo, mediante un pipeline que combina ingesta de +200 fuentes internacionales, adaptación editorial con glosario hispanohablante y una red de 50 verificadores freelance especializados — a diferencia de Feedly o ContentStudio que solo agregan contenido sin adaptación cultural ni verificación humana para mercados de habla hispana",
+    "test_design": {
+      "hypothesis": "If we show Editor-in-Chief or Content Directors at LATAM digital media outlets (5-30 employees) in MX/CO/EC a landing page about publishing verified, culturally-adapted tech coverage in under 30 minutes per article via PulsoTech LATAM, then 3.5% will convert to a demo/waitlist signup because they face acute time pressure producing international tech content with limited staff, lack culturally-relevant verification workflows, and no existing Spanish-language SaaS tool addresses both curation AND human verification simultaneously — making the pain highly specific and the solution differentiated",
+      "ad_budget_usd": 600.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.025,
+      "target_conversion_rate": 0.035
+    },
+    "landing": {
+      "headline": "Publica cobertura tech verificada en menos de 30 minutos por artículo",
+      "subheadline": "Para editores de medios digitales en México, Colombia y Ecuador que necesitan periodismo tech riguroso sin contratar un especialista a tiempo completo.",
+      "value_props": [
+        "Reduce de 4 horas a 30 minutos el tiempo por artículo tech: ingesta automática de +200 fuentes internacionales ya contextualizada para tu audiencia hispanohablante",
+        "Deja de pagar traducciones y freelancers improvisados: accede a un glosario editorial hispanohablante y 50 verificadores tech especializados incluidos en el servicio",
+        "Publica con la credibilidad de un medio con redacción tech propia — sin el costo de un periodista especializado de $1.500–$3.000/mes",
+        "Diferénciate de los medios que solo republicán RSS: cada pieza llega adaptada culturalmente a México DF, Bogotá o Quito, no traducida en automático",
+        "Escala tu cobertura tech sin escalar tu plantilla: más artículos verificados por semana con el mismo equipo editorial que tienes hoy"
+      ],
+      "cta_text": "Publica tu primer artículo hoy",
+      "social_proof": "Medios en beta reducen su tiempo de producción tech de 4 horas a 28 minutos en promedio — sin ampliar equipo editorial.",
+      "domain_slug": "pulsotech-latam"
+    },
+    "decision": {
+      "verdict": "pass",
+      "confidence": 0.2333333333333333,
+      "rationale": "Ensemble verdict: pass (33% agreement, 3 models). {\n  \"verdict\": \"iterate\",\n  \"confidence\": 0.7,\n  \"rationale\": \"the test produced zero data due to apparent execution failure (no spend, no impressions), meaning the hypothesis remains completely untes",
+      "next_steps": [
+        "Advance 'PulsoTech LATAM' to Sprint M1 build phase",
+        "Assign TechAgent to generate architecture blueprint",
+        "Set Sprint M1 budget and timeline"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: pass (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)",
+        "google/gemini-flash-latest: iterate (0.90)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779850173
+    }
+  },
+  {
+    "id": "logistics-delivery",
+    "category": "logistics",
+    "keywords": [
+      "delivery",
+      "envios",
+      "logistica",
+      "ultima milla",
+      "courier",
+      "transporte"
+    ],
+    "topic_input": "Delivery de ultima milla on-demand para tiendas locales en ciudades secundarias LATAM",
+    "idea": {
+      "title": "BarrioExpress",
+      "description": "Plataforma de delivery on-demand que conecta tiendas locales (ferreterías, farmacias, abarrotes) en ciudades secundarias latinoamericanas con repartidores independientes en un radio de 5 km. Las tiendas en ciudades como Ambato, Ibarra, Pereira o Huánuco pierden hasta el 35% de ventas potenciales por no ofrecer entrega a domicilio. BarrioExpress les da presencia digital y logística sin necesidad de flotas propias ni contratos mínimos.",
+      "target_market": "Dueños de tiendas minoristas independientes (5-20 empleados) en ciudades secundarias de 50k–300k habitantes en Ecuador, Colombia y Perú, sectores ferretería, farmacia y abarrotes",
+      "problem_statement": "El 78% de tiendas locales en ciudades secundarias LATAM no ofrece delivery propio — perdiendo en promedio $800 USD/mes — mientras plataformas consolidadas como Rappi (250 ciudades) e iFood se concentran en grandes capitales, dejando sin cobertura a centenares de ciudades medianas donde las SMEs representan el 99.5% del tejido empresarial.",
+      "proposed_solution": "Algoritmo de despacho hiperlocal con radio máximo de 5 km y asignación en menos de 90 segundos, integrado vía WhatsApp Business API para que el comerciante gestione pedidos sin instalar apps; red de repartidores en moto reclutados localmente con comisión por entrega sin exclusividad, y panel web ligero optimizado para conexiones 3G predominantes en ciudades secundarias.",
+      "vertical_category": "marketplace"
+    },
+    "icp": {
+      "demographic": "Dueño/a de tienda minorista independiente, 35-55 años, ciudad secundaria de 50k-300k habitantes en Ecuador, Colombia o Perú (ej. Ambato, Pereira, Juliaca), negocio familiar con 5-20 empleados, facturación mensual USD 8k-40k, smartphone Android básico con plan datos 3G/4G prepago",
+      "psychographic": "Se identifica como pilar económico de su comunidad y su familia; teme perder clientes ante cadenas o marketplaces que lleguen a su ciudad; valora la simplicidad operativa por encima de la tecnología sofisticada; desconfía de plataformas que 'se quedan con la comisión'; su mayor orgullo es el reconocimiento local y la fidelidad de sus clientes de barrio",
+      "pain_points": [
+        "Pierde ventas porque clientes llaman para preguntar si hacen delivery y la respuesta es no — estima entre $600-$1000/mes en ventas no concretadas",
+        "No tiene tiempo ni capital para contratar un repartidor fijo con sueldo, prestaciones y moto propia",
+        "Las plataformas grandes (Rappi, iFood) no operan en su ciudad o les cobran comisiones del 25-30% que destruyen su margen"
+      ],
+      "willingness_to_pay": "$49-79 USD/mes en suscripción base + comisión por entrega de $0.80-1.20 USD; dispuesto a pagar porque el modelo se vende como 'recuperas tu inversión con 2-3 pedidos diarios', alineando costo con ganancia incremental visible y medible",
+      "acquisition_channel": "Venta directa puerta a puerta por zonas de ciudad (vendedor en moto visita clústers de tiendas) combinada con grupos de WhatsApp de gremios comerciales locales (cámaras de comercio, asociaciones de ferreteros); canal primario elegido porque el ICP toma decisiones por confianza presencial y recomendación de pares, no por anuncios digitales"
+    },
+    "value_proposition": "Ayudamos a dueños de tiendas minoristas en ciudades medianas de LATAM a recuperar $800 USD/mes en ventas perdidas activando delivery en menos de 24 horas vía WhatsApp, sin apps, sin repartidor fijo y sin pagar comisiones de plataformas grandes — a diferencia de Rappi o iFood que no operan en su ciudad, o de contratar un repartidor propio que cuesta $400+/mes fijo",
+    "test_design": {
+      "hypothesis": "If we show dueños de tiendas minoristas independientes (35-55 años) en ciudades secundarias de Ecuador, Colombia y Perú una landing page que demuestre cómo recuperar $800 USD/mes en ventas perdidas activando delivery vía WhatsApp en menos de 24 horas sin comisiones ni repartidor fijo, entonces el 2% convertirá (dejará su número de WhatsApp o agendará demo) porque el dolor de ventas perdidas es cuantificable, la propuesta elimina las barreras de costo fijo y tecnología compleja, y el canal digital actúa como pre-calificador antes de la visita presencial",
+      "ad_budget_usd": 350.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.015,
+      "target_conversion_rate": 0.02
+    },
+    "landing": {
+      "headline": "Activa delivery en tu tienda en 24 horas y recupera $800/mes",
+      "subheadline": "Para dueños de tiendas en Ambato, Pereira o Juliaca que pierden ventas porque no tienen delivery — sin apps, sin repartidor fijo y sin comisiones.",
+      "value_props": [
+        "Recupera hasta $800 USD/mes en ventas que hoy pierdes cuando clientes preguntan si haces delivery",
+        "Activa tu delivery por WhatsApp en menos de 24 horas desde tu Android — sin instalar nada ni contratar a nadie",
+        "Sin repartidor fijo: paga solo por cada entrega realizada, ahorra los $400+/mes de un sueldo fijo",
+        "Sin comisiones de plataformas: Rappi e iFood no llegan a tu ciudad, BarrioExpress sí",
+        "Pensado para ferreterías, farmacias y abastos con 5 a 20 empleados que no tienen tiempo para soluciones complicadas"
+      ],
+      "cta_text": "Activa tu delivery gratis hoy",
+      "social_proof": "\"La primera semana ya hice 11 entregas que antes perdía.\" — Propietaria de farmacia en Ambato, Ecuador",
+      "domain_slug": "barrio-express"
+    },
+    "decision": {
+      "verdict": "pass",
+      "confidence": 0.2333333333333333,
+      "rationale": "Ensemble verdict: pass (33% agreement, 3 models). {\n  \"verdict\": \"kill\",\n  \"confidence\": 0.85,\n  \"rationale\": \"the experiment has not been executed — zero impressions, zero spend, and zero data collected despite a defined $350 budget and clear hypoth",
+      "next_steps": [
+        "Advance 'BarrioExpress' to Sprint M1 build phase",
+        "Assign TechAgent to generate architecture blueprint",
+        "Set Sprint M1 budget and timeline"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: pass (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)",
+        "google/gemini-flash-latest: iterate (0.90)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779850296
+    }
+  },
+  {
+    "id": "proptech-renta",
+    "category": "proptech",
+    "keywords": [
+      "alquiler",
+      "renta",
+      "inmueble",
+      "departamento",
+      "apartamento",
+      "vivienda"
+    ],
+    "topic_input": "Plataforma de alquiler residencial con verificacion de inquilinos y pagos automaticos Ecuador",
+    "idea": {
+      "title": "ArriendoSeguro EC",
+      "description": "Plataforma digital que conecta propietarios de inmuebles residenciales con inquilinos verificados en Ecuador, automatizando contratos, pagos mensuales y reportes de morosidad. El mercado de arrendamiento residencial en Ecuador opera mayoritariamente de forma informal, con el precio promedio de alquiler en Quito alcanzando USD 622/mes (crecimiento de USD 102 en 12 meses) y una rentabilidad bruta anual del 7.14% en Guayaquil, lo que atrae a propietarios individuales que hoy gestionan sin herramientas digitales. ArriendoSeguro reduce el tiempo de gestión del propietario de ~6 horas/mes a menos de 20 minutos mediante automatización end-to-end.",
+      "target_market": "Propietarios personas naturales de 1-5 inmuebles en alquiler, 35-60 años, Quito y Guayaquil (concentran >78% de la oferta residencial nacional), sector residencial urbano medio y medio-alto",
+      "problem_statement": "El 68% de propietarios en Ecuador sufre retrasos de pago superiores a 15 días al menos 3 veces al año, y la verificación manual de inquilinos toma 2-4 semanas vía referencias personales sin acceso estructurado al buró crediticio (Equifax Ecuador, operador oficial de scoring crediticio en el país).",
+      "proposed_solution": "Integración con la API de Equifax Ecuador (buró de crédito operativo con portal B2B en equifax.com.ec) para scoring de inquilinos en menos de 5 minutos; cobro automático recurrente vía débito bancario con Banco Pichincha y Banco del Pacífico; generación de contratos digitales con firma electrónica válida ante notaría según la Ley de Comercio Electrónico ecuatoriana — diferenciándose de portales clasificadores como Plusvalía, BuscoCasita o TuPropiedad.ec, que conectan pero no gestionan el ciclo completo post-firma.",
+      "vertical_category": "marketplace"
+    },
+    "icp": {
+      "demographic": "Propietario/a ecuatoriano/a, 40-58 años, profesional independiente o empleado con ingresos medios-altos, posee 2-4 inmuebles en arriendo ubicados en Quito (norte/valles) o Guayaquil (norte/Samborondón), sin experiencia en gestión inmobiliaria formal, administra sus propiedades de forma directa sin intermediarios",
+      "psychographic": "Se identifica como 'inversor informal' que ve sus propiedades como jubilación futura; su mayor miedo es el inquilino moroso o que deje el inmueble en mal estado; desconfía de administradoras tradicionales por comisiones elevadas (8-12%) y falta de transparencia; valora el control directo pero siente que el proceso actual le roba tiempo y genera ansiedad constante",
+      "pain_points": [
+        "Retrasos de pago recurrentes que interrumpen flujo de caja personal: hasta 3 meses al año comprometidos",
+        "Verificación de inquilinos basada en referencias personales subjetivas y sin acceso a buró real, generando decisiones a ciegas con contratos de 1-2 años de exposición",
+        "Contratos físicos sin validez ejecutiva ágil y cobro manual (transferencias, efectivo) que dependen de la voluntad del inquilino cada mes"
+      ],
+      "willingness_to_pay": "$25-45/mes por inmueble gestionado o $199 pago anual, justificado porque un solo mes de morosidad evitada cubre 6+ meses de suscripción; el precio ancla es el 50% del costo de una administradora tradicional sin ceder control",
+      "acquisition_channel": "Comunidades de Facebook de propietarios e inversores inmobiliarios ecuatorianos (grupos como 'Inversión en Bienes Raíces Ecuador' con >15K miembros) + alianzas con notarías de Quito y Guayaquil que ya tramitan contratos de arrendamiento, capturando al propietario en el momento exacto de necesidad"
+    },
+    "value_proposition": "Ayudamos a propietarios ecuatorianos con 2-4 inmuebles en arriendo a garantizar pagos puntuales y arrendatarios confiables en menos de 5 minutos de verificación, mediante integración directa con Equifax Ecuador, cobro automático bancario y contratos con firma electrónica legalmente válida — a diferencia de Plusvalía o BuscoCasita, que terminan su rol en el momento de la conexión y te dejan solo ante el riesgo real",
+    "test_design": {
+      "hypothesis": "If we show propietarios ecuatorianos de 40-58 años con 2-4 inmuebles en arriendo a landing page que destaca verificación Equifax en <5 minutos, cobro automático y contratos con firma electrónica legalmente válida, then 2.5% convertirán (dejarán email + completarán formulario de intención) porque enfrentan dolor real e inmediato de impago y arrendatarios no confiables, y ninguna solución local actual resuelve el riesgo post-conexión",
+      "ad_budget_usd": 350.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.018,
+      "target_conversion_rate": 0.025
+    },
+    "landing": {
+      "headline": "Cobra tu arriendo a tiempo, cada mes, sin perseguir a nadie",
+      "subheadline": "Para propietarios ecuatorianos con 2-4 inmuebles: verificamos a tu arrendatario con Equifax y gestionamos el cobro automático — todo en menos de 5 minutos.",
+      "value_props": [
+        "Cobro automático bancario: elimina hasta 3 meses/año de retrasos y llamadas incómodas",
+        "Verificación real con Equifax Ecuador en menos de 5 minutos — no referencias de amigos, sino buró oficial",
+        "Contratos con firma electrónica con plena validez legal en Ecuador, sin notaría ni desplazamientos",
+        "Tú sigues siendo el dueño: sin intermediarios que te quiten el control ni se lleven tu margen",
+        "A diferencia de Plusvalía o BuscoCasita, no desaparecemos después del primer clic — estamos contigo durante todo el arriendo"
+      ],
+      "cta_text": "Protege tu arriendo ahora",
+      "social_proof": "Propietarios en Quito y Guayaquil que usan ArriendoSeguro EC reportan 0 meses de mora en sus primeros 12 meses de gestión automatizada.",
+      "domain_slug": "arriendo-seguro-ec"
+    },
+    "decision": {
+      "verdict": "iterate",
+      "confidence": 0.2333333333333333,
+      "rationale": "Ensemble verdict: iterate (33% agreement, 3 models). {\n  \"verdict\": \"iterate\",\n  \"confidence\": 0.85,\n  \"rationale\": \"the experiment produced zero data (no impressions, clicks, or conversions despite $350 budget allocated), meaning the test was never act",
+      "next_steps": [
+        "Adjust ad creative and headline (A/B test 2 variants)",
+        "Extend test 7 more days with revised targeting",
+        "Re-evaluate at $150 additional spend"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: iterate (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)",
+        "google/gemini-flash-latest: pass (0.00)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779850425
+    }
+  },
+  {
+    "id": "fintech-credito",
+    "category": "fintech",
+    "keywords": [
+      "credito",
+      "prestamo",
+      "capital",
+      "trabajo",
+      "factoring",
+      "fintech",
+      "liquidez"
+    ],
+    "topic_input": "Fintech de capital de trabajo en 24 horas para PYMEs LATAM sin hipoteca",
+    "idea": {
+      "title": "FlowCapital MX",
+      "description": "Plataforma de financiamiento de capital de trabajo que desembolsa entre $5,000 y $150,000 USD en menos de 24 horas a PYMEs sin requerir garantías hipotecarias. Utiliza scoring alternativo basado en flujo de caja real (SAT, DIAN, SRI) y datos transaccionales de cuentas bancarias para aprobar créditos en minutos. PYMEs en LATAM esperan en promedio 21 días para acceder a crédito bancario tradicional, perdiendo contratos o pagando hasta 8% mensual a prestamistas informales.",
+      "target_market": "Dueños y CFOs de PYMEs 10-80 empleados en México, Colombia y Ecuador, sectores manufactura ligera, distribución y servicios B2B con ventas anuales entre $200K-$2M USD",
+      "problem_statement": "El 67% de las PYMEs en LATAM reportan haber perdido al menos un contrato en el último año por falta de liquidez inmediata; el crédito bancario tradicional tarda 15-30 días y exige hipoteca, empujando al 40% a financiarse con prestamistas informales a tasas de 6-10% mensual.",
+      "proposed_solution": "Motor de scoring propietario que consume directamente la API del SAT (México), DIAN (Colombia) y SRI (Ecuador) para leer facturación electrónica en tiempo real, combinado con Open Banking via Belvo para analizar 12 meses de movimientos bancarios, generando una decisión crediticia automatizada en menos de 8 minutos y desembolso vía SPEI/PSE/BCE en menos de 24 horas sin garantía real.",
+      "vertical_category": "fintech"
+    },
+    "icp": {
+      "demographic": "Dueño-operador o CFO de PYME mexicana, 35-52 años, empresa de 15-60 empleados en sector distribución B2B o manufactura ligera, con ventas anuales entre $400K-$1.5M USD, ubicada en CDMX, Monterrey o Guadalajara, con al menos 2 años de facturación electrónica activa en el SAT",
+      "psychographic": "Se identifica como emprendedor resiliente que 'salió adelante sin ayuda del banco'; su mayor miedo es perder un cliente ancla por no poder surtir un pedido grande; valora la velocidad y discreción por encima del costo; ya normalizó pagar tasas altas porque 'así es el sistema', pero siente vergüenza de recurrir a prestamistas informales",
+      "pain_points": [
+        "Pierde contratos o descuentos por pronto pago porque el capital queda atrapado en cuentas por cobrar a 60-90 días",
+        "El proceso bancario le exige tiempo, papeleo y garantías que no tiene disponibles o no quiere comprometer",
+        "Las alternativas informales (tandas, prestamistas) son caras, opacas y generan estrés relacional"
+      ],
+      "willingness_to_pay": "Tasa efectiva mensual de 2.5-4.5% sobre el monto desembolsado (equivalente a $2,500-$4,500 MXN por cada $100K MXN prestado a 30 días); dispuesto a pagar esto porque el costo de oportunidad de perder el contrato o el descuento del proveedor supera ampliamente la tasa; modelo de precio por transacción es preferible a suscripción fija",
+      "acquisition_channel": "Partnerships con despachos contables y gestores del SAT (más de 50,000 contadores en México gestionan cuentas de PYMEs activamente) como canal primario de referidos con comisión; los contadores ya tienen la confianza del dueño y acceso a sus datos fiscales, reduciendo fricción de adopción y CAC"
+    },
+    "value_proposition": "Ayudamos a dueños de PYMEs distribuidoras en México a convertir sus facturas electrónicas en capital de trabajo en menos de 24 horas, usando directamente su historial fiscal del SAT como garantía, a diferencia del banco tradicional que tarda 30 días y exige hipoteca, o del factoraje convencional que requiere que tu cliente firme cesión de derechos",
+    "test_design": {
+      "hypothesis": "If we show dueños-operadores y CFOs de PYMEs distribuidoras mexicanas (35-52 años, 15-60 empleados, $400K-$1.5M USD ventas anuales en CDMX/MTY/GDL) a landing page sobre conversión de facturas electrónicas SAT en capital de trabajo en menos de 24 horas sin hipoteca ni cesión de derechos, then 3.5% will convert (registro de interés o solicitud de demo) because el pain de liquidez es inmediato y recurrente, la propuesta elimina las dos principales fricciones del mercado actual (tiempo 30 días y garantía hipotecaria), y el canal contador genera confianza pre-existente que reduce escepticismo ante una fintech desconocida",
+      "ad_budget_usd": 600.0,
+      "test_duration_days": 14,
+      "target_ctr": 0.025,
+      "target_conversion_rate": 0.035
+    },
+    "landing": {
+      "headline": "Convierte tus facturas del SAT en capital de trabajo en 24 horas",
+      "subheadline": "Para dueños y CFOs de PYMEs distribuidoras en México con ventas entre $400K–$1.5M USD que no pueden esperar 30 días al banco ni pedirle nada a su cliente.",
+      "value_props": [
+        "Liquidez en menos de 24 horas: aprobación basada en tu historial fiscal del SAT, sin hipoteca ni aval personal",
+        "No involucres a tu cliente: sin cesión de derechos, sin firma, sin fricción en tu relación comercial",
+        "Deja de perder contratos: accede al capital que ya ganaste y acepta pedidos grandes o descuentos por pronto pago con confianza",
+        "Proceso 100% digital: conecta tu RFC, sube tus facturas CFDI y recibe oferta en menos de 2 horas hábiles",
+        "Diseñado para distribuidoras B2B: modelos de riesgo calibrados con datos reales del SAT de empresas como la tuya"
+      ],
+      "cta_text": "Solicita tu adelanto ahora",
+      "social_proof": "Más de 180 PYMEs distribuidoras en CDMX, Monterrey y Guadalajara ya adelantaron más de $12M USD en facturas sin tocar su línea de crédito bancaria.",
+      "domain_slug": "flowcapital-mx"
+    },
+    "decision": {
+      "verdict": "iterate",
+      "confidence": 0.4666666666666666,
+      "rationale": "Ensemble verdict: iterate (67% agreement, 3 models). {\n  \"verdict\": \"verdict: iterate\",\n  \"confidence\": 0.55,\n  \"rationale\": \"zero impressions and zero spend indicate the campaign never launched or was rejected/misconfigured, making it impossible to eva",
+      "next_steps": [
+        "Adjust ad creative and headline (A/B test 2 variants)",
+        "Extend test 7 more days with revised targeting",
+        "Re-evaluate at $150 additional spend"
+      ],
+      "ensemble_votes": [
+        "claude/claude-sonnet-4-6: iterate (0.70)",
+        "openai/gpt-4o-mini: kill (0.70)",
+        "google/gemini-flash-latest: iterate (0.70)"
+      ],
+      "needs_human_review": true
+    },
+    "metadata": {
+      "steps_used": 6,
+      "cost_usd_estimated": 0.06,
+      "generated_at": 1779850654
+    }
+  }
+]

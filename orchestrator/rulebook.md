@@ -130,6 +130,14 @@ Cada UNSUPPORTED baja specificity_score en 0.5, puede re-disparar refinement loo
 Activación: FACT_CHECK_ENABLED=true + GOOGLE_API_KEY.
 NO es debate: es fact-check single-shot binario.
 
+## R27 — Closed-Beta Email Allowlist Auth (ADR-010)
+Dashboard pages exigen sesión emitida por POST /api/v1/auth/login.
+Solo emails en ALLOWED_EMAILS (env var) reciben token. Tokens duran 7 días.
+Cada intento (allowed o rejected) se loggea en auth_attempts con IP+UA+ts
+para auditoría posterior y lookup de país por IP.
+Landing público y captura de leads SIGUE abierto — anti-bot tier protege.
+Migración a magic-links cuando se abra beta pública (no antes).
+
 ## R26 — Layered Anti-Bot Defenses (ADR-009)
 Endpoints públicos tienen 6 capas defensivas compuestas:
   L1: per-IP burst rate limit (always-on)

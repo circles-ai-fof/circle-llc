@@ -29,6 +29,8 @@ from fastapi.responses import JSONResponse
 from .schemas.api import (
     AgentInfo,
     AgentsResponse,
+    AuthAttemptItem,
+    AuthAttemptsResponse,
     DiagnosticResponse,
     ErrorDetail,
     HealthResponse,
@@ -43,6 +45,10 @@ from .schemas.api import (
     LeadsListResponse,
     LeadsStatsBySlug,
     LeadsStatsResponse,
+    LoginRequest,
+    LoginResponse,
+    LogoutResponse,
+    MeResponse,
     PendingReviewItem,
     PendingReviewResponse,
     RunGateRequest,
@@ -843,6 +849,160 @@ def import_leads(body: LeadImportRequest, request: Request) -> LeadImportRespons
         imported=imported,
         skipped_duplicates=skipped,
         by_slug=dict(by_slug),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Auth (R27 / ADR-010) — closed beta allowlist
+# ---------------------------------------------------------------------------
+
+
+def _current_user(request: Request) -> Optional[Dict]:
+    """Validate Authorization: Bearer <token>. Returns {email, expires_at} or None."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        return None
+    token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        return None
+    from .core.storage import auth_store
+    return auth_store.verify_session(token)
+
+
+def _require_user(request: Request) -> Dict:
+    """Raise 401 if no valid session. Returns user dict otherwise."""
+    user = _current_user(request)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+@app.post(
+    "/api/v1/auth/login",
+    response_model=LoginResponse,
+    summary="Login with allowlisted email (closed beta)",
+    tags=["auth"],
+    responses={
+        400: {"model": ErrorDetail, "description": "Malformed email"},
+        403: {"model": ErrorDetail, "description": "Email not in beta allowlist"},
+        429: {"model": ErrorDetail, "description": "Rate limit exceeded"},
+    },
+)
+def auth_login(body: LoginRequest, request: Request) -> LoginResponse:
+    """
+    Email-only login for closed beta (R27 / ADR-010).
+
+    - Allowlist via ALLOWED_EMAILS env var (comma-separated).
+    - Every attempt is logged (allowed or rejected) for audit and geo lookup.
+    - Returns a 7-day session token in the response body.
+
+    NOT a password-protected endpoint. Allowlist secrecy is the security
+    boundary; the 3 beta emails are not public.
+    """
+    from .core.auth import is_allowed, looks_like_email, new_token, session_expiry
+    from .core.storage import auth_store
+
+    ip = _client_ip(request)
+    ua = request.headers.get("User-Agent", "")[:300]
+
+    # Rate limit (public_form tier — generous, but prevents brute force)
+    rl = check_rate_limit(ip, tier="public_form")
+    if not rl.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=rl.reason or "Rate limit exceeded",
+            headers={"Retry-After": str(rl.retry_after_s or 60)},
+        )
+
+    email_raw = body.email.strip()
+
+    if not looks_like_email(email_raw):
+        auth_store.log_attempt(email_raw, ip, ua, allowed=False, reason="malformed_email")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email malformado",
+        )
+
+    email_normalized = email_raw.lower()
+    if not is_allowed(email_normalized):
+        auth_store.log_attempt(email_normalized, ip, ua, allowed=False, reason="not_allowlisted")
+        logger.info("auth: rejected %s from ip=%s", email_normalized, ip)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "El acceso a la plataforma está habilitado solo para usuarios beta. "
+                "Tu email quedó en la lista de espera — te avisaremos cuando esté disponible."
+            ),
+        )
+
+    # All good — create session
+    token = new_token()
+    expires_at = session_expiry()
+    auth_store.create_session(token, email_normalized, expires_at)
+    auth_store.log_attempt(email_normalized, ip, ua, allowed=True, reason="ok")
+    logger.info("auth: granted session for %s exp=%d", email_normalized, expires_at)
+    return LoginResponse(token=token, email=email_normalized, expires_at=expires_at)
+
+
+@app.get(
+    "/api/v1/auth/me",
+    response_model=MeResponse,
+    summary="Validate current session token",
+    tags=["auth"],
+    responses={401: {"model": ErrorDetail, "description": "No / invalid / expired session"}},
+)
+def auth_me(request: Request) -> MeResponse:
+    user = _require_user(request)
+    return MeResponse(email=user["email"], expires_at=user["expires_at"])
+
+
+@app.post(
+    "/api/v1/auth/logout",
+    response_model=LogoutResponse,
+    summary="Revoke current session token",
+    tags=["auth"],
+)
+def auth_logout(request: Request) -> LogoutResponse:
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        return LogoutResponse(revoked=False)
+    token = auth_header.split(" ", 1)[1].strip()
+    from .core.storage import auth_store
+    pre = auth_store.verify_session(token) is not None
+    auth_store.revoke_session(token)
+    return LogoutResponse(revoked=pre)
+
+
+@app.get(
+    "/api/v1/admin/auth-attempts",
+    response_model=AuthAttemptsResponse,
+    summary="List recent login attempts (admin)",
+    tags=["admin", "auth"],
+    responses={401: {"model": ErrorDetail, "description": "Admin secret required"}},
+)
+def list_auth_attempts(request: Request, limit: int = 200) -> AuthAttemptsResponse:
+    """Requires X-Gate-Secret. Returns the most recent N login attempts.
+    Use for audit + future country/geo lookup by IP."""
+    secret = os.getenv("GATE_RUN_SECRET", "")
+    if not secret or request.headers.get("X-Gate-Secret") != secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Admin secret required",
+        )
+    if limit < 1 or limit > 1000:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="limit must be 1-1000",
+        )
+    from .core.storage import auth_store
+    items = auth_store.list_attempts(limit=limit)
+    return AuthAttemptsResponse(
+        total=auth_store.count_attempts(),
+        items=[AuthAttemptItem(**it) for it in items],
     )
 
 

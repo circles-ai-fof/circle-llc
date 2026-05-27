@@ -1,67 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { matchDemoRun, type DemoRun } from "@/lib/demo-pool";
 
 type Verdict = "PASS" | "KILL" | "ITERATE";
 
-interface SimResult {
-  idea: string;
-  verdict: Verdict;
-  confidence: number;
-  nextStep: string;
-  icp: string;
-  signal: string;
-}
-
-const MOCK_RESULTS: Record<Verdict, Omit<SimResult, "idea">> = {
-  PASS: {
-    verdict: "PASS",
-    confidence: 87,
-    nextStep: "Avanzar a Sprint M1 — arquitectura y build",
-    icp: "Founders LATAM, 25-40 años, pre-seed, 1-3 intentos previos",
-    signal: "CTR anuncio: 4.2% · Leads capturados: 34 · CPA: $8.50",
-  },
-  ITERATE: {
-    verdict: "ITERATE",
-    confidence: 61,
-    nextStep: "Refinar ICP — ajustar messaging para segmento B2B",
-    icp: "PyMEs manufactureras, LatAm, 10-50 empleados, sin equipo tech",
-    signal: "CTR anuncio: 2.1% · Leads capturados: 11 · CPA: $22.00",
-  },
-  KILL: {
-    verdict: "KILL",
-    confidence: 23,
-    nextStep: "Pivotar idea — mercado insuficiente en este segmento",
-    icp: "Estudiantes universitarios, 18-24 años, segmento recreativo",
-    signal: "CTR anuncio: 0.4% · Leads capturados: 2 · CPA: $87.00",
-  },
+type DemoResult = {
+  input: string;
+  run: DemoRun;
+  matchScore: number;
+  exactMatch: boolean;
 };
 
-function getVerdictForIdea(idea: string): Verdict {
-  const lower = idea.toLowerCase();
-  if (
-    lower.includes("b2b") ||
-    lower.includes("empresa") ||
-    lower.includes("saas") ||
-    lower.includes("software") ||
-    lower.includes("plataforma") ||
-    lower.includes("automatizar") ||
-    lower.length > 80
-  ) {
-    return "PASS";
-  }
-  if (
-    lower.includes("app") ||
-    lower.includes("servicio") ||
-    lower.includes("marketplace") ||
-    lower.length > 40
-  ) {
-    return "ITERATE";
-  }
-  return "KILL";
-}
-
-const verdictConfig: Record<Verdict, { color: string; bg: string; border: string; label: string }> = {
+const verdictConfig: Record<
+  Verdict,
+  { color: string; bg: string; border: string; label: string }
+> = {
   PASS: {
     color: "text-green-400",
     bg: "bg-green-400/10",
@@ -82,27 +36,41 @@ const verdictConfig: Record<Verdict, { color: string; bg: string; border: string
   },
 };
 
+function verdictUpper(v: string): Verdict {
+  const u = v.toUpperCase();
+  if (u === "PASS" || u === "KILL" || u === "ITERATE") return u;
+  return "ITERATE";
+}
+
 export default function EvidenceGateDemo() {
   const [idea, setIdea] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<SimResult | null>(null);
+  const [result, setResult] = useState<DemoResult | null>(null);
 
   const handleSimulate = () => {
     if (!idea.trim() || loading) return;
     setLoading(true);
     setResult(null);
 
+    // Tiny artificial delay so the user sees the pipeline animating
     setTimeout(() => {
-      const verdict = getVerdictForIdea(idea);
-      setResult({ idea, ...MOCK_RESULTS[verdict] });
+      const match = matchDemoRun(idea);
+      setResult({
+        input: idea,
+        run: match.run,
+        matchScore: match.score,
+        exactMatch: match.exact,
+      });
       setLoading(false);
-    }, 2000);
+    }, 1200);
   };
 
   const handleReset = () => {
     setResult(null);
     setIdea("");
   };
+
+  const verdict = result ? verdictUpper(result.run.decision.verdict) : "ITERATE";
 
   return (
     <section id="evidence-gate" className="py-24 px-6 bg-bg-card/50">
@@ -151,7 +119,7 @@ export default function EvidenceGateDemo() {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="w-4 h-4 border-2 border-bg/30 border-t-bg rounded-full animate-spin" />
-                  Simulando evidence-gate...
+                  Buscando corrida real más cercana...
                 </span>
               ) : (
                 "Simular evidence-gate →"
@@ -159,7 +127,8 @@ export default function EvidenceGateDemo() {
             </button>
 
             <p className="text-center text-xs text-text-primary/30 mt-4">
-              Demo estático · No llama API real · Solo para ilustrar el proceso
+              Resultados reales del workflow Claude + GPT + Gemini · Cacheados
+              para no exponer el endpoint pagado al público
             </p>
           </div>
         )}
@@ -167,39 +136,69 @@ export default function EvidenceGateDemo() {
         {/* Result card */}
         {result && (
           <div className="bg-bg-card border border-white/5 rounded-2xl p-8 space-y-6">
+            {/* Match quality banner */}
+            <div
+              className={`text-xs px-3 py-2 rounded-lg border ${
+                result.exactMatch
+                  ? "bg-accent/10 border-accent/30 text-accent"
+                  : "bg-amber-400/10 border-amber-400/30 text-amber-400"
+              }`}
+            >
+              {result.exactMatch
+                ? `✓ Match cercano (${Math.round(result.matchScore * 100)}%) — mostrando una corrida real del pool`
+                : `≈ Match aproximado (${Math.round(result.matchScore * 100)}%) — la corrida más cercana del pool. Para ver tu idea EXACTA, solicita acceso.`}
+            </div>
+
             {/* Idea recap */}
             <div>
               <span className="text-xs text-text-primary/40 uppercase tracking-wider font-medium">
-                Idea evaluada
+                Tu pregunta
               </span>
               <p className="mt-1 text-sm text-text-primary/80 leading-relaxed bg-bg rounded-lg px-4 py-3 border border-white/5">
-                &ldquo;{result.idea}&rdquo;
+                &ldquo;{result.input}&rdquo;
+              </p>
+            </div>
+
+            {/* Idea (real workflow output) */}
+            <div>
+              <span className="text-xs text-text-primary/40 uppercase tracking-wider font-medium">
+                Idea refinada por el workflow
+              </span>
+              <p className="mt-1 text-sm text-text-primary font-semibold">
+                {result.run.idea.title}
+              </p>
+              <p className="mt-1 text-xs text-text-primary/60 leading-relaxed">
+                {result.run.idea.description}
               </p>
             </div>
 
             {/* Verdict */}
             <div
-              className={`rounded-xl p-5 ${verdictConfig[result.verdict].bg} border ${verdictConfig[result.verdict].border}`}
+              className={`rounded-xl p-5 ${verdictConfig[verdict].bg} border ${verdictConfig[verdict].border}`}
             >
               <div className="flex items-center justify-between mb-3">
                 <span
-                  className={`text-2xl font-black ${verdictConfig[result.verdict].color} tracking-wider`}
+                  className={`text-2xl font-black ${verdictConfig[verdict].color} tracking-wider`}
                 >
-                  {result.verdict}
+                  {verdict}
                 </span>
                 <div className="text-right">
                   <span className="text-xs text-text-primary/40 block">
                     Confianza
                   </span>
                   <span
-                    className={`text-2xl font-bold ${verdictConfig[result.verdict].color}`}
+                    className={`text-2xl font-bold ${verdictConfig[verdict].color}`}
                   >
-                    {result.confidence}%
+                    {Math.round(result.run.decision.confidence * 100)}%
                   </span>
                 </div>
               </div>
-              <p className={`text-sm font-medium ${verdictConfig[result.verdict].color}`}>
-                {verdictConfig[result.verdict].label}
+              <p className={`text-sm font-medium ${verdictConfig[verdict].color}`}>
+                {verdictConfig[verdict].label}
+              </p>
+              <p className="text-xs text-text-primary/60 mt-3 leading-relaxed">
+                {result.run.decision.rationale.slice(0, 280)}
+                {result.run.decision.rationale.length > 280 ? "..." : ""}
               </p>
             </div>
 
@@ -210,18 +209,36 @@ export default function EvidenceGateDemo() {
                   ICP detectado
                 </span>
                 <p className="text-sm text-text-primary/80 leading-relaxed">
-                  {result.icp}
+                  {result.run.idea.target_market}
                 </p>
               </div>
               <div className="bg-bg rounded-xl p-4 border border-white/5">
                 <span className="text-xs text-text-primary/40 uppercase tracking-wider font-medium block mb-2">
-                  Señal de mercado (14 días)
+                  Test propuesto (14 días)
                 </span>
                 <p className="text-sm text-text-primary/80 leading-relaxed font-mono">
-                  {result.signal}
+                  Budget: ${result.run.test_design.ad_budget_usd}
+                  <br />
+                  Target CTR: {(result.run.test_design.target_ctr * 100).toFixed(1)}%
+                  <br />
+                  Target CVR: {(result.run.test_design.target_conversion_rate * 100).toFixed(1)}%
                 </p>
               </div>
             </div>
+
+            {/* Ensemble votes (if multi-LLM was used) */}
+            {result.run.decision.ensemble_votes && result.run.decision.ensemble_votes.length > 0 && (
+              <div className="bg-bg rounded-xl p-4 border border-white/5">
+                <span className="text-xs text-text-primary/40 uppercase tracking-wider font-medium block mb-2">
+                  Votos del ensemble (Claude + GPT + Gemini)
+                </span>
+                <div className="space-y-1 font-mono text-xs text-text-primary/70">
+                  {result.run.decision.ensemble_votes.map((v, i) => (
+                    <div key={i}>• {v}</div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Next step */}
             <div className="flex items-start gap-3 bg-accent/5 rounded-xl p-4 border border-accent/15">
@@ -240,9 +257,11 @@ export default function EvidenceGateDemo() {
               </svg>
               <div>
                 <span className="text-xs text-accent font-medium uppercase tracking-wider block mb-1">
-                  Siguiente paso
+                  Siguiente paso recomendado
                 </span>
-                <p className="text-sm text-text-primary/80">{result.nextStep}</p>
+                <p className="text-sm text-text-primary/80">
+                  {result.run.decision.next_steps[0] ?? "Iterar el copy y re-medir."}
+                </p>
               </div>
             </div>
 
@@ -253,6 +272,17 @@ export default function EvidenceGateDemo() {
             >
               Probar con otra idea
             </button>
+
+            {/* Provenance footer */}
+            <p className="text-center text-xs text-text-primary/30">
+              Corrida generada el{" "}
+              {new Date(result.run.metadata.generated_at * 1000).toLocaleDateString("es", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}{" "}
+              · costo real: ${result.run.metadata.cost_usd_estimated?.toFixed(2)} USD
+            </p>
           </div>
         )}
       </div>
