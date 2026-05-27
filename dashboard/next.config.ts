@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import * as path from "path";
 
 // CSP connect-src: allow the production API + the dev backend on any localhost
 // port. NEXT_PUBLIC_API_URL must also be allowed since /cazar and /leads call
@@ -46,6 +47,19 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Force the workspace root to THIS dashboard directory.
+  //
+  // Without this, Next.js walks up looking for the nearest package-lock.json
+  // and picks `D:\CM\IA_2026\ClaudeCode\package-lock.json` (a sibling project's
+  // lockfile) as the workspace root. Module resolution then breaks at runtime
+  // with "Internal Server Error" on SSR-rendered routes.
+  //
+  // path.resolve(__dirname, ...) doesn't work in ESM-style configs, but Next
+  // injects __dirname when loading next.config.ts. As a safer alternative we
+  // use process.cwd() — when you run `npm run dev` from dashboard/ this is
+  // already the dashboard directory.
+  outputFileTracingRoot: path.resolve(process.cwd()),
+
   async headers() {
     return [
       {
