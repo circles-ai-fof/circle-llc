@@ -247,7 +247,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_DEFAULT_ALLOWED_ORIGINS + _extra_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    # M4.5 — añadidos PUT y DELETE para que /api/v1/autonomy (PUT) y
+    # /api/v1/sources/{id} (DELETE) pasen el preflight de CORS. Antes el browser
+    # bloqueaba estos requests silenciosamente con "NetworkError" en la consola.
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
     expose_headers=["X-Request-Id"],
     max_age=600,
@@ -1844,6 +1847,7 @@ def list_signals(
     sort: str = "recent",
     kind: str = "",
     search: str = "",
+    content_type: str = "",
 ) -> SignalsListResponse:
     """
     sort:
@@ -1851,9 +1855,12 @@ def list_signals(
       - "score"     — highest score first
       - "trend"     — highest trend_score first (then score)
       - "published" — most-recently-published-by-source first (NULLs last)
-    kind:    filter by source_kind (rss/hn/reddit/url/youtube/...). Empty = all.
-    search:  case-insensitive substring on theme/excerpt/suggested_topic.
-             Server-side LIKE — escalable a FTS5 cuando supere ~5k señales.
+    kind:         filter by source_kind (rss/hn/reddit/url/youtube/...). Empty = all.
+    search:       case-insensitive substring on theme/excerpt/suggested_topic.
+                  Server-side LIKE — escalable a FTS5 cuando supere ~5k señales.
+    content_type: filter by classified content type (news/blog/research_paper/
+                  tool_product/course_tutorial/video_podcast/community/
+                  corporate/unknown). Empty = all. (M4.5)
     """
     _require_user(request)
     from .core.storage import signals_store, sources_store
@@ -1864,12 +1871,21 @@ def list_signals(
     # Length-bound the search term to avoid SQL slowdown on absurd inputs
     if len(search) > 200:
         raise HTTPException(status_code=422, detail="search must be ≤200 chars")
+    VALID_CONTENT_TYPES = {
+        "", "news", "blog", "research_paper", "tool_product",
+        "course_tutorial", "video_podcast", "community", "corporate", "unknown",
+    }
+    if content_type not in VALID_CONTENT_TYPES:
+        raise HTTPException(status_code=422, detail=f"invalid content_type. valid: {sorted(VALID_CONTENT_TYPES - {''})}")
     rows = signals_store.list(
         limit=limit, min_score=min_score, search=search or None,
     )
     # Filter by source_kind if requested
     if kind:
         rows = [r for r in rows if r.get("source_kind") == kind]
+    # M4.5 — filter by classified content_type if requested
+    if content_type:
+        rows = [r for r in rows if (r.get("content_type") or "unknown") == content_type]
     # Re-sort according to client preference (store returns recent-first by default)
     if sort == "score":
         rows.sort(key=lambda r: r.get("score", 0), reverse=True)

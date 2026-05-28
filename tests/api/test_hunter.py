@@ -163,6 +163,84 @@ def test_autonomy_requires_auth(client):
     assert client.put("/api/v1/autonomy", json={"level": "manual"}).status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# M4.5 — CORS allows PUT/DELETE (regresión: autonomy/delete fallaban en browser)
+# ---------------------------------------------------------------------------
+
+
+def test_cors_preflight_allows_put_for_autonomy(client):
+    """Bug M4.5: el browser bloqueaba PUT /api/v1/autonomy con NetworkError
+    porque la preflight de CORS solo aceptaba GET/POST/OPTIONS. Verificamos
+    que PUT está ahora en allow_methods."""
+    r = client.options(
+        "/api/v1/autonomy",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "PUT",
+            "Access-Control-Request-Headers": "Content-Type, Authorization",
+        },
+    )
+    # FastAPI/Starlette returns 200 con los headers CORS si el preflight pasa
+    assert r.status_code in (200, 204)
+    allowed = r.headers.get("access-control-allow-methods", "")
+    assert "PUT" in allowed.upper(), f"PUT not in allow-methods: {allowed!r}"
+
+
+def test_cors_preflight_allows_delete_for_sources(client):
+    """Mismo bug: DELETE /api/v1/sources/{id} también fallaba."""
+    r = client.options(
+        "/api/v1/sources/1",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "DELETE",
+            "Access-Control-Request-Headers": "Authorization",
+        },
+    )
+    assert r.status_code in (200, 204)
+    allowed = r.headers.get("access-control-allow-methods", "")
+    assert "DELETE" in allowed.upper(), f"DELETE not in allow-methods: {allowed!r}"
+
+
+# ---------------------------------------------------------------------------
+# M4.5 — filtro por content_type en /api/v1/signals
+# ---------------------------------------------------------------------------
+
+
+def test_signals_filter_by_content_type_news(client, auth):
+    """Bug del founder: 'Debemos poder filtrar por tipo' (Noticia/Producto/…).
+
+    Aprovechamos el auto-classifier por URL: bbc.com → news,
+    github.com → tool_product (ver content_type.py).
+    """
+    from orchestrator.core.storage import signals_store
+    signals_store.add(
+        source_id=None, source_kind="rss", theme="BBC News headline M45",
+        score=0.7, excerpt="news ex",
+        evidence_urls=["https://www.bbc.com/news/article-m45"],
+        suggested_topic="news topic", item_titles=["BBC headline"],
+    )
+    signals_store.add(
+        source_id=None, source_kind="rss", theme="GitHub project release M45",
+        score=0.7, excerpt="tool ex",
+        evidence_urls=["https://github.com/foo/bar-m45"],
+        suggested_topic="tool topic", item_titles=["GH release"],
+    )
+    r = client.get("/api/v1/signals?content_type=news&min_score=0.0", headers=auth)
+    assert r.status_code == 200
+    items = r.json()["items"]
+    # all returned items must match the filter
+    assert all(it["content_type"] == "news" for it in items)
+    # and our seeded news item must be present
+    assert any("BBC News headline M45" in it["theme"] for it in items)
+    # and the tool_product item must NOT be present
+    assert not any("GitHub project release M45" in it["theme"] for it in items)
+
+
+def test_signals_filter_content_type_rejects_invalid(client, auth):
+    r = client.get("/api/v1/signals?content_type=banana", headers=auth)
+    assert r.status_code == 422
+
+
 def test_check_platform_detects_youtube_url(client, auth):
     r = client.post(
         "/api/v1/sources/check-platform",

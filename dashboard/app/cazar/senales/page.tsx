@@ -77,6 +77,8 @@ export default function SenalesPage() {
   const [minScore, setMinScore] = useState(0.5);
   const [sort, setSort] = useState<SortKey>("recent");
   const [kindFilter, setKindFilter] = useState<string>("");
+  // M4.5 — filtrar por tipo de contenido clasificado (news/blog/producto/...)
+  const [contentTypeFilter, setContentTypeFilter] = useState<string>("");
   const [mockMode, setMockMode] = useState<boolean>(false);
   const [promoted, setPromoted] = useState<Signal[]>([]);
   const [showPromoted, setShowPromoted] = useState<boolean>(false);
@@ -133,6 +135,7 @@ export default function SenalesPage() {
         sort,
       });
       if (kindFilter) params.set("kind", kindFilter);
+      if (contentTypeFilter) params.set("content_type", contentTypeFilter);
       const effectiveSearch = overrides?.search ?? search;
       if (effectiveSearch) params.set("search", effectiveSearch);
       const r = await authFetch(`/api/v1/signals?${params.toString()}`);
@@ -148,7 +151,7 @@ export default function SenalesPage() {
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [minScore, sort, kindFilter]);
+  }, [minScore, sort, kindFilter, contentTypeFilter]);
 
   // Debounced search — wait 350ms after the user stops typing
   useEffect(() => {
@@ -500,6 +503,25 @@ export default function SenalesPage() {
           ))}
         </select>
 
+        {/* M4.5 — filtro por tipo de contenido clasificado */}
+        <label style={{ color: "#94a3b8", fontSize: 12 }}>Tipo:</label>
+        <select
+          value={contentTypeFilter}
+          onChange={(e) => setContentTypeFilter(e.target.value)}
+          title="Filtra por la clasificación heurística del contenido (noticia/blog/producto/curso/...)"
+          style={{
+            background: "#0F1525", color: "#cbd5e1", border: "1px solid #1e293b",
+            borderRadius: 6, padding: "4px 8px", fontSize: 12,
+          }}
+        >
+          <option value="">Todos los tipos</option>
+          {Object.entries(CONTENT_TYPE_META).map(([value, meta]) => (
+            <option key={value} value={value}>
+              {meta.icon} {meta.label}
+            </option>
+          ))}
+        </select>
+
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button
             onClick={cleanRescan}
@@ -744,6 +766,17 @@ export default function SenalesPage() {
                 }}
               >
                 Mostrar todas las fuentes
+              </button>
+            )}
+            {contentTypeFilter && (
+              <button
+                onClick={() => setContentTypeFilter("")}
+                style={{
+                  padding: "6px 12px", background: "transparent",
+                  color: "#00D4FF", border: "1px solid #00D4FF", borderRadius: 6, fontSize: 12, cursor: "pointer",
+                }}
+              >
+                Mostrar todos los tipos
               </button>
             )}
           </div>
