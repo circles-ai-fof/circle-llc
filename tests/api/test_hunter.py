@@ -498,6 +498,69 @@ def test_delete_signals_by_source_kind_rejects_invalid(client, auth):
     assert r.status_code == 422
 
 
+# ---------------------------------------------------------------------------
+# M4.7 — distribución de señales por content_type
+# ---------------------------------------------------------------------------
+
+
+def test_signals_stats_by_type_counts_each_bucket(client, auth):
+    """El endpoint cuenta señales por content_type y devuelve los 9 buckets
+    + total. Verificamos que añadir señales nuevas mueve los contadores
+    correctos."""
+    from orchestrator.core.storage import signals_store
+    # Snapshot inicial
+    before = client.get("/api/v1/signals/stats-by-type", headers=auth).json()
+    assert "news" in before and "tool_product" in before and "total" in before
+    base_news = before["news"]
+    base_tool = before["tool_product"]
+    base_total = before["total"]
+    # Añadir 2 noticias (BBC) y 1 producto (GitHub) — auto-clasifica por URL
+    signals_store.add(
+        source_id=None, source_kind="rss", theme="BBC stats M47 a",
+        score=0.5, excerpt="ex",
+        evidence_urls=["https://www.bbc.com/news/article-stats-a"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    signals_store.add(
+        source_id=None, source_kind="rss", theme="BBC stats M47 b",
+        score=0.5, excerpt="ex",
+        evidence_urls=["https://www.bbc.com/news/article-stats-b"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    signals_store.add(
+        source_id=None, source_kind="rss", theme="GH stats M47",
+        score=0.5, excerpt="ex",
+        evidence_urls=["https://github.com/foo/bar-stats-m47"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    after = client.get("/api/v1/signals/stats-by-type", headers=auth).json()
+    assert after["news"] == base_news + 2
+    assert after["tool_product"] == base_tool + 1
+    assert after["total"] == base_total + 3
+
+
+def test_signals_stats_by_type_returns_all_buckets_even_when_zero(client, auth):
+    """Aunque no haya señales de un tipo, el bucket debe estar presente con
+    valor 0 — la UI cuenta con la estructura completa para renderizar todos
+    los badges."""
+    r = client.get("/api/v1/signals/stats-by-type", headers=auth)
+    assert r.status_code == 200
+    data = r.json()
+    expected_keys = {
+        "news", "blog", "research_paper", "tool_product", "course_tutorial",
+        "video_podcast", "community", "corporate", "unknown", "total",
+    }
+    assert expected_keys <= set(data.keys())
+    # Cada uno debe ser un int >= 0
+    for k in expected_keys:
+        assert isinstance(data[k], int)
+        assert data[k] >= 0
+
+
+def test_signals_stats_by_type_requires_auth(client):
+    assert client.get("/api/v1/signals/stats-by-type").status_code == 401
+
+
 def test_check_platform_detects_youtube_url(client, auth):
     r = client.post(
         "/api/v1/sources/check-platform",

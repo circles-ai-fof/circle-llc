@@ -497,6 +497,20 @@ class SignalsDeleteByTypeResponse(BaseModel):
     kept_feedback: int = Field(description="Señales del filtro preservadas por tener feedback")
 
 
+# M4.7 — distribución de señales por content_type
+class SignalsStatsByTypeResponse(BaseModel):
+    news: int = 0
+    blog: int = 0
+    research_paper: int = 0
+    tool_product: int = 0
+    course_tutorial: int = 0
+    video_podcast: int = 0
+    community: int = 0
+    corporate: int = 0
+    unknown: int = 0
+    total: int = 0
+
+
 class SignalAnalysisItem(BaseModel):
     """Output of IdeaAnalyzer — attached to a signal so the founder can
     decide whether to spend $0.06 promoting it to a full workflow run."""

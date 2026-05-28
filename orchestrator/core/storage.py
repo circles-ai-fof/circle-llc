@@ -1243,6 +1243,45 @@ class SignalsStore:
             keep_feedback=keep_feedback,
         )
 
+    def stats_by_content_type(self) -> Dict[str, int]:
+        """M4.7 — Distribución de señales activas por content_type.
+
+        Returns un dict {content_type → count} para cada uno de los 9 tipos
+        del clasificador, más una entrada "total". Señales con content_type
+        NULL o vacío se cuentan como "unknown" (legacy pre-M4.3).
+
+        Útil para que el founder vea de un vistazo qué tipos dominan su feed
+        y decida qué limpiar con delete-by-type (M4.6).
+        """
+        _ensure_init()
+        TYPES = (
+            "news", "blog", "research_paper", "tool_product",
+            "course_tutorial", "video_podcast", "community", "corporate",
+            "unknown",
+        )
+        if _db_path:
+            with _conn() as c:
+                rows = c.execute(
+                    "SELECT COALESCE(NULLIF(content_type, ''), 'unknown') AS ct, "
+                    "COUNT(*) AS n "
+                    "FROM signals GROUP BY ct"
+                ).fetchall()
+                buckets = {t: 0 for t in TYPES}
+                for row in rows:
+                    ct = row["ct"] if row["ct"] in TYPES else "unknown"
+                    buckets[ct] = buckets.get(ct, 0) + int(row["n"])
+                buckets["total"] = sum(buckets[t] for t in TYPES)
+                return buckets
+        # In-memory fallback
+        buckets = {t: 0 for t in TYPES}
+        for r in _memory_signals:
+            ct = r.get("content_type") or "unknown"
+            if ct not in TYPES:
+                ct = "unknown"
+            buckets[ct] += 1
+        buckets["total"] = sum(buckets[t] for t in TYPES)
+        return buckets
+
     def cleanup_stale(self, older_than_days: int = 30) -> int:
         """Delete signals older than `older_than_days` that have NO feedback AND
         were NOT promoted. Returns count of deleted rows.

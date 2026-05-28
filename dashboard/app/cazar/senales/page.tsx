@@ -92,6 +92,8 @@ export default function SenalesPage() {
   // M4.4 — translation state per signal + toggle "ver original"
   const [translating, setTranslating] = useState<Set<number>>(new Set());
   const [showOriginal, setShowOriginal] = useState<Set<number>>(new Set());
+  // M4.7 — distribución de señales por content_type (para barra de badges)
+  const [statsByType, setStatsByType] = useState<Record<string, number> | null>(null);
 
   // Detect mock mode (backend running without ANTHROPIC_API_KEY) so we can
   // warn the founder that ideas are placeholders, not real LLM output.
@@ -141,6 +143,14 @@ export default function SenalesPage() {
       const r = await authFetch(`/api/v1/signals?${params.toString()}`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setSignals((await r.json()).items);
+      // M4.7 — actualizar la distribución por tipo en paralelo (best-effort,
+      // no bloquea el listing si falla). Recibe los 9 buckets + total.
+      try {
+        const rs = await authFetch("/api/v1/signals/stats-by-type");
+        if (rs.ok) setStatsByType(await rs.json());
+      } catch {
+        /* silently ignore — barra de stats es nice-to-have */
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -761,6 +771,69 @@ export default function SenalesPage() {
           {visibleSignals.length}/{signals.length} señales
         </span>
       </section>
+
+      {/* M4.7 — distribución por tipo. Cada badge muestra el conteo total
+          en la base (no del filtro actual) y al clicar filtra por ese tipo.
+          Click sobre el badge ya activo lo deselecciona. */}
+      {statsByType && (statsByType.total ?? 0) > 0 && (
+        <section
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+            alignItems: "center",
+            marginBottom: 16,
+            padding: "10px 12px",
+            background: "#0B0F1A",
+            border: "1px solid #1e293b",
+            borderRadius: 8,
+          }}
+        >
+          <span style={{ color: "#94a3b8", fontSize: 11, fontWeight: 600, marginRight: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Distribución
+          </span>
+          {Object.entries(CONTENT_TYPE_META).map(([value, meta]) => {
+            const count = statsByType[value] ?? 0;
+            if (count === 0) return null;  // no mostrar buckets vacíos
+            const isActive = contentTypeFilter === value;
+            return (
+              <button
+                key={value}
+                onClick={() => setContentTypeFilter(isActive ? "" : value)}
+                title={
+                  isActive
+                    ? `Quitar filtro de ${meta.label}`
+                    : `Filtrar para mostrar sólo ${meta.label} (${count})`
+                }
+                style={{
+                  padding: "3px 10px",
+                  background: isActive ? `${meta.color}20` : "transparent",
+                  color: meta.color,
+                  border: `1px solid ${isActive ? meta.color : `${meta.color}50`}`,
+                  borderRadius: 12,
+                  fontSize: 11,
+                  fontWeight: isActive ? 700 : 600,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <span style={{ fontSize: 12 }}>{meta.icon}</span>
+                {meta.label}
+                <span style={{ color: meta.color, fontFamily: "monospace", fontSize: 10, opacity: 0.85 }}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+          {(statsByType.total ?? 0) > 0 && (
+            <span style={{ marginLeft: "auto", color: "#64748b", fontSize: 11, fontFamily: "monospace" }}>
+              total en base: {statsByType.total}
+            </span>
+          )}
+        </section>
+      )}
 
       {error && <div style={{ color: "#FF4444", padding: 16, marginBottom: 16 }}>{error}</div>}
 

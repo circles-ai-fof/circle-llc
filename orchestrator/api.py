@@ -66,6 +66,7 @@ from .schemas.api import (
     SignalsCleanupMocksResponse,
     SignalsDeleteByTypeRequest,
     SignalsDeleteByTypeResponse,
+    SignalsStatsByTypeResponse,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2089,6 +2090,26 @@ def signals_cleanup(request: Request, older_than_days: int = 30) -> SignalsClean
         older_than_days=older_than_days,
         survivors_kept_with_feedback=survivors,
     )
+
+
+@app.get(
+    "/api/v1/signals/stats-by-type",
+    response_model=SignalsStatsByTypeResponse,
+    summary="M4.7 — Distribución de señales por content_type",
+    tags=["hunter"],
+)
+def signals_stats_by_type(request: Request) -> SignalsStatsByTypeResponse:
+    """Founder request implícito (siguiente paso de M4.6): ver de un vistazo
+    cuántas señales hay de cada tipo, para saber qué curar.
+
+    Útil como input visual para el dropdown de filtro y para los botones
+    "🗑️ Borrar Noticia" — el founder ve "hay 32 Otros" y decide si vale
+    la pena limpiarlos.
+    """
+    _require_user(request)
+    from .core.storage import signals_store
+    counts = signals_store.stats_by_content_type()
+    return SignalsStatsByTypeResponse(**counts)
 
 
 @app.post(
