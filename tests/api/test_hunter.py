@@ -557,6 +557,64 @@ def test_cleanup_mocks_requires_auth(client):
     assert client.post("/api/v1/signals/cleanup-mocks").status_code == 401
 
 
+def test_signals_list_repairs_placeholder_theme_using_item_titles(client, auth):
+    """M3.13: legacy 'Mock signal from rss' theme is replaced on-the-fly
+    with the first item_title when the dashboard fetches it."""
+    from orchestrator.core.storage import signals_store
+    signal_id = signals_store.add(
+        None, "rss", "Mock signal from rss",
+        0.7, "ex", ["https://x.test/a"],
+        "topic",
+        item_titles=["Pablo Palafox | De un Rechazo en YC a $500M"],
+    )
+
+    r = client.get("/api/v1/signals", headers=auth)
+    items = r.json()["items"]
+    polished = next(it for it in items if it["id"] == signal_id)
+    # Polished output uses the item_title, NOT the stored placeholder
+    assert polished["theme"].startswith("Pablo Palafox")
+    assert "Mock signal from rss" not in polished["theme"]
+
+
+def test_signals_list_dedups_repeated_urls_when_no_titles(client, auth):
+    """M3.13: when evidence_urls has duplicates and there are no real titles,
+    show only the unique URL (the old scanner produced 3 copies of the
+    same hipertextual.com link)."""
+    from orchestrator.core.storage import signals_store
+    signal_id = signals_store.add(
+        None, "rss", "Mock signal from rss",
+        0.5, "ex",
+        ["https://hipertextual.com/x", "https://hipertextual.com/x", "https://hipertextual.com/x"],
+        "topic",
+        item_titles=["", "", ""],
+    )
+
+    r = client.get("/api/v1/signals", headers=auth)
+    items = r.json()["items"]
+    polished = next(it for it in items if it["id"] == signal_id)
+    assert len(polished["evidence_urls"]) == 1
+    assert polished["evidence_urls"][0] == "https://hipertextual.com/x"
+
+
+def test_signals_list_does_not_alter_real_signals(client, auth):
+    """Polish must be a no-op for real signals — preserves themes and URLs."""
+    from orchestrator.core.storage import signals_store
+    signal_id = signals_store.add(
+        None, "rss", "Tema legítimo LATAM",
+        0.7, "Excerpt real",
+        ["https://a.test/x", "https://b.test/y"],
+        "topic ok",
+        item_titles=["Título A", "Título B"],
+    )
+
+    r = client.get("/api/v1/signals", headers=auth)
+    items = r.json()["items"]
+    polished = next(it for it in items if it["id"] == signal_id)
+    assert polished["theme"] == "Tema legítimo LATAM"
+    assert polished["evidence_urls"] == ["https://a.test/x", "https://b.test/y"]
+    assert polished["item_titles"] == ["Título A", "Título B"]
+
+
 def test_cleanup_mocks_removes_generic_placeholders(client, auth):
     """Cleanup also purges signals with generic placeholder text in
     theme/excerpt — these don't help the founder decide."""

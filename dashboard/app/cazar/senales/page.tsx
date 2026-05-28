@@ -229,6 +229,10 @@ export default function SenalesPage() {
   };
 
   const analyze = async (id: number) => {
+    // M3.13: guard against double-click — each analyze costs ~$0.005 in LLM.
+    // The button shows "Analizando…" but a fast double-click could still
+    // dispatch a second request before the state updates.
+    if (analyzing.has(id)) return;
     setAnalyzing((prev) => new Set(prev).add(id));
     try {
       const r = await authFetch(`/api/v1/signals/${id}/analyze`, { method: "POST" });
@@ -251,6 +255,8 @@ export default function SenalesPage() {
   };
 
   const analyzeBatch = async () => {
+    // M3.13: guard against double-click — batch costs ~$0.05.
+    if (batchAnalyzing) return;
     // Analyze top 10 not-yet-analyzed signals among the visible ones
     const candidateIds = visibleSignals
       .filter((s) => !s.analysis)
@@ -308,8 +314,12 @@ export default function SenalesPage() {
     }
   };
 
+  const [promoting, setPromoting] = useState<Set<number>>(new Set());
   const promote = async (id: number) => {
+    // M3.13: guard against double-click + double charge. Promotion costs ~$0.06.
+    if (promoting.has(id)) return;
     if (!confirm("¿Promover esta señal a una corrida completa del workflow? Cuesta ~$0.06.")) return;
+    setPromoting((prev) => new Set(prev).add(id));
     try {
       const r = await authFetch("/api/v1/gate/run-from-sources", {
         method: "POST",
@@ -322,6 +332,12 @@ export default function SenalesPage() {
       router.push(`/cazar?run_id=${data.run_id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPromoting((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 

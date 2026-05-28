@@ -1474,8 +1474,61 @@ def list_signals(
     items: List[SignalItem] = []
     for r in rows:
         r["source_name"] = source_names.get(r.get("source_id")) if r.get("source_id") else None
+        # M3.13: on-the-fly repair for legacy signals
+        r = _polish_signal_for_display(r)
         items.append(SignalItem(**r))
     return SignalsListResponse(total=len(items), items=items)
+
+
+def _polish_signal_for_display(r: Dict) -> Dict:
+    """Repair signal payload before sending to the dashboard.
+
+    1. If theme looks like a placeholder ("Mock signal from rss",
+       "Detected pattern across…", etc.) AND we have real item_titles,
+       promote the first non-empty title as the displayed theme.
+    2. Deduplicate evidence_urls when they point at the same canonical
+       resource (same hostname AND no item_titles to distinguish them).
+       Common case: an RSS feed produces 10 items all linking back to the
+       site's homepage — the old scanner stored 3 copies of the same URL.
+    3. Trim item_titles to match deduped urls length.
+    """
+    import re as _re
+    placeholder_pat = _re.compile(
+        r"^(Mock signal from|Tema recurrente en|Item de|Detected pattern)",
+        _re.IGNORECASE,
+    )
+    theme = str(r.get("theme") or "")
+    titles = list(r.get("item_titles") or [])
+    urls = list(r.get("evidence_urls") or [])
+
+    # 1) theme repair
+    if placeholder_pat.search(theme):
+        first_real = next((t for t in titles if t and t.strip()), None)
+        if first_real:
+            r["theme"] = first_real[:120]
+
+    # 2) URL deduplication
+    if urls and (not titles or all(not t for t in titles)):
+        seen = set()
+        deduped_urls: List[str] = []
+        for u in urls:
+            host = u
+            try:
+                from urllib.parse import urlparse as _up
+                host = _up(u).hostname or u
+            except Exception:  # noqa: BLE001
+                pass
+            key = (host, u)  # exact URL + hostname — preserves real distinct articles
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped_urls.append(u)
+        # If after deduping we have <half of original, all were dupes — keep 1
+        if len(deduped_urls) < len(urls):
+            r["evidence_urls"] = deduped_urls
+            # Trim titles to match
+            r["item_titles"] = titles[: len(deduped_urls)] if titles else []
+    return r
 
 
 @app.get(
@@ -1548,6 +1601,7 @@ def list_promoted_signals(request: Request, limit: int = 50) -> SignalsListRespo
     items: List[SignalItem] = []
     for r in rows:
         r["source_name"] = source_names.get(r.get("source_id")) if r.get("source_id") else None
+        r = _polish_signal_for_display(r)
         items.append(SignalItem(**r))
     return SignalsListResponse(total=len(items), items=items)
 
@@ -1680,6 +1734,7 @@ def get_signal(signal_id: int, request: Request) -> SignalItem:
         sig["source_name"] = source["name"] if source else None
     else:
         sig["source_name"] = None
+    sig = _polish_signal_for_display(sig)
     return SignalItem(**sig)
 
 
@@ -2186,6 +2241,19 @@ async def _app_lifespan(_app):
     global _autoscan_task
     # --- Startup ---
     if not os.getenv("PYTEST_CURRENT_TEST"):
+        # M3.13: auto-cleanup legacy placeholder signals on every startup.
+        # Idempotent (no-op if no placeholders) and bounded (LIKE on indexed
+        # columns). Founders had complained about "Mock signal from rss"
+        # appearing in the dashboard for hours after the scanner fix shipped.
+        # Now they never see them — startup wipes them automatically.
+        try:
+            from .core.storage import signals_store as _signals
+            deleted = _signals.cleanup_mocks()
+            if deleted > 0:
+                logger.info("startup: auto-cleaned %d legacy placeholder signals", deleted)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("startup: cleanup_mocks failed: %s", exc)
+
         try:
             interval = int(os.getenv("AUTOSCAN_INTERVAL_MINUTES", "0"))
         except ValueError:
