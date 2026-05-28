@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { authFetch } from "@/lib/auth";
 
 type SignalAnalysis = {
+  idea_summary: string;       // M3.11
+  country_focus: string;      // M3.11
   market_size_estimate: string;
   icp_probable: string;
   competitors: string[];
@@ -851,6 +853,39 @@ function SignalCard({
               </>
             );
           })()}
+          {/* What + country — destacado arriba para que el founder entienda de un vistazo */}
+          {hasAnalysis && signal.analysis && (signal.analysis.idea_summary || signal.analysis.country_focus) && (
+            <div
+              style={{
+                marginBottom: 10,
+                padding: "10px 12px",
+                background: "#0B0F1A",
+                border: "1px solid rgba(0,212,255,0.15)",
+                borderRadius: 8,
+              }}
+            >
+              {signal.analysis.idea_summary && (
+                <div style={{ marginBottom: signal.analysis.country_focus ? 6 : 0 }}>
+                  <span style={{ color: "#00D4FF", fontSize: 11, fontWeight: 700, marginRight: 6 }}>
+                    💡 QUÉ HACE
+                  </span>
+                  <span style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.5 }}>
+                    {signal.analysis.idea_summary}
+                  </span>
+                </div>
+              )}
+              {signal.analysis.country_focus && (
+                <div>
+                  <span style={{ color: "#00D4FF", fontSize: 11, fontWeight: 700, marginRight: 6 }}>
+                    🌎 DÓNDE APLICA
+                  </span>
+                  <span style={{ color: "#cbd5e1", fontSize: 13 }}>
+                    {signal.analysis.country_focus}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
           {/* Mini-resumen del análisis (si existe) — UNA línea accionable */}
           {hasAnalysis && signal.analysis && !isExpanded && (
             <div
@@ -1005,9 +1040,13 @@ function SignalCard({
               gap: 12,
             }}
           >
-            <AnalysisCell label="🌎 Mercado potencial" value={signal.analysis.market_size_estimate} />
+            {signal.analysis.idea_summary && (
+              <AnalysisCell label="💡 Qué hace la idea" value={signal.analysis.idea_summary} />
+            )}
+            <AnalysisCell label="🌎 País / región" value={signal.analysis.country_focus || "—"} />
+            <AnalysisCell label="📊 Mercado potencial" value={signal.analysis.market_size_estimate} />
             <AnalysisCell label="👤 ICP probable" value={signal.analysis.icp_probable} />
-            <AnalysisCell label="💡 Diferenciador" value={signal.analysis.differentiator} />
+            <AnalysisCell label="⚡ Diferenciador" value={signal.analysis.differentiator} />
             <AnalysisCell
               label="⚔️ Competencia conocida"
               value={

@@ -5,6 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { authFetch } from "@/lib/auth";
 
 type SignalAnalysis = {
+  idea_summary: string;
+  country_focus: string;
   market_size_estimate: string;
   icp_probable: string;
   competitors: string[];
@@ -302,6 +304,40 @@ export default function SignalDetailPage() {
             </div>
           </div>
 
+          {/* What + where — prominent at top */}
+          {(signal.analysis.idea_summary || signal.analysis.country_focus) && (
+            <div
+              style={{
+                marginBottom: 18,
+                padding: 16,
+                background: "#0B0F1A",
+                border: "1px solid rgba(0,212,255,0.2)",
+                borderRadius: 8,
+              }}
+            >
+              {signal.analysis.idea_summary && (
+                <div style={{ marginBottom: signal.analysis.country_focus ? 12 : 0 }}>
+                  <div style={{ color: "#00D4FF", fontSize: 11, fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    💡 Qué hace la idea
+                  </div>
+                  <div style={{ color: "#fff", fontSize: 15, lineHeight: 1.55 }}>
+                    {signal.analysis.idea_summary}
+                  </div>
+                </div>
+              )}
+              {signal.analysis.country_focus && (
+                <div>
+                  <div style={{ color: "#00D4FF", fontSize: 11, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    🌎 País / región principal
+                  </div>
+                  <div style={{ color: "#fff", fontSize: 15 }}>
+                    {signal.analysis.country_focus}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div
             style={{
               display: "grid",
@@ -309,9 +345,9 @@ export default function SignalDetailPage() {
               gap: 18,
             }}
           >
-            <DetailCell label="🌎 Mercado potencial" value={signal.analysis.market_size_estimate} />
+            <DetailCell label="📊 Mercado potencial" value={signal.analysis.market_size_estimate} />
             <DetailCell label="👤 ICP probable" value={signal.analysis.icp_probable} />
-            <DetailCell label="💡 Diferenciador" value={signal.analysis.differentiator} />
+            <DetailCell label="⚡ Diferenciador" value={signal.analysis.differentiator} />
             <DetailCell
               label="⚔️ Competencia conocida"
               value={

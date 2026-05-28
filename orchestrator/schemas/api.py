@@ -330,8 +330,11 @@ class SignalsCleanupMocksResponse(BaseModel):
 class SignalAnalysisItem(BaseModel):
     """Output of IdeaAnalyzer — attached to a signal so the founder can
     decide whether to spend $0.06 promoting it to a full workflow run."""
-    market_size_estimate: str
-    icp_probable: str
+    # M3.11: plain-Spanish summary + main country/region of the idea
+    idea_summary: str = Field(default="", description="1-2 sentences in Spanish — what the idea/app actually does")
+    country_focus: str = Field(default="", description="Main country or region (Ecuador / LATAM / USA / global / ...)")
+    market_size_estimate: str = ""
+    icp_probable: str = ""
     competitors: List[str] = Field(default_factory=list)
     differentiator: str = ""
     risks: List[str] = Field(default_factory=list)
