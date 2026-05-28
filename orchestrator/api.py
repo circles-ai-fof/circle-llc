@@ -70,6 +70,11 @@ from .schemas.api import (
     SourceCreate,
     SourceItem,
     SourceQuality,
+    CheckPlatformRequest,
+    CheckPlatformResponse,
+    ConnectedAccountItem,
+    ConnectedAccountUpsertRequest,
+    ConnectedAccountsListResponse,
     SourcesBulkDeleteRequest,
     SourcesBulkDeleteResponse,
     SourcesListResponse,
@@ -1310,6 +1315,133 @@ def bulk_delete_sources(
         target_contains=body.target_contains,
     )
     return SourcesBulkDeleteResponse(deleted=deleted)
+
+
+# ---------------------------------------------------------------------------
+# M4.0 — connected accounts + platform detection (ADR-018)
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/api/v1/sources/check-platform",
+    response_model=CheckPlatformResponse,
+    summary="Detect platform from URL and report credential status",
+    tags=["hunter"],
+)
+def check_platform(body: CheckPlatformRequest, request: Request) -> CheckPlatformResponse:
+    """Cuando el founder pega una URL en /cazar/fuentes, este endpoint:
+      1. Detecta la plataforma (youtube / x / linkedin / bluesky / ...)
+      2. Devuelve si esa plataforma necesita credenciales
+      3. Sugiere qué `kind` de source crear
+
+    Usado por el form de fuentes para mostrar el banner
+    "⚠️ Falta conectar cuenta de YouTube — agrega YOUTUBE_API_KEY a .env"
+    ANTES de que el founder submita.
+    """
+    _require_user(request)
+    from .core.platforms import detect_platform, check_credentials
+
+    platform = detect_platform(body.url)
+    if platform is None:
+        # URL genérica — sin requerimientos
+        return CheckPlatformResponse(
+            url=body.url,
+            platform=None,
+            status="ready",
+            needs_credentials=False,
+            message="URL genérica — se registrará como kind 'url' o 'rss' según el formato.",
+            recommended_kind="url",
+        )
+
+    creds = check_credentials(platform)
+    return CheckPlatformResponse(
+        url=body.url,
+        platform=platform,
+        status=creds["status"],
+        needs_credentials=creds["needs_credentials"],
+        missing_keys=creds["missing_keys"],
+        configured_keys=creds["configured_keys"],
+        oauth_required=creds["oauth_required"],
+        message=creds["message"],
+        recommended_kind=creds["recommended_kind"],
+        notes=creds["notes"],
+    )
+
+
+@app.get(
+    "/api/v1/connected-accounts",
+    response_model=ConnectedAccountsListResponse,
+    summary="List all platforms + their credential status + founder notes",
+    tags=["hunter"],
+)
+def list_connected_accounts(request: Request) -> ConnectedAccountsListResponse:
+    _require_user(request)
+    from .core.platforms import list_all_platforms_status
+    from .core.storage import connected_accounts_store
+
+    static = list_all_platforms_status()
+    saved = {a["platform"]: a for a in connected_accounts_store.list()}
+    items: List[ConnectedAccountItem] = []
+    for s in static:
+        record = saved.get(s["platform"], {})
+        items.append(ConnectedAccountItem(
+            platform=s["platform"],
+            status=s["status"],
+            needs_credentials=s["needs_credentials"],
+            missing_keys=s["missing_keys"],
+            configured_keys=s["configured_keys"],
+            oauth_required=s["oauth_required"],
+            message=s["message"],
+            recommended_kind=s["recommended_kind"],
+            notes=s["notes"],
+            user_notes=record.get("notes"),
+            configured_at=record.get("configured_at"),
+        ))
+    return ConnectedAccountsListResponse(items=items)
+
+
+@app.post(
+    "/api/v1/connected-accounts",
+    response_model=ConnectedAccountItem,
+    summary="Mark a platform as configured/deferred (annotation only — does NOT store credentials)",
+    tags=["hunter"],
+)
+def upsert_connected_account(
+    body: ConnectedAccountUpsertRequest, request: Request
+) -> ConnectedAccountItem:
+    """Founder anota qué plataformas ha configurado. NO almacenamos credentials
+    aquí — eso vive en env vars. Solo registramos el estado observado para que
+    el dashboard sepa diferenciar "ya lo hice" vs "pendiente".
+    """
+    _require_user(request)
+    from .core.platforms import check_credentials, PLATFORM_CATALOG
+    from .core.storage import connected_accounts_store
+
+    if body.platform not in PLATFORM_CATALOG:
+        raise HTTPException(status_code=404, detail=f"Plataforma desconocida: {body.platform!r}")
+
+    cat = PLATFORM_CATALOG[body.platform]
+    connected_accounts_store.upsert(
+        platform=body.platform,
+        status=body.status,
+        oauth_required=bool(cat.get("oauth_required")),
+        notes=body.notes,
+    )
+    static = check_credentials(body.platform)
+    record = connected_accounts_store.get(body.platform) or {}
+    return ConnectedAccountItem(
+        platform=body.platform,
+        status=static["status"],
+        needs_credentials=static["needs_credentials"],
+        missing_keys=static["missing_keys"],
+        configured_keys=static["configured_keys"],
+        oauth_required=static["oauth_required"],
+        message=static["message"],
+        recommended_kind=static["recommended_kind"],
+        notes=static["notes"],
+        user_notes=record.get("notes"),
+        configured_at=record.get("configured_at"),
+    )
 
 
 def _run_scan_internal(

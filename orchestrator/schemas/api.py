@@ -283,6 +283,54 @@ class SourcesBulkDeleteResponse(BaseModel):
     deleted: int
 
 
+# ---------------------------------------------------------------------------
+# M4.0 — Connected accounts + platform detection (ADR-018)
+# ---------------------------------------------------------------------------
+
+
+class CheckPlatformRequest(BaseModel):
+    url: str = Field(min_length=5, max_length=2000)
+
+
+class CheckPlatformResponse(BaseModel):
+    """Result of checking what platform a URL belongs to + credential status."""
+    url: str
+    platform: Optional[str] = Field(default=None, description='detected platform or null')
+    status: str = Field(description='ready | configured | optional_credentials | requires_credentials | deferred | unknown')
+    needs_credentials: bool
+    missing_keys: List[str] = Field(default_factory=list)
+    configured_keys: List[str] = Field(default_factory=list)
+    oauth_required: bool = False
+    message: str
+    recommended_kind: Optional[str] = Field(default=None, description='source kind to register for this URL')
+    notes: str = ""
+
+
+class ConnectedAccountItem(BaseModel):
+    platform: str
+    status: str
+    needs_credentials: bool = False
+    missing_keys: List[str] = Field(default_factory=list)
+    configured_keys: List[str] = Field(default_factory=list)
+    oauth_required: bool = False
+    message: str = ""
+    recommended_kind: Optional[str] = None
+    notes: str = ""
+    # Tags from the connected_accounts table (founder-supplied)
+    user_notes: Optional[str] = None
+    configured_at: Optional[int] = None
+
+
+class ConnectedAccountsListResponse(BaseModel):
+    items: List[ConnectedAccountItem]
+
+
+class ConnectedAccountUpsertRequest(BaseModel):
+    platform: str = Field(min_length=1, max_length=50)
+    status: str = Field(pattern='^(configured|deferred|ready|requires_credentials)$')
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
 class SourceQuality(BaseModel):
     source_id: int
     name: str

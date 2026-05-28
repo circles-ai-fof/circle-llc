@@ -58,6 +58,116 @@ def test_add_source_invalid_kind_422(client, auth):
     assert r.status_code == 422
 
 
+# ---------------------------------------------------------------------------
+# M4.0 — connected_accounts + check-platform (ADR-018)
+# ---------------------------------------------------------------------------
+
+
+def test_check_platform_detects_youtube_url(client, auth):
+    r = client.post(
+        "/api/v1/sources/check-platform",
+        headers=auth,
+        json={"url": "https://www.youtube.com/watch?v=abc123"},
+    )
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["platform"] == "youtube"
+    assert d["recommended_kind"] == "youtube"
+    assert d["status"] in ("optional_credentials", "configured")
+
+
+def test_check_platform_marks_x_as_deferred(client, auth):
+    r = client.post(
+        "/api/v1/sources/check-platform",
+        headers=auth,
+        json={"url": "https://x.com/foo/status/123"},
+    )
+    d = r.json()
+    assert d["platform"] == "x"
+    assert d["status"] == "deferred"
+    assert d["needs_credentials"]
+
+
+def test_check_platform_handles_generic_url(client, auth):
+    r = client.post(
+        "/api/v1/sources/check-platform",
+        headers=auth,
+        json={"url": "https://example.com/article/abc"},
+    )
+    d = r.json()
+    assert d["platform"] is None
+    assert d["recommended_kind"] == "url"
+    assert not d["needs_credentials"]
+
+
+def test_check_platform_requires_auth(client):
+    r = client.post(
+        "/api/v1/sources/check-platform",
+        json={"url": "https://x.com"},
+    )
+    assert r.status_code == 401
+
+
+def test_check_platform_validates_url_length(client, auth):
+    r = client.post(
+        "/api/v1/sources/check-platform",
+        headers=auth,
+        json={"url": "abc"},  # too short
+    )
+    assert r.status_code == 422
+
+
+def test_list_connected_accounts_returns_all_platforms(client, auth):
+    r = client.get("/api/v1/connected-accounts", headers=auth)
+    assert r.status_code == 200
+    items = r.json()["items"]
+    platforms = {it["platform"] for it in items}
+    # Founder must see ALL platforms — including the deferred ones
+    assert "x" in platforms
+    assert "linkedin" in platforms
+    assert "bluesky" in platforms
+    assert "youtube" in platforms
+
+
+def test_upsert_connected_account_records_status(client, auth):
+    r = client.post(
+        "/api/v1/connected-accounts",
+        headers=auth,
+        json={"platform": "youtube", "status": "configured", "notes": "API key added"},
+    )
+    assert r.status_code == 200
+    d = r.json()
+    assert d["platform"] == "youtube"
+    assert d["user_notes"] == "API key added"
+    assert d["configured_at"] is not None
+
+
+def test_upsert_connected_account_404_for_unknown(client, auth):
+    r = client.post(
+        "/api/v1/connected-accounts",
+        headers=auth,
+        json={"platform": "myspace", "status": "configured"},
+    )
+    assert r.status_code == 404
+
+
+def test_upsert_connected_account_validates_status(client, auth):
+    r = client.post(
+        "/api/v1/connected-accounts",
+        headers=auth,
+        json={"platform": "youtube", "status": "banana"},
+    )
+    assert r.status_code == 422
+
+
+def test_connected_accounts_require_auth(client):
+    assert client.get("/api/v1/connected-accounts").status_code == 401
+    assert client.post(
+        "/api/v1/connected-accounts",
+        json={"platform": "youtube", "status": "configured"},
+    ).status_code == 401
+
+
 def test_bulk_delete_sources_by_target_contains(client, auth):
     """M3.16: bulk delete by target_contains lets the founder purge all
     instagram.com URLs (or x.com, etc.) in one click."""

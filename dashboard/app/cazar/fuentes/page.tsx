@@ -61,6 +61,18 @@ export default function FuentesPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
+  // M4.0: platform detection on URL paste
+  type PlatformCheck = {
+    platform: string | null;
+    status: string;
+    needs_credentials: boolean;
+    missing_keys: string[];
+    oauth_required: boolean;
+    message: string;
+    recommended_kind: string | null;
+  };
+  const [platformCheck, setPlatformCheck] = useState<PlatformCheck | null>(null);
+
   const refresh = async () => {
     setLoading(true);
     setError(null);
@@ -88,6 +100,29 @@ export default function FuentesPage() {
   useEffect(() => {
     refresh();
   }, []);
+
+  // M4.0: debounce check-platform cuando el founder pega/escribe una URL
+  useEffect(() => {
+    const t = target.trim();
+    if (!t || !t.startsWith("http")) {
+      setPlatformCheck(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const r = await authFetch("/api/v1/sources/check-platform", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: t }),
+        });
+        if (!r.ok) return;
+        setPlatformCheck(await r.json());
+      } catch {
+        /* best-effort */
+      }
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [target]);
 
   const addSource = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -290,6 +325,74 @@ export default function FuentesPage() {
           </button>
         </form>
         {error && <div style={{ color: "#FF4444", fontSize: 12, marginTop: 8 }}>{error}</div>}
+        {/* M4.0: platform check banner */}
+        {platformCheck && platformCheck.platform && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: "10px 14px",
+              borderRadius: 8,
+              fontSize: 13,
+              lineHeight: 1.5,
+              background:
+                platformCheck.status === "deferred"
+                  ? "rgba(255,68,68,0.06)"
+                  : platformCheck.status === "configured" || platformCheck.status === "ready"
+                  ? "rgba(0,229,160,0.06)"
+                  : "rgba(255,184,0,0.06)",
+              border: `1px solid ${
+                platformCheck.status === "deferred"
+                  ? "rgba(255,68,68,0.3)"
+                  : platformCheck.status === "configured" || platformCheck.status === "ready"
+                  ? "rgba(0,229,160,0.3)"
+                  : "rgba(255,184,0,0.3)"
+              }`,
+              color:
+                platformCheck.status === "deferred"
+                  ? "#FF4444"
+                  : platformCheck.status === "configured" || platformCheck.status === "ready"
+                  ? "#00E5A0"
+                  : "#FFB800",
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 4, textTransform: "capitalize" }}>
+              Plataforma detectada: {platformCheck.platform}
+              {platformCheck.recommended_kind && platformCheck.recommended_kind !== kind && (
+                <span style={{ color: "#94a3b8", fontWeight: 400, fontSize: 11, marginLeft: 8 }}>
+                  (sugerencia: cambia tipo a "{platformCheck.recommended_kind}")
+                </span>
+              )}
+            </div>
+            <div style={{ color: "#cbd5e1" }}>{platformCheck.message}</div>
+            {platformCheck.missing_keys.length > 0 && (
+              <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 12 }}>
+                Variables faltantes en <code style={{ background: "#0B0F1A", padding: "1px 6px", borderRadius: 3 }}>orchestrator/.env</code>:{" "}
+                {platformCheck.missing_keys.map((k) => (
+                  <code
+                    key={k}
+                    style={{
+                      background: "#0B0F1A",
+                      padding: "1px 6px",
+                      borderRadius: 3,
+                      marginRight: 4,
+                      fontSize: 11,
+                    }}
+                  >
+                    {k}
+                  </code>
+                ))}
+              </div>
+            )}
+            <div style={{ marginTop: 6 }}>
+              <a
+                href="/configuracion/cuentas"
+                style={{ color: "#00D4FF", fontSize: 12, textDecoration: "none" }}
+              >
+                → Ver estado de todas las plataformas
+              </a>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Scan button */}

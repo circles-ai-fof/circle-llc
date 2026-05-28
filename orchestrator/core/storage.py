@@ -118,6 +118,18 @@ CREATE TABLE IF NOT EXISTS links_log (
 );
 CREATE INDEX IF NOT EXISTS idx_links_status ON links_log(status);
 CREATE INDEX IF NOT EXISTS idx_links_ts ON links_log(created_at DESC);
+
+-- M4.0 / ADR-018 — registro de cuentas conectadas por plataforma
+-- Esta tabla NO almacena secrets. Las credenciales viven en env vars.
+-- Esta tabla solo registra el ESTADO observado por el founder:
+--   "esta plataforma está lista", "falta configurar oauth", etc.
+CREATE TABLE IF NOT EXISTS connected_accounts (
+    platform        TEXT PRIMARY KEY,    -- youtube|bluesky|linkedin|x|instagram|tiktok|...
+    status          TEXT NOT NULL,       -- 'ready'|'configured'|'missing_credentials'|'deferred'
+    oauth_required  INTEGER NOT NULL DEFAULT 0,
+    notes           TEXT,                -- libre — el founder anota qué hizo
+    configured_at   INTEGER              -- unix ts cuando se marcó como configurada
+);
 """
 
 # Singleton path; resolved at first import after env load
@@ -1247,6 +1259,88 @@ class LinksLogStore:
         _memory_links.clear()
 
 
+# M4.0 — connected accounts store (ADR-018)
+# ---------------------------------------------------------------------------
+class ConnectedAccountsStore:
+    """Stores OBSERVED status of platform integrations, NOT credentials.
+
+    Credentials live in env vars (YOUTUBE_API_KEY, etc.). This table only
+    records "founder marked this platform as configured at <ts>".
+    """
+
+    def upsert(
+        self,
+        platform: str,
+        status: str,
+        *,
+        oauth_required: bool = False,
+        notes: Optional[str] = None,
+    ) -> None:
+        _ensure_init()
+        ts = int(time.time()) if status == "configured" else None
+        if _db_path:
+            with _conn() as c:
+                c.execute(
+                    "INSERT INTO connected_accounts(platform,status,oauth_required,notes,configured_at) "
+                    "VALUES(?,?,?,?,?) "
+                    "ON CONFLICT(platform) DO UPDATE SET "
+                    "  status=excluded.status, "
+                    "  oauth_required=excluded.oauth_required, "
+                    "  notes=excluded.notes, "
+                    "  configured_at=COALESCE(excluded.configured_at, connected_accounts.configured_at)",
+                    (platform, status, 1 if oauth_required else 0, notes, ts),
+                )
+            return
+        for r in _memory_connected:
+            if r["platform"] == platform:
+                r["status"] = status
+                r["oauth_required"] = 1 if oauth_required else 0
+                r["notes"] = notes
+                if ts is not None:
+                    r["configured_at"] = ts
+                return
+        _memory_connected.append({
+            "platform": platform, "status": status,
+            "oauth_required": 1 if oauth_required else 0,
+            "notes": notes, "configured_at": ts,
+        })
+
+    def get(self, platform: str) -> Optional[Dict]:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                row = c.execute(
+                    "SELECT platform,status,oauth_required,notes,configured_at "
+                    "FROM connected_accounts WHERE platform=?",
+                    (platform,),
+                ).fetchone()
+                return dict(row) if row else None
+        for r in _memory_connected:
+            if r["platform"] == platform:
+                return dict(r)
+        return None
+
+    def list(self) -> List[Dict]:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                rows = c.execute(
+                    "SELECT platform,status,oauth_required,notes,configured_at "
+                    "FROM connected_accounts ORDER BY platform"
+                ).fetchall()
+                return [dict(r) for r in rows]
+        return sorted([dict(r) for r in _memory_connected], key=lambda r: r["platform"])
+
+    def clear(self) -> None:
+        if _db_path:
+            with _conn() as c:
+                c.execute("DELETE FROM connected_accounts")
+        _memory_connected.clear()
+
+
+_memory_connected: List[Dict] = []
+
+
 # Module-level singletons used by api.py
 leads_store = LeadsStore()
 runs_store = RunsStore()
@@ -1254,9 +1348,11 @@ auth_store = AuthStore()
 sources_store = SourcesStore()
 signals_store = SignalsStore()
 links_log_store = LinksLogStore()
+connected_accounts_store = ConnectedAccountsStore()
 
 
 __all__ = [
+    "ConnectedAccountsStore", "connected_accounts_store",
     "leads_store",
     "runs_store",
     "auth_store",

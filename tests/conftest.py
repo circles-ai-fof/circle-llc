@@ -42,6 +42,8 @@ def _reset_anti_bot_state():
     st.sources_store.clear()
     st.signals_store.clear()
     st.links_log_store.clear()
+    if hasattr(st, "connected_accounts_store"):
+        st.connected_accounts_store.clear()
     # Also clear the legacy in-process rate-limit store inside api.py
     try:
         from orchestrator import api as _api
@@ -61,6 +63,8 @@ def _reset_anti_bot_state():
     st2.sources_store.clear()
     st2.signals_store.clear()
     st2.links_log_store.clear()
+    if hasattr(st2, "connected_accounts_store"):
+        st2.connected_accounts_store.clear()
     try:
         from orchestrator import api as _api2
         _api2._rate_limit_store.clear()
