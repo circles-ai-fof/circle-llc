@@ -1042,7 +1042,7 @@ function SignalCard({
               {signal.analysis.reasoning}
             </div>
           )}
-          <div style={{ marginTop: 4 }}>
+          <div style={{ marginTop: 4, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
             <a
               href={`/cazar/senales/${signal.id}`}
               style={{
@@ -1052,6 +1052,7 @@ function SignalCard({
             >
               Ver detalle completo →
             </a>
+            <CopyPromptButton signal={signal} />
           </div>
         </div>
         {/* Actions */}
@@ -1219,5 +1220,94 @@ function AnalysisCell({ label, value }: { label: string; value: string }) {
       <div style={{ color: "#94a3b8", fontSize: 11, marginBottom: 4, fontWeight: 600 }}>{label}</div>
       <div style={{ color: "#cbd5e1", fontSize: 12, lineHeight: 1.5 }}>{value || "—"}</div>
     </div>
+  );
+}
+
+/**
+ * M3.16: botón que copia un prompt listo-para-pegar en ChatGPT/Claude/Gemini.
+ * El founder pidió: "necesito un resumen para entender la idea y el nombre
+ * de la idea + un prompt de esa idea listo para copiar y llevarlo a una IA".
+ *
+ * Reutiliza analysis si existe (mercado/ICP/riesgos); si no, usa el theme +
+ * excerpt + URLs como insumo. El prompt está en español y pide evaluación
+ * estructurada.
+ */
+function CopyPromptButton({ signal }: { signal: Signal }) {
+  const [copied, setCopied] = useState(false);
+
+  const buildPrompt = (): string => {
+    const a = signal.analysis;
+    const sourceLabel = signal.source_name || signal.source_kind;
+    const urls = signal.evidence_urls.slice(0, 5).join("\n  - ");
+    let p = `Necesito que evalúes esta idea de negocio y me des recomendaciones específicas.\n\n`;
+    p += `**Idea:** ${signal.theme}\n`;
+    p += `**Fuente:** ${sourceLabel}\n`;
+    if (signal.excerpt) p += `**Contexto:** ${signal.excerpt}\n`;
+    if (a) {
+      if (a.idea_summary) p += `\n**Qué hace la idea:** ${a.idea_summary}\n`;
+      if (a.country_focus) p += `**País / región:** ${a.country_focus}\n`;
+      if (a.market_size_estimate) p += `**Mercado estimado:** ${a.market_size_estimate}\n`;
+      if (a.icp_probable) p += `**ICP probable:** ${a.icp_probable}\n`;
+      if (a.differentiator) p += `**Diferenciador:** ${a.differentiator}\n`;
+      if (a.competitors && a.competitors.length) {
+        p += `**Competencia:** ${a.competitors.join(", ")}\n`;
+      }
+      if (a.risks && a.risks.length) {
+        p += `**Riesgos:** ${a.risks.join("; ")}\n`;
+      }
+      if (a.recommendation) {
+        p += `**Recomendación previa:** ${a.recommendation} — ${a.reasoning}\n`;
+      }
+    }
+    if (urls) {
+      p += `\n**URLs de evidencia:**\n  - ${urls}\n`;
+    }
+    p += `\n**Lo que necesito de ti:**\n`;
+    p += `1. ¿Es una idea viable para LATAM? (1-2 frases)\n`;
+    p += `2. ¿Qué ICP específico atacar primero? (rol, tamaño, país)\n`;
+    p += `3. ¿Cuál sería el MVP más barato para validarla? (≤2 semanas, ≤$500)\n`;
+    p += `4. ¿Cuáles son los 3 mayores riesgos que la matarían?\n`;
+    p += `5. ¿Promovería esta idea a una corrida completa del workflow ($0.06)?\n`;
+    return p;
+  };
+
+  const copy = async () => {
+    try {
+      const prompt = buildPrompt();
+      if (typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(prompt);
+      } else {
+        // Fallback for non-secure contexts
+        const ta = document.createElement("textarea");
+        ta.value = prompt;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      alert("No se pudo copiar al portapapeles.");
+    }
+  };
+
+  return (
+    <button
+      onClick={copy}
+      title="Copia un prompt listo para pegar en ChatGPT / Claude / Gemini con toda la info de esta señal"
+      style={{
+        background: "transparent",
+        color: copied ? "#00E5A0" : "#A78BFA",
+        border: `1px solid ${copied ? "#00E5A0" : "#A78BFA"}`,
+        borderRadius: 6,
+        padding: "3px 10px",
+        fontSize: 11,
+        cursor: "pointer",
+        fontWeight: 600,
+      }}
+    >
+      {copied ? "✓ Copiado" : "📋 Copiar prompt IA"}
+    </button>
   );
 }

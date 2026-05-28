@@ -104,8 +104,9 @@ def test_links_requires_auth(client):
 
 
 def test_import_file_extracts_urls_from_whatsapp_chat(client, auth):
-    chat_text = """[12/05/26 09:32] Cristian: mira esto https://techcrunch.com/x
-[12/05/26 09:33] JF: y https://www.elcomercio.com/y
+    # M3.16: paths must be ≥5 chars after the slash (article-like, not just /x)
+    chat_text = """[12/05/26 09:32] Cristian: mira esto https://techcrunch.com/articles/cool-startup
+[12/05/26 09:33] JF: y https://www.elcomercio.com/noticias/economia/inflacion
 [12/05/26 09:35] Cristian: nada aquí (sin link)"""
     files = {"file": ("chat-whatsapp.txt", io.BytesIO(chat_text.encode()), "text/plain")}
     r = client.post("/api/v1/sources/import-file", files=files, headers=auth)
@@ -128,10 +129,11 @@ def test_import_file_dedups_urls(client, auth):
     M3.15: uses domains the quality filter keeps (real .com sites, not
     social-media noise like x.com/status or instagram.com/reel).
     """
+    # M3.16: bare homepages are now discarded. Use article paths instead.
     text = (
-        "first https://runachay.com, "
-        "second mention https://runachay.com, "
-        "third https://eventifica.com"
+        "first https://example.com/blog/post-a, "
+        "second mention https://example.com/blog/post-a, "
+        "third https://example.com/blog/post-b"
     )
     files = {"file": ("notes.txt", io.BytesIO(text.encode()), "text/plain")}
     r = client.post("/api/v1/sources/import-file", files=files, headers=auth)
@@ -141,11 +143,12 @@ def test_import_file_dedups_urls(client, auth):
 
 
 def test_import_file_filters_social_media_noise(client, auth):
-    """M3.15: x.com/status, instagram.com/reel are discarded with reason."""
+    """M3.15: x.com/status, instagram.com/reel are discarded with reason.
+    M3.16: bare homepages are also discarded; only article paths survive."""
     text = (
         "Look at this https://x.com/foo/status/123\n"
         "And this https://www.instagram.com/reel/abc\n"
-        "But this is real: https://runachay.com/\n"
+        "But this is real: https://example.com/posts/great-idea-2026\n"
         "Phone https://wa.me/521234"
     )
     files = {"file": ("chat.txt", io.BytesIO(text.encode()), "text/plain")}
@@ -153,7 +156,7 @@ def test_import_file_filters_social_media_noise(client, auth):
     assert r.status_code == 201
     data = r.json()
     assert data["urls_found"] == 4
-    assert data["sources_created"] == 1  # only runachay.com survives
+    assert data["sources_created"] == 1  # only the article survives
     assert data["urls_discarded_as_noise"] == 3
     # discarded_samples must include the actual URLs + reasons
     assert len(data["discarded_samples"]) == 3

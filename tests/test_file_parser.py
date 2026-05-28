@@ -88,12 +88,23 @@ def test_parse_docx_returns_empty_when_lib_missing(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_classify_url_keeps_company_sites():
-    """Real company websites should be kept."""
+def test_classify_url_discards_bare_homepages():
+    """M3.16 calibration: bare homepages (no path / "/") are NOT ideas.
+
+    Founder feedback: "runachay.com no es fuente para ideas". Correcto —
+    una portada de empresa no describe una idea, sólo identifica la empresa.
+    Para que sea analizable necesitamos un artículo específico
+    (/blog/x, /posts/y, /2025/01/idea-cool).
+    """
     sf = _fp()
-    keep, _ = sf.classify_url("https://runachay.com/")
+    # Bare homepages → discard
+    assert not sf.classify_url("https://runachay.com/")[0]
+    assert not sf.classify_url("https://www.eventifica.com/")[0]
+    assert not sf.classify_url("https://example.com")[0]
+    # Articles on those domains → keep
+    keep, _ = sf.classify_url("https://example.com/blog/2025/idea-cool")
     assert keep
-    keep2, _ = sf.classify_url("https://www.eventifica.com/")
+    keep2, _ = sf.classify_url("https://blog.example.com/posts/12345")
     assert keep2
 
 
@@ -138,17 +149,18 @@ def test_filter_urls_by_quality_returns_kept_and_discarded():
     urls = [
         "https://x.com/foo/status/123",
         "https://www.instagram.com/reel/abc",
-        "https://runachay.com/",
-        "https://github.com/foo/bar",
+        "https://runachay.com/",            # bare homepage → discard (M3.16)
+        "https://github.com/foo/bar",       # repo path → keep
+        "https://example.com/blog/post-123", # article → keep
         "https://wa.me/521234",
         "https://t.co/abc",
     ]
     kept, discarded = sf.filter_urls_by_quality(urls)
-    assert len(kept) == 2
-    assert "https://runachay.com/" in kept
     assert "https://github.com/foo/bar" in kept
-    assert len(discarded) == 4
+    assert "https://example.com/blog/post-123" in kept
+    assert len(kept) == 2
     # Each discarded item has url + reason
+    assert len(discarded) == 5
     for d in discarded:
         assert "url" in d and "reason" in d
         assert d["reason"]  # non-empty

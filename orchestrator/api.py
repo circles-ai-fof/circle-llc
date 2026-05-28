@@ -69,6 +69,8 @@ from .schemas.api import (
     SourceCreate,
     SourceItem,
     SourceQuality,
+    SourcesBulkDeleteRequest,
+    SourcesBulkDeleteResponse,
     SourcesListResponse,
     SourcesQualityResponse,
     AnalyzeBatchRequest,
@@ -1254,6 +1256,43 @@ def delete_source(source_id: int, request: Request) -> None:
     _require_user(request)
     from .core.storage import sources_store
     sources_store.delete(source_id)
+
+
+@app.post(
+    "/api/v1/sources/bulk-delete",
+    response_model=SourcesBulkDeleteResponse,
+    summary="Delete many sources by IDs or filter (kind / name / target)",
+    tags=["hunter"],
+    responses={
+        422: {"model": ErrorDetail, "description": "No deletion criterion provided"},
+    },
+)
+def bulk_delete_sources(
+    body: SourcesBulkDeleteRequest, request: Request
+) -> SourcesBulkDeleteResponse:
+    """Bulk delete with safety guard: must provide at least one criterion
+    (explicit IDs OR a filter). Prevents accidental wipe-all.
+
+    Use cases (founder):
+      - "Borrar todas las URLs de Instagram": target_contains="instagram.com"
+      - "Limpiar todo lo de x.com": target_contains="x.com"
+      - "Borrar todas las URLs importadas de mi último archivo": name_contains="chat.txt"
+      - "Quitar estas 5 específicas": source_ids=[1,2,3,4,5]
+    """
+    _require_user(request)
+    if not any([body.source_ids, body.kind_filter, body.name_contains, body.target_contains]):
+        raise HTTPException(
+            status_code=422,
+            detail="Provide at least one of: source_ids, kind_filter, name_contains, target_contains",
+        )
+    from .core.storage import sources_store
+    deleted = sources_store.delete_many(
+        source_ids=body.source_ids,
+        kind_filter=body.kind_filter,
+        name_contains=body.name_contains,
+        target_contains=body.target_contains,
+    )
+    return SourcesBulkDeleteResponse(deleted=deleted)
 
 
 def _run_scan_internal(

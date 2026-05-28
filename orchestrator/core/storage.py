@@ -593,6 +593,65 @@ class SourcesStore:
         else:
             _memory_sources[:] = [r for r in _memory_sources if r["id"] != source_id]
 
+    def delete_many(
+        self,
+        source_ids: Optional[List[int]] = None,
+        kind_filter: Optional[str] = None,
+        name_contains: Optional[str] = None,
+        target_contains: Optional[str] = None,
+    ) -> int:
+        """M3.16: bulk delete with filters. Returns count deleted.
+
+        Modes (combine OR-style or use only one):
+          - source_ids: explicit list of IDs to delete
+          - kind_filter: delete all sources of one kind (e.g. "url")
+          - name_contains: substring match on name (case-insensitive)
+          - target_contains: substring match on target URL (e.g. "instagram.com")
+        """
+        _ensure_init()
+        if not any([source_ids, kind_filter, name_contains, target_contains]):
+            return 0  # safety: never delete-all without explicit criterion
+        if _db_path:
+            with _conn() as c:
+                if source_ids:
+                    placeholders = ",".join("?" for _ in source_ids)
+                    cur = c.execute(
+                        f"DELETE FROM sources WHERE id IN ({placeholders})",
+                        tuple(source_ids),
+                    )
+                    return int(cur.rowcount or 0)
+                where_parts: List[str] = []
+                params: List = []
+                if kind_filter:
+                    where_parts.append("kind = ?")
+                    params.append(kind_filter)
+                if name_contains:
+                    where_parts.append("LOWER(name) LIKE ?")
+                    params.append(f"%{name_contains.lower()}%")
+                if target_contains:
+                    where_parts.append("LOWER(target) LIKE ?")
+                    params.append(f"%{target_contains.lower()}%")
+                where = " AND ".join(where_parts)
+                cur = c.execute(f"DELETE FROM sources WHERE {where}", tuple(params))
+                return int(cur.rowcount or 0)
+        # In-memory fallback
+        def _matches(r: Dict) -> bool:
+            if source_ids and r["id"] in source_ids:
+                return True
+            if not source_ids:
+                ok = True
+                if kind_filter and r.get("kind") != kind_filter:
+                    ok = False
+                if name_contains and name_contains.lower() not in str(r.get("name", "")).lower():
+                    ok = False
+                if target_contains and target_contains.lower() not in str(r.get("target", "")).lower():
+                    ok = False
+                return ok
+            return False
+        before = len(_memory_sources)
+        _memory_sources[:] = [r for r in _memory_sources if not _matches(r)]
+        return before - len(_memory_sources)
+
     def clear(self) -> None:
         if _db_path:
             with _conn() as c:

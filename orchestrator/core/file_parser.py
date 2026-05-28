@@ -97,14 +97,26 @@ _NOISE_PATH_PATTERNS = (
 )
 
 
+# M3.16 — homepages "puras" (sin path significativo) son rara vez una idea:
+# son la portada del sitio, no un artículo específico. El founder reportó:
+# "runachay.com no es fuente para ideas". Correcto — un dominio raíz no
+# describe una idea, sólo identifica una empresa.
+def _is_bare_homepage(path: str) -> bool:
+    """True si el path es vacío o "/" o "/index.html" (homepage sin contenido)."""
+    if not path or path == "/" or path == "":
+        return True
+    stripped = path.strip("/").lower()
+    return stripped in ("", "index", "index.html", "index.htm", "home", "es", "en")
+
+
 def classify_url(url: str) -> tuple[bool, str]:
     """Classify a URL as (keep, reason).
 
     - keep=True  → vale la pena guardarla en links_log para análisis
-    - keep=False → ruido (mensajería personal, status, foto). reason explica.
+    - keep=False → ruido (mensajería personal, status, foto, homepage genérica).
 
-    Heurísticas conservadoras: en duda, mantener (la calidad final la decide
-    `link_analyzer` con LLM cuando el founder ejecute análisis batch).
+    Heurísticas (sin LLM, gratis). Calibración basada en feedback real del
+    founder (M3.16: "runachay.com no es fuente para ideas").
     """
     if not url or len(url) < 10:
         return False, "URL demasiado corta"
@@ -138,13 +150,29 @@ def classify_url(url: str) -> tuple[bool, str]:
     if host in ("youtube.com", "www.youtube.com", "m.youtube.com"):
         if "/shorts/" in path:
             return False, "YouTube Shorts (formato efímero personal)"
-        # /watch?v= y /channel/ y /c/ pueden ser ideas
-        # cae al keep por default
+        if not p.query:  # /watch sin ?v= es la home
+            return False, "YouTube home (sin video específico)"
 
     # LinkedIn: posts personales (/posts/, /pulse/) sí cuentan, perfiles no
     if host in ("linkedin.com", "www.linkedin.com"):
         if "/in/" in path and "/posts/" not in path and "/recent-activity/" not in path:
             return False, "Perfil de LinkedIn (no es contenido)"
+
+    # M3.16: homepages "puras" no son ideas. Necesitamos un artículo,
+    # no la portada del sitio. Ejemplos descartados aquí:
+    #   - https://runachay.com/
+    #   - https://eventifica.com/
+    #   - https://example.com
+    # Ejemplos que SÍ pasan:
+    #   - https://blog.com/2025/cool-idea
+    #   - https://example.com/posts/123
+    if _is_bare_homepage(path):
+        return False, f"Homepage genérica ({host}) — necesita path con artículo específico"
+
+    # Para URLs con path, exigir cierto largo o estructura de artículo
+    # Slug típico: /2025/01/idea-cool o /posts/12345 (≥10 chars total)
+    if len(path.strip("/")) < 5:
+        return False, f"Path muy corto ({path!r}) — probable home de sección, no artículo"
 
     return True, "OK"
 

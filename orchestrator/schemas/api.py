@@ -271,6 +271,18 @@ class SourcesListResponse(BaseModel):
     items: List[SourceItem]
 
 
+class SourcesBulkDeleteRequest(BaseModel):
+    """M3.16: bulk delete with explicit IDs or filters."""
+    source_ids: Optional[List[int]] = Field(default=None, max_length=2000)
+    kind_filter: Optional[str] = Field(default=None, description='e.g. "url" to wipe all URL-imports')
+    name_contains: Optional[str] = Field(default=None, max_length=200)
+    target_contains: Optional[str] = Field(default=None, max_length=200, description='e.g. "instagram.com" or "x.com"')
+
+
+class SourcesBulkDeleteResponse(BaseModel):
+    deleted: int
+
+
 class SourceQuality(BaseModel):
     source_id: int
     name: str

@@ -58,6 +58,79 @@ def test_add_source_invalid_kind_422(client, auth):
     assert r.status_code == 422
 
 
+def test_bulk_delete_sources_by_target_contains(client, auth):
+    """M3.16: bulk delete by target_contains lets the founder purge all
+    instagram.com URLs (or x.com, etc.) in one click."""
+    from orchestrator.core.storage import sources_store
+    sources_store.add("url", "https://www.instagram.com/reel/abc", "ig1")
+    sources_store.add("url", "https://www.instagram.com/p/xyz", "ig2")
+    sources_store.add("url", "https://x.com/foo/status/1", "x1")
+    sources_store.add("rss", "https://blog.real.com/feed", "real")
+
+    r = client.post(
+        "/api/v1/sources/bulk-delete",
+        headers=auth,
+        json={"target_contains": "instagram.com"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["deleted"] == 2
+    remaining = client.get("/api/v1/sources", headers=auth).json()
+    remaining_names = {s["name"] for s in remaining["items"]}
+    assert "ig1" not in remaining_names
+    assert "ig2" not in remaining_names
+    assert "x1" in remaining_names
+    assert "real" in remaining_names
+
+
+def test_bulk_delete_sources_by_ids(client, auth):
+    """Bulk delete with explicit list of IDs."""
+    from orchestrator.core.storage import sources_store
+    a = sources_store.add("rss", "https://a.test/feed", "A")
+    b = sources_store.add("rss", "https://b.test/feed", "B")
+    c = sources_store.add("rss", "https://c.test/feed", "C")
+
+    r = client.post(
+        "/api/v1/sources/bulk-delete",
+        headers=auth,
+        json={"source_ids": [a, b]},
+    )
+    assert r.status_code == 200
+    assert r.json()["deleted"] == 2
+    remaining = {s["id"] for s in sources_store.list()}
+    assert c in remaining
+    assert a not in remaining
+    assert b not in remaining
+
+
+def test_bulk_delete_sources_by_kind(client, auth):
+    """Delete all sources of a kind (e.g. wipe all url-imports)."""
+    from orchestrator.core.storage import sources_store
+    sources_store.add("url", "https://u1.test", "u1")
+    sources_store.add("url", "https://u2.test", "u2")
+    sources_store.add("rss", "https://r.test/feed", "rss1")
+
+    r = client.post(
+        "/api/v1/sources/bulk-delete",
+        headers=auth,
+        json={"kind_filter": "url"},
+    )
+    assert r.json()["deleted"] == 2
+    kinds = {s["kind"] for s in sources_store.list()}
+    assert "url" not in kinds
+    assert "rss" in kinds
+
+
+def test_bulk_delete_sources_requires_criterion(client, auth):
+    """Safety: empty body → 422 (no accidental wipe-all)."""
+    r = client.post("/api/v1/sources/bulk-delete", headers=auth, json={})
+    assert r.status_code == 422
+
+
+def test_bulk_delete_sources_requires_auth(client):
+    r = client.post("/api/v1/sources/bulk-delete", json={"kind_filter": "url"})
+    assert r.status_code == 401
+
+
 def test_delete_source(client, auth):
     r = client.post("/api/v1/sources", headers=auth, json={"kind": "rss", "target": "https://x.test/feed", "name": "X"})
     sid = r.json()["id"]

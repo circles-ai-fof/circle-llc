@@ -55,6 +55,12 @@ export default function FuentesPage() {
   const [target, setTarget] = useState("");
   const [name, setName] = useState("");
 
+  // M3.16: filters + bulk selection
+  const [filterName, setFilterName] = useState("");
+  const [filterKind, setFilterKind] = useState("");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   const refresh = async () => {
     setLoading(true);
     setError(null);
@@ -117,6 +123,76 @@ export default function FuentesPage() {
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  // M3.16: filtered view of sources for the table + checkboxes
+  const filteredSources = sources.filter((s) => {
+    if (filterName) {
+      const q = filterName.toLowerCase();
+      const hay = `${s.name} ${s.target}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (filterKind && s.kind !== filterKind) return false;
+    return true;
+  });
+
+  const toggleSelect = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllVisible = () => {
+    setSelected(new Set(filteredSources.map((s) => s.id)));
+  };
+
+  const clearSelection = () => setSelected(new Set());
+
+  const bulkDeleteSelected = async () => {
+    if (selected.size === 0) return;
+    if (bulkDeleting) return;
+    if (!confirm(`¿Eliminar ${selected.size} fuente${selected.size === 1 ? "" : "s"} seleccionada${selected.size === 1 ? "" : "s"}? Esta acción no se puede deshacer.`)) return;
+    setBulkDeleting(true);
+    try {
+      const r = await authFetch("/api/v1/sources/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_ids: Array.from(selected) }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      setSelected(new Set());
+      await refresh();
+      setScanResult(`🗑️ ${d.deleted} fuentes eliminadas`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const bulkDeleteByTarget = async (substring: string, label: string) => {
+    if (bulkDeleting) return;
+    if (!confirm(`¿Eliminar TODAS las fuentes que contengan "${substring}" en el target?\n(${label})`)) return;
+    setBulkDeleting(true);
+    try {
+      const r = await authFetch("/api/v1/sources/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target_contains: substring }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      await refresh();
+      setScanResult(`🗑️ ${d.deleted} fuentes de "${substring}" eliminadas`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -236,6 +312,109 @@ export default function FuentesPage() {
         )}
       </section>
 
+      {/* M3.16: Filters + bulk actions */}
+      {sources.length > 0 && (
+        <section style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <input
+            type="search"
+            placeholder="🔍 Filtrar por nombre o URL…"
+            value={filterName}
+            onChange={(e) => setFilterName(e.target.value)}
+            style={{
+              flex: "1 1 240px",
+              background: "#0F1525", color: "#cbd5e1", border: "1px solid #1e293b",
+              borderRadius: 6, padding: "6px 10px", fontSize: 13, outline: "none",
+            }}
+          />
+          <select
+            value={filterKind}
+            onChange={(e) => setFilterKind(e.target.value)}
+            style={{
+              background: "#0F1525", color: "#cbd5e1", border: "1px solid #1e293b",
+              borderRadius: 6, padding: "6px 10px", fontSize: 12,
+            }}
+          >
+            <option value="">Todos los tipos</option>
+            <option value="rss">RSS</option>
+            <option value="url">URL importada</option>
+            <option value="hn">Hacker News</option>
+            <option value="reddit">Reddit</option>
+            <option value="youtube">YouTube</option>
+            <option value="bluesky">Bluesky</option>
+            <option value="telegram">Telegram</option>
+            <option value="github_trending">GitHub trending</option>
+            <option value="product_hunt">Product Hunt</option>
+          </select>
+          <span style={{ color: "#64748b", fontSize: 12, marginLeft: 4 }}>
+            {filteredSources.length}/{sources.length}
+          </span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button
+              onClick={() => bulkDeleteByTarget("instagram.com", "Posts/reels de Instagram")}
+              title="Borra todas las fuentes que tengan instagram.com en su URL"
+              style={{
+                padding: "6px 12px", background: "transparent", color: "#FFB800",
+                border: "1px solid rgba(255,184,0,0.4)", borderRadius: 6, fontSize: 12, cursor: "pointer",
+              }}
+            >
+              🧹 Borrar Instagram
+            </button>
+            <button
+              onClick={() => bulkDeleteByTarget("x.com", "Status de X/Twitter")}
+              style={{
+                padding: "6px 12px", background: "transparent", color: "#FFB800",
+                border: "1px solid rgba(255,184,0,0.4)", borderRadius: 6, fontSize: 12, cursor: "pointer",
+              }}
+            >
+              🧹 Borrar X.com
+            </button>
+            <button
+              onClick={() => bulkDeleteByTarget("tiktok.com", "Videos de TikTok")}
+              style={{
+                padding: "6px 12px", background: "transparent", color: "#FFB800",
+                border: "1px solid rgba(255,184,0,0.4)", borderRadius: 6, fontSize: 12, cursor: "pointer",
+              }}
+            >
+              🧹 Borrar TikTok
+            </button>
+          </div>
+        </section>
+      )}
+      {selected.size > 0 && (
+        <section
+          style={{
+            display: "flex", gap: 12, alignItems: "center",
+            padding: "8px 14px", marginBottom: 12,
+            background: "rgba(255,68,68,0.06)", border: "1px solid rgba(255,68,68,0.3)",
+            borderRadius: 8,
+          }}
+        >
+          <span style={{ color: "#FF4444", fontSize: 13, fontWeight: 600 }}>
+            {selected.size} seleccionada{selected.size === 1 ? "" : "s"}
+          </span>
+          <button
+            onClick={bulkDeleteSelected}
+            disabled={bulkDeleting}
+            style={{
+              padding: "6px 14px", background: "#FF4444", color: "#fff",
+              border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600,
+              cursor: bulkDeleting ? "wait" : "pointer",
+            }}
+          >
+            {bulkDeleting ? "Eliminando…" : "🗑️ Eliminar seleccionadas"}
+          </button>
+          <button
+            onClick={clearSelection}
+            style={{
+              padding: "6px 14px", background: "transparent", color: "#94a3b8",
+              border: "1px solid #1e293b", borderRadius: 6, fontSize: 12, cursor: "pointer",
+            }}
+          >
+            Cancelar
+          </button>
+        </section>
+      )}
+
       {/* Sources table */}
       <section
         style={{
@@ -246,17 +425,32 @@ export default function FuentesPage() {
         }}
       >
         <div style={{ padding: "12px 20px", borderBottom: "1px solid #1e293b", color: "#94a3b8", fontSize: 13 }}>
-          {loading ? "Cargando…" : `${sources.length} fuente${sources.length === 1 ? "" : "s"}`}
+          {loading
+            ? "Cargando…"
+            : `${filteredSources.length}${filteredSources.length !== sources.length ? ` de ${sources.length}` : ""} fuente${filteredSources.length === 1 ? "" : "s"}`}
         </div>
         {sources.length === 0 && !loading && (
           <div style={{ padding: 32, textAlign: "center", color: "#64748b" }}>
             No tienes fuentes configuradas. Añade una arriba.
           </div>
         )}
-        {sources.length > 0 && (
+        {sources.length > 0 && filteredSources.length === 0 && (
+          <div style={{ padding: 32, textAlign: "center", color: "#64748b" }}>
+            Ninguna fuente coincide con el filtro. <button onClick={() => { setFilterName(""); setFilterKind(""); }} style={{ background: "transparent", color: "#00D4FF", border: "none", cursor: "pointer", fontSize: 13 }}>Limpiar filtro</button>
+          </div>
+        )}
+        {filteredSources.length > 0 && (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid #1e293b" }}>
+                <Th>
+                  <input
+                    type="checkbox"
+                    checked={selected.size === filteredSources.length && filteredSources.length > 0}
+                    onChange={(e) => (e.target.checked ? selectAllVisible() : clearSelection())}
+                    title="Seleccionar todas las visibles"
+                  />
+                </Th>
                 <Th>Nombre</Th>
                 <Th>Tipo</Th>
                 <Th>Target</Th>
@@ -266,10 +460,24 @@ export default function FuentesPage() {
               </tr>
             </thead>
             <tbody>
-              {sources.map((s) => {
+              {filteredSources.map((s) => {
                 const q = quality[s.id];
+                const isSelected = selected.has(s.id);
                 return (
-                <tr key={s.id} style={{ borderBottom: "1px solid #1e293b" }}>
+                <tr
+                  key={s.id}
+                  style={{
+                    borderBottom: "1px solid #1e293b",
+                    background: isSelected ? "rgba(255,68,68,0.05)" : undefined,
+                  }}
+                >
+                  <Td>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelect(s.id)}
+                    />
+                  </Td>
                   <Td>{s.name}</Td>
                   <Td>
                     <span style={{
