@@ -777,48 +777,99 @@ function SignalCard({
               </span>
             )}
           </div>
-          <h3 style={{ color: "#fff", fontSize: 17, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>{signal.theme}</h3>
-          <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.55, marginBottom: 8 }}>{signal.excerpt}</p>
-          {signal.suggested_topic && (
-            <div style={{
-              marginTop: 8, padding: 10, background: "#0B0F1A",
-              border: "1px solid #1e293b", borderRadius: 6, color: "#94a3b8", fontSize: 12,
-            }}>
-              <strong style={{ color: "#cbd5e1" }}>Topic sugerido:</strong> {signal.suggested_topic}
-            </div>
-          )}
-          {signal.evidence_urls.length > 0 && (
-            <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {signal.evidence_urls.map((u, i) => {
-                const title = signal.item_titles?.[i] || "";
-                let host = u;
-                try {
-                  host = new URL(u).hostname;
-                } catch {
-                  /* keep raw */
-                }
-                return (
-                  <a
-                    key={i}
-                    href={u}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={title ? `${title}\n${u}` : u}
+          {/* Display title: if theme is a generic placeholder, prefer the
+              first item_title — it's much more informative. */}
+          {(() => {
+            const themeIsGeneric = /^(Mock signal from|Tema recurrente en|Item de|Detected pattern)/i.test(signal.theme);
+            const firstItemTitle = signal.item_titles?.find((t) => t && t.trim().length > 0);
+            const displayTheme =
+              themeIsGeneric && firstItemTitle ? firstItemTitle : signal.theme;
+            const excerptIsGeneric = /^Detected pattern across/i.test(signal.excerpt);
+            return (
+              <>
+                <h3 style={{ color: "#fff", fontSize: 17, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>
+                  {displayTheme}
+                </h3>
+                {!excerptIsGeneric && (
+                  <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.55, marginBottom: 10 }}>
+                    {signal.excerpt}
+                  </p>
+                )}
+                {/* Items detectados — un bloque limpio en vez de chips repetidos */}
+                {signal.evidence_urls.length > 0 && (
+                  <div
                     style={{
-                      color: "#00D4FF", fontSize: 11, padding: "2px 8px",
-                      background: "rgba(0,212,255,0.05)", borderRadius: 4,
-                      textDecoration: "none", fontFamily: "monospace",
-                      maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
+                      marginBottom: 10,
+                      padding: "8px 12px",
+                      background: "#0B0F1A",
+                      border: "1px solid #1e293b",
+                      borderRadius: 8,
                     }}
                   >
-                    {title ? `📄 ${title.slice(0, 50)}${title.length > 50 ? "…" : ""}` : host}
-                  </a>
-                );
-              })}
+                    <div style={{ color: "#94a3b8", fontSize: 10, marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      📰 Artículos detectados ({signal.evidence_urls.length})
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      {signal.evidence_urls.slice(0, 3).map((u, i) => {
+                        const title = signal.item_titles?.[i] || "";
+                        let host = u;
+                        try {
+                          host = new URL(u).hostname;
+                        } catch {
+                          /* keep raw */
+                        }
+                        return (
+                          <a
+                            key={i}
+                            href={u}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={u}
+                            style={{
+                              color: "#cbd5e1",
+                              fontSize: 12,
+                              textDecoration: "none",
+                              lineHeight: 1.4,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            <span style={{ color: "#00D4FF", marginRight: 6 }}>→</span>
+                            {title ? title : <span style={{ fontFamily: "monospace", fontSize: 11 }}>{host}</span>}
+                          </a>
+                        );
+                      })}
+                      {signal.evidence_urls.length > 3 && (
+                        <span style={{ color: "#64748b", fontSize: 11, marginTop: 2 }}>
+                          + {signal.evidence_urls.length - 3} más en el detalle
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+          {/* Mini-resumen del análisis (si existe) — UNA línea accionable */}
+          {hasAnalysis && signal.analysis && !isExpanded && (
+            <div
+              style={{
+                marginBottom: 10,
+                padding: "8px 12px",
+                background: `${recColor}08`,
+                borderLeft: `3px solid ${recColor}`,
+                borderRadius: 4,
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: "#cbd5e1",
+              }}
+            >
+              <span style={{ color: recColor, fontWeight: 700 }}>{recLabel}: </span>
+              {signal.analysis.reasoning}
             </div>
           )}
-          <div style={{ marginTop: 10 }}>
+          <div style={{ marginTop: 4 }}>
             <a
               href={`/cazar/senales/${signal.id}`}
               style={{

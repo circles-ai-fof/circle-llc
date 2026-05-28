@@ -557,6 +557,28 @@ def test_cleanup_mocks_requires_auth(client):
     assert client.post("/api/v1/signals/cleanup-mocks").status_code == 401
 
 
+def test_cleanup_mocks_removes_generic_placeholders(client, auth):
+    """Cleanup also purges signals with generic placeholder text in
+    theme/excerpt — these don't help the founder decide."""
+    from orchestrator.core.storage import signals_store
+
+    s1 = signals_store.add(None, "rss", "Tema legítimo LATAM", 0.7, "ex", [], "topic ok")
+    s2 = signals_store.add(None, "rss", "Otra señal real", 0.6,
+                            "Detected pattern across 10 items: foo bar", [], "topic")
+    s3 = signals_store.add(None, "rss", "Tema recurrente en rss", 0.5, "ex", [], "topic")
+    s4 = signals_store.add(None, "hn", "Item de hn", 0.4, "ex", [], "topic")
+
+    r = client.post("/api/v1/signals/cleanup-mocks", headers=auth)
+    assert r.status_code == 200
+    assert r.json()["deleted"] == 3  # s2, s3, s4
+
+    remaining = {s["id"] for s in signals_store.list(limit=100)}
+    assert s1 in remaining
+    assert s2 not in remaining
+    assert s3 not in remaining
+    assert s4 not in remaining
+
+
 # ---------------------------------------------------------------------------
 # M3.6 — GET single signal + batch analyze + item_titles
 # ---------------------------------------------------------------------------

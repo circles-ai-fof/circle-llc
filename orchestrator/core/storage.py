@@ -774,31 +774,45 @@ class SignalsStore:
                     return
 
     def cleanup_mocks(self) -> int:
-        """Remove legacy mock-mode signals so the dashboard doesn't show them.
+        """Remove legacy mock-mode and placeholder signals.
 
-        Targets signals whose theme starts with "Mock signal from " — these
-        were created before the mock-scanner rewrite that uses real item
-        titles. Returns count deleted.
+        Targets ANY of:
+          - theme like "Mock signal from %"          (mock-mode v1)
+          - suggested_topic like "Mock topic ..."    (mock-mode v1)
+          - excerpt like "Detected pattern across %" (genérico, no informativo)
+          - theme like "Tema recurrente en %"        (fallback genérico)
+          - theme like "Item de %"                   (fallback single-item)
 
-        Safer than cleanup_stale because it keys on a literal string, not a
-        time window — won't touch any real signal.
+        These are placeholders that don't help the founder decide.
+        Real signals (with concrete item titles) are preserved.
         """
         _ensure_init()
+        patterns = [
+            ("theme LIKE ?", "Mock signal from %"),
+            ("suggested_topic LIKE ?", "Mock topic derived from %"),
+            ("excerpt LIKE ?", "Detected pattern across %"),
+            ("theme LIKE ?", "Tema recurrente en %"),
+            ("theme LIKE ?", "Item de %"),
+        ]
         if _db_path:
             with _conn() as c:
-                cur = c.execute(
-                    "DELETE FROM signals WHERE theme LIKE 'Mock signal from %' "
-                    "OR suggested_topic LIKE 'Mock topic derived from %'"
-                )
+                where = " OR ".join(p[0] for p in patterns)
+                params = tuple(p[1] for p in patterns)
+                cur = c.execute(f"DELETE FROM signals WHERE {where}", params)
                 return int(cur.rowcount or 0)
         before = len(_memory_signals)
-        _memory_signals[:] = [
-            r for r in _memory_signals
-            if not (
-                str(r.get("theme", "")).startswith("Mock signal from ")
-                or str(r.get("suggested_topic", "")).startswith("Mock topic derived from ")
+        def _is_mock(r: Dict) -> bool:
+            theme = str(r.get("theme", ""))
+            topic = str(r.get("suggested_topic", ""))
+            excerpt = str(r.get("excerpt", ""))
+            return (
+                theme.startswith("Mock signal from ")
+                or topic.startswith("Mock topic derived from ")
+                or excerpt.startswith("Detected pattern across ")
+                or theme.startswith("Tema recurrente en ")
+                or theme.startswith("Item de ")
             )
-        ]
+        _memory_signals[:] = [r for r in _memory_signals if not _is_mock(r)]
         return before - len(_memory_signals)
 
     def set_feedback(self, signal_id: int, feedback: Optional[str]) -> None:
