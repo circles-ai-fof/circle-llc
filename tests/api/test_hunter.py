@@ -161,6 +161,24 @@ def test_set_autonomy_rejects_invalid_level(client, auth):
 def test_autonomy_requires_auth(client):
     assert client.get("/api/v1/autonomy").status_code == 401
     assert client.put("/api/v1/autonomy", json={"level": "manual"}).status_code == 401
+    # POST alias also requires auth (M4.5)
+    assert client.post("/api/v1/autonomy", json={"level": "manual"}).status_code == 401
+
+
+def test_set_autonomy_via_post_alias_works(client, auth):
+    """M4.5 — POST /api/v1/autonomy es un alias del PUT canónico. Existe para
+    que el dashboard funcione antes de que el backend deployado reinicie con
+    el nuevo CORS allow_methods=PUT."""
+    r = client.post("/api/v1/autonomy", headers=auth, json={"level": "autonomous_with_approval"})
+    assert r.status_code == 200
+    assert r.json()["level"] == "autonomous_with_approval"
+    # Confirma persistencia consultando con GET
+    assert client.get("/api/v1/autonomy", headers=auth).json()["level"] == "autonomous_with_approval"
+
+
+def test_set_autonomy_via_post_rejects_invalid_level(client, auth):
+    r = client.post("/api/v1/autonomy", headers=auth, json={"level": "banana"})
+    assert r.status_code == 422
 
 
 # ---------------------------------------------------------------------------

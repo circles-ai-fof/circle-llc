@@ -1632,13 +1632,29 @@ def get_autonomy(request: Request) -> AutonomyResponse:
     return AutonomyResponse(level=data["level"], updated_at=data["updated_at"])
 
 
+def _set_autonomy_impl(body: AutonomyUpdateRequest, request: Request) -> AutonomyResponse:
+    """Shared implementation for PUT and POST verbs.
+
+    M4.5 (bug del founder): PUT /api/v1/autonomy fallaba en el browser con
+    NetworkError porque la preflight de CORS solo aceptaba GET/POST/OPTIONS.
+    Aunque ya añadimos PUT a allow_methods, el cambio requiere reiniciar el
+    backend. Para que la UI funcione inmediatamente exponemos el mismo
+    handler como POST también — POST nunca estuvo bloqueado por CORS.
+    """
+    _require_user(request)
+    from .core.storage import autonomy_store
+    autonomy_store.set_level(body.level)
+    data = autonomy_store.get_full()
+    return AutonomyResponse(level=data["level"], updated_at=data["updated_at"])
+
+
 @app.put(
     "/api/v1/autonomy",
     response_model=AutonomyResponse,
-    summary="Set autonomy level: manual | assisted | autonomous_with_approval",
+    summary="Set autonomy level: manual | assisted | autonomous_with_approval (PUT)",
     tags=["hunter"],
 )
-def set_autonomy(body: AutonomyUpdateRequest, request: Request) -> AutonomyResponse:
+def set_autonomy_put(body: AutonomyUpdateRequest, request: Request) -> AutonomyResponse:
     """M4.1: 3 niveles de autonomía configurable.
 
     - manual: founder añade fuentes manualmente, sin sugerencias.
@@ -1647,11 +1663,18 @@ def set_autonomy(body: AutonomyUpdateRequest, request: Request) -> AutonomyRespo
     - autonomous_with_approval: sistema añade sugerencias automáticamente
       pero las marca como "pendiente aprobación" antes de escanearlas.
     """
-    _require_user(request)
-    from .core.storage import autonomy_store
-    autonomy_store.set_level(body.level)
-    data = autonomy_store.get_full()
-    return AutonomyResponse(level=data["level"], updated_at=data["updated_at"])
+    return _set_autonomy_impl(body, request)
+
+
+@app.post(
+    "/api/v1/autonomy",
+    response_model=AutonomyResponse,
+    summary="Set autonomy level (POST alias — works without backend restart on CORS-old deploys)",
+    tags=["hunter"],
+)
+def set_autonomy_post(body: AutonomyUpdateRequest, request: Request) -> AutonomyResponse:
+    """M4.5: alias POST del PUT de arriba. Ver _set_autonomy_impl()."""
+    return _set_autonomy_impl(body, request)
 
 
 def _run_scan_internal(

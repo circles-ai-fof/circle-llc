@@ -126,14 +126,30 @@ export default function FuentesPage() {
   }, []);
 
   const changeAutonomy = async (level: string) => {
+    // M4.5: cambiamos a POST porque PUT requiere que el browser pase un
+    // preflight CORS con allow_methods=PUT — y eso requiere reiniciar el
+    // backend después del fix CORS. POST siempre estuvo permitido, así que
+    // funciona inmediatamente. El backend expone /api/v1/autonomy con ambos
+    // verbos (PUT canónico + POST alias). Si el POST falla con 405 (backend
+    // muy viejo), reintentamos con PUT como fallback.
     try {
-      const r = await authFetch("/api/v1/autonomy", {
-        method: "PUT",
+      let r = await authFetch("/api/v1/autonomy", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ level }),
       });
+      if (r.status === 405) {
+        // backend pre-M4.5 — sólo conoce PUT
+        r = await authFetch("/api/v1/autonomy", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level }),
+        });
+      }
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setAutonomyLevel(level);
+      // Limpiar error previo si lo había
+      setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
