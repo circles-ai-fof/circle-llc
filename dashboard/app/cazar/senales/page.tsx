@@ -302,14 +302,26 @@ export default function SenalesPage() {
   };
 
   const setFeedback = async (id: number, fb: "up" | "down" | "clear") => {
+    // M3.14: optimistic update — UI cambia AHORA, no espera al backend.
+    // Si el server falla, revertimos. Mejora la sensación de instantaneidad
+    // sin esperar la latencia de red.
+    const newFeedback = fb === "clear" ? null : fb;
+    const previous = signals.find((s) => s.id === id)?.feedback ?? null;
+    setSignals((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, feedback: newFeedback } : s))
+    );
     try {
-      await authFetch(`/api/v1/signals/${id}/feedback`, {
+      const r = await authFetch(`/api/v1/signals/${id}/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ feedback: fb }),
       });
-      await refresh();
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
     } catch (e) {
+      // Revert on failure
+      setSignals((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, feedback: previous } : s))
+      );
       setError(e instanceof Error ? e.message : String(e));
     }
   };
@@ -560,16 +572,126 @@ export default function SenalesPage() {
       )}
 
       {!loading && signals.length === 0 && (
-        <div style={{ color: "#94a3b8", padding: 40, textAlign: "center" }}>
-          No hay señales con score ≥ {minScore.toFixed(1)}. Ve a{" "}
-          <a href="/cazar/fuentes" style={{ color: "#00D4FF" }}>Fuentes</a> y
-          ejecuta un escaneo.
+        <div
+          style={{
+            padding: "48px 32px",
+            textAlign: "center",
+            background: "#0F1525",
+            border: "1px solid #1e293b",
+            borderRadius: 12,
+            marginTop: 8,
+          }}
+        >
+          <div style={{ fontSize: 48, marginBottom: 12 }}>📡</div>
+          <h2 style={{ color: "#fff", fontSize: 20, fontWeight: 600, marginBottom: 8 }}>
+            No tienes señales todavía
+          </h2>
+          <p style={{ color: "#94a3b8", fontSize: 14, lineHeight: 1.6, marginBottom: 24, maxWidth: 460, margin: "0 auto 24px" }}>
+            El cazador escanea tus fuentes (RSS, Hacker News, Reddit…) y extrae
+            ideas relevantes. Empieza añadiendo al menos una fuente y ejecutando
+            un escaneo.
+          </p>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            <a
+              href="/cazar/fuentes"
+              style={{
+                background: "#00D4FF",
+                color: "#0B0F1A",
+                padding: "10px 20px",
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight: 600,
+                textDecoration: "none",
+              }}
+            >
+              📋 Ir a Fuentes
+            </a>
+            <a
+              href="/cazar/bitacora"
+              style={{
+                background: "transparent",
+                color: "#94a3b8",
+                padding: "10px 20px",
+                border: "1px solid #1e293b",
+                borderRadius: 8,
+                fontSize: 14,
+                textDecoration: "none",
+              }}
+            >
+              📒 Importar archivo (WhatsApp, .txt, .docx)
+            </a>
+          </div>
+          {minScore > 0 && (
+            <p style={{ color: "#64748b", fontSize: 12, marginTop: 16 }}>
+              Tip: bajar el score mínimo ({minScore.toFixed(1)}) podría mostrar señales que existen pero
+              quedaron filtradas.
+            </p>
+          )}
         </div>
       )}
 
       {!loading && signals.length > 0 && visibleSignals.length === 0 && (
-        <div style={{ color: "#94a3b8", padding: 40, textAlign: "center" }}>
-          Ninguna señal coincide con los filtros actuales. Prueba con menos restricciones.
+        <div
+          style={{
+            padding: "32px 24px",
+            textAlign: "center",
+            background: "#0F1525",
+            border: "1px solid #1e293b",
+            borderRadius: 12,
+            marginTop: 8,
+          }}
+        >
+          <div style={{ fontSize: 28, marginBottom: 8 }}>🔍</div>
+          <p style={{ color: "#cbd5e1", fontSize: 14, marginBottom: 16 }}>
+            Tienes <strong>{signals.length}</strong> señal{signals.length === 1 ? "" : "es"}, pero
+            ninguna coincide con los filtros actuales.
+          </p>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                style={{
+                  padding: "6px 12px", background: "transparent",
+                  color: "#00D4FF", border: "1px solid #00D4FF", borderRadius: 6, fontSize: 12, cursor: "pointer",
+                }}
+              >
+                Limpiar búsqueda
+              </button>
+            )}
+            {feedbackFilter !== "all" && (
+              <button
+                onClick={() => setFeedbackFilter("all")}
+                style={{
+                  padding: "6px 12px", background: "transparent",
+                  color: "#00D4FF", border: "1px solid #00D4FF", borderRadius: 6, fontSize: 12, cursor: "pointer",
+                }}
+              >
+                Quitar filtro feedback
+              </button>
+            )}
+            {minTrend > 0 && (
+              <button
+                onClick={() => setMinTrend(0)}
+                style={{
+                  padding: "6px 12px", background: "transparent",
+                  color: "#00D4FF", border: "1px solid #00D4FF", borderRadius: 6, fontSize: 12, cursor: "pointer",
+                }}
+              >
+                Quitar trend mín
+              </button>
+            )}
+            {kindFilter && (
+              <button
+                onClick={() => setKindFilter("")}
+                style={{
+                  padding: "6px 12px", background: "transparent",
+                  color: "#00D4FF", border: "1px solid #00D4FF", borderRadius: 6, fontSize: 12, cursor: "pointer",
+                }}
+              >
+                Mostrar todas las fuentes
+              </button>
+            )}
+          </div>
         </div>
       )}
 

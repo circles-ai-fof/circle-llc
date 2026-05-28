@@ -789,8 +789,10 @@ class SignalsStore:
         _ensure_init()
         patterns = [
             ("theme LIKE ?", "Mock signal from %"),
+            ("theme LIKE ?", "Mock single-source signal from %"),
             ("suggested_topic LIKE ?", "Mock topic derived from %"),
             ("excerpt LIKE ?", "Detected pattern across %"),
+            ("excerpt LIKE ?", "Single item: %"),
             ("theme LIKE ?", "Tema recurrente en %"),
             ("theme LIKE ?", "Item de %"),
         ]
@@ -807,8 +809,10 @@ class SignalsStore:
             excerpt = str(r.get("excerpt", ""))
             return (
                 theme.startswith("Mock signal from ")
+                or theme.startswith("Mock single-source signal from ")
                 or topic.startswith("Mock topic derived from ")
                 or excerpt.startswith("Detected pattern across ")
+                or excerpt.startswith("Single item: ")
                 or theme.startswith("Tema recurrente en ")
                 or theme.startswith("Item de ")
             )

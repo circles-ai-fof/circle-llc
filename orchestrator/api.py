@@ -1494,7 +1494,7 @@ def _polish_signal_for_display(r: Dict) -> Dict:
     """
     import re as _re
     placeholder_pat = _re.compile(
-        r"^(Mock signal from|Tema recurrente en|Item de|Detected pattern)",
+        r"^(Mock signal from|Mock single-source signal from|Tema recurrente en|Item de|Detected pattern)",
         _re.IGNORECASE,
     )
     theme = str(r.get("theme") or "")
