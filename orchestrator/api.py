@@ -448,11 +448,15 @@ def get_run(run_id: str) -> RunGateResponse:
     summary="List runs awaiting human review (ensemble disagreement)",
     tags=["gate", "review"],
 )
-def list_pending_review() -> PendingReviewResponse:
+def list_pending_review(request: Request) -> PendingReviewResponse:
     """
     Returns all completed runs where the ensemble flagged
     `needs_human_review=True` and no human_override has been recorded yet.
+
+    Auth required (M3.12): pending decisions reveal business strategy and
+    must not leak to anyone outside the closed beta.
     """
+    _require_user(request)
     pending = [
         PendingReviewItem(
             run_id=r.run_id,
@@ -488,7 +492,11 @@ def post_human_override(
     A founder records the final verdict for a run that the ensemble could not
     resolve unanimously. The recorded override is stored alongside the original
     decision and surfaces in the dashboard for future calibration.
+
+    Auth required (M3.12): overriding a gate verdict modifies business
+    decisions — must be restricted to closed-beta users via _require_user.
     """
+    _require_user(request)
     _check_rate_limit(_client_ip(request))
 
     try:

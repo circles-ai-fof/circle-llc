@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import VerdictBadge from "@/components/VerdictBadge";
+import { authFetch } from "@/lib/auth";
 
 type PendingItem = {
   run_id: string;
@@ -15,7 +16,7 @@ type PendingItem = {
 
 type Pending = { pending_count: number; items: PendingItem[] };
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
 // Demo data — used when API is unreachable so the page never goes blank
 const DEMO: Pending = {
@@ -57,7 +58,7 @@ export default function RevisionPage() {
   const [usingDemo, setUsingDemo] = useState(true);
 
   useEffect(() => {
-    fetch(`${API}/api/v1/gate/pending-review`)
+    authFetch(`/api/v1/gate/pending-review`)
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((json: Pending) => {
         setData(json);
@@ -143,7 +144,7 @@ function ReviewCard({ item, usingDemo }: { item: PendingItem; usingDemo: boolean
         await new Promise((r) => setTimeout(r, 600));
         setResult(`✓ DEMO: verdict=${verdict} loggeado para ${item.idea_title}`);
       } else {
-        const r = await fetch(`${API}/api/v1/gate/runs/${item.run_id}/human-override`, {
+        const r = await authFetch(`/api/v1/gate/runs/${item.run_id}/human-override`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ verdict, reason, decided_by: decidedBy }),

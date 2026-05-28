@@ -15,7 +15,7 @@ type LeadsList = { slug: string; count: number; leads: LeadItem[]; masked: boole
 type StatsItem = { slug: string; count: number };
 type Stats = { total_leads: number; by_slug: StatsItem[] };
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
 export default function LeadsPage() {
   const [stats, setStats] = useState<Stats | null>(null);

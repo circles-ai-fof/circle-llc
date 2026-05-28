@@ -45,9 +45,9 @@ circle-llc/
 
 | | |
 |---|---|
-| Tests verdes | **480** |
-| Commits en GitHub | 47 |
-| ADRs | **16** |
+| Tests verdes | **483** |
+| Commits en GitHub | 49 |
+| ADRs | **17** |
 | Reglas R01-R29 | 29 |
 | Endpoints API | 35 |
 | Páginas dashboard | 11 |

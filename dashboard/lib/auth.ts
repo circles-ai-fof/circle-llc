@@ -4,7 +4,7 @@ const TOKEN_KEY = "circle_session_token";
 const EMAIL_KEY = "circle_session_email";
 const EXPIRES_KEY = "circle_session_expires";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
 export type Session = {
   token: string;

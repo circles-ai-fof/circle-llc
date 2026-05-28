@@ -19,7 +19,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install deps
-        run: pip install anthropic pydantic pytest fastapi httpx starlette
+        # Use the same requirements file the deploy uses to avoid drift
+        run: pip install -r orchestrator/requirements.txt
       - name: Run full test suite (mock mode)
         run: pytest tests/ orchestrator/evals/code_based/ -v --tb=short
         env:
@@ -27,12 +28,32 @@ jobs:
           # No ANTHROPIC_API_KEY → auto mock_mode (R06)
 
   golden-case-count:
-    name: Verify 150 golden cases
+    name: Verify ≥180 golden cases (R12 for 6 agents × 30)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Count golden cases
         run: |
           total=$(cat orchestrator/evals/golden_cases/*.jsonl | wc -l)
-          echo "Golden cases: $total"
-          [ "$total" -ge 150 ] || (echo "FAIL: need ≥150 golden cases, found $total" && exit 1)
+          echo "Golden cases: $total (expected ≥180 = 6 agents × 30)"
+          [ "$total" -ge 180 ] || (echo "FAIL: need ≥180 golden cases, found $total" && exit 1)
+
+  dashboard-build:
+    name: Dashboard typecheck + Next build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install deps
+        working-directory: dashboard
+        run: npm ci
+      - name: TypeScript check
+        working-directory: dashboard
+        run: npx tsc --noEmit
+      - name: Next build
+        working-directory: dashboard
+        run: npx next build
+        env:
+          NEXT_PUBLIC_API_URL: 'https://api.example.com'  # placeholder for build
