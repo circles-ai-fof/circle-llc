@@ -184,12 +184,46 @@ def _meta_content(html: str, *names: str) -> Optional[str]:
     return None
 
 
+# M3.18 — detección de fallbacks de SPAs que requieren JS para renderizar
+# (x.com, instagram, facebook, tiktok, etc.). Cuando hacemos GET con urllib
+# sin ejecutar JS, recibimos un placeholder tipo "JavaScript is not available"
+# en vez del contenido real. Detectamos esto y devolvemos None.
+_SPA_FALLBACK_PATTERNS = (
+    "javascript is not available",
+    "we've detected that javascript is disabled",
+    "we have detected that javascript is disabled",
+    "please enable javascript",
+    "you need to enable javascript",
+    "you'll need to turn on javascript",
+    "este navegador no soporta javascript",
+    "javascript no está disponible",
+    "javascript no esta disponible",
+    "habilite javascript",
+    "switch to a supported browser to continue",
+    # Login walls genéricos
+    "log in to instagram",
+    "log into facebook",
+    "iniciar sesión en instagram",
+    "iniciar sesion en instagram",
+)
+
+
+def _is_spa_fallback(title: str, summary: str) -> bool:
+    """True si el contenido extraído es un fallback de SPA, no contenido real."""
+    blob = f"{title} {summary}".lower()
+    return any(pat in blob for pat in _SPA_FALLBACK_PATTERNS)
+
+
 def fetch_url(url: str) -> Optional[FetchedItem]:
     """Fetch one URL and extract plaintext + structured metadata.
 
     M3.17: prefers OpenGraph / Twitter card meta tags for title and summary
     (publishers curate these for sharing — more informative than parsing the
     body). Falls back to <title> + body text if meta tags are missing.
+
+    M3.18: returns None when the page is a SPA fallback ("JavaScript is not
+    available…") because that text is not the actual content of the URL.
+    Caller should treat it like a fetch failure.
     """
     raw = _http_get(url)
     if raw is None:
@@ -214,6 +248,12 @@ def fetch_url(url: str) -> Optional[FetchedItem]:
     summary = og_desc or _truncate(text, 400)
     if not summary:
         return None
+
+    # M3.18: si lo que extrajimos es el fallback de no-JS, NO es contenido válido
+    if _is_spa_fallback(title, summary):
+        logger.info("fetch_url: skipping SPA fallback content for %s", url)
+        return None
+
     return FetchedItem(
         source_kind="url",
         url=url,

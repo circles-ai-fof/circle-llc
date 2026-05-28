@@ -899,6 +899,31 @@ class SignalsStore:
             ("excerpt LIKE ?", "Single item: %"),
             ("theme LIKE ?", "Tema recurrente en %"),
             ("theme LIKE ?", "Item de %"),
+            # M3.18 — SPA fallbacks (x.com, instagram, etc. sin JS)
+            ("theme LIKE ?", "JavaScript is not available%"),
+            ("theme LIKE ?", "We've detected that JavaScript%"),
+            ("theme LIKE ?", "Please enable JavaScript%"),
+            ("excerpt LIKE ?", "JavaScript is not available%"),
+            ("excerpt LIKE ?", "We've detected that JavaScript%"),
+            ("theme LIKE ?", "Log in to Instagram%"),
+            ("theme LIKE ?", "Log into Facebook%"),
+            ("theme LIKE ?", "Instagram"),  # exacto — la home
+            ("theme LIKE ?", "Login • Instagram%"),
+            # M3.18b — titles de homepage genéricos (no son ideas)
+            ("theme LIKE ?", "TikTok - Make Your Day"),
+            ("theme LIKE ?", "TikTok"),
+            ("theme LIKE ?", "Launch Meeting - Zoom"),
+            ("theme LIKE ?", "Zoom"),
+            ("theme LIKE ?", "Coming Soon"),
+            ("theme LIKE ?", "Page not found%"),
+            ("theme LIKE ?", "404%"),
+            ("theme LIKE ?", "Page Not Found%"),
+            ("theme LIKE ?", "Access denied%"),
+            ("theme LIKE ?", "Sign in - Google%"),
+            ("theme LIKE ?", "Sign In%"),
+            ("theme LIKE ?", "Iniciar sesión%"),
+            ("theme LIKE ?", "Redirecting%"),
+            ("theme LIKE ?", "Loading%"),
         ]
         if _db_path:
             with _conn() as c:
@@ -911,6 +936,31 @@ class SignalsStore:
             theme = str(r.get("theme", ""))
             topic = str(r.get("suggested_topic", ""))
             excerpt = str(r.get("excerpt", ""))
+            # M3.18 SPA fallbacks + homepage titles genéricos
+            generic_titles = {
+                "Instagram", "TikTok - Make Your Day", "TikTok",
+                "Launch Meeting - Zoom", "Zoom", "Coming Soon",
+            }
+            spa = (
+                theme.startswith("JavaScript is not available")
+                or theme.startswith("We've detected that JavaScript")
+                or theme.startswith("Please enable JavaScript")
+                or excerpt.startswith("JavaScript is not available")
+                or excerpt.startswith("We've detected that JavaScript")
+                or theme.startswith("Log in to Instagram")
+                or theme.startswith("Log into Facebook")
+                or theme.startswith("Login • Instagram")
+                or theme.startswith("Page not found")
+                or theme.startswith("Page Not Found")
+                or theme.startswith("404")
+                or theme.startswith("Access denied")
+                or theme.startswith("Sign in - Google")
+                or theme.startswith("Sign In")
+                or theme.startswith("Iniciar sesión")
+                or theme.startswith("Redirecting")
+                or theme.startswith("Loading")
+                or theme in generic_titles
+            )
             return (
                 theme.startswith("Mock signal from ")
                 or theme.startswith("Mock single-source signal from ")
@@ -919,6 +969,7 @@ class SignalsStore:
                 or excerpt.startswith("Single item: ")
                 or theme.startswith("Tema recurrente en ")
                 or theme.startswith("Item de ")
+                or spa
             )
         _memory_signals[:] = [r for r in _memory_signals if not _is_mock(r)]
         return before - len(_memory_signals)

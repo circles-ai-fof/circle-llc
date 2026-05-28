@@ -1550,7 +1550,7 @@ def _polish_signal_for_display(r: Dict) -> Dict:
     """
     import re as _re
     placeholder_pat = _re.compile(
-        r"^(Mock signal from|Mock single-source signal from|Tema recurrente en|Item de|Detected pattern)",
+        r"^(Mock signal from|Mock single-source signal from|Tema recurrente en|Item de|Detected pattern|JavaScript is not available|We've detected that JavaScript|Please enable JavaScript|Log in to Instagram|Log into Facebook)",
         _re.IGNORECASE,
     )
     theme = str(r.get("theme") or "")

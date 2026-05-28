@@ -143,6 +143,29 @@ def test_classify_url_discards_wa_me_telegram():
     assert not sf.classify_url("https://t.me/somechannel")[0]
 
 
+def test_is_spa_fallback_detects_x_com_no_js_page():
+    """M3.18: el HTML que sirve x.com sin JS dice 'JavaScript is not available' —
+    no es contenido real, debemos descartarlo."""
+    sf = _fp()
+    # No tenemos _is_spa_fallback en file_parser; está en source_fetcher
+    import importlib
+    src_fetch = importlib.import_module("orchestrator.core.source_fetcher")
+    assert src_fetch._is_spa_fallback(
+        "JavaScript is not available.",
+        "We've detected that JavaScript is disabled in this browser.",
+    )
+    # Caso real reportado por el founder
+    assert src_fetch._is_spa_fallback(
+        "JavaScript is not available. We've detected that JavaScript is disabled in this...",
+        "JavaScript is not available. We've detected that JavaScript is disabled in this browser. Please enable JavaScript",
+    )
+    # Texto legítimo de un blog NO debe matchear
+    assert not src_fetch._is_spa_fallback(
+        "Cómo construir una startup",
+        "Guía paso a paso para founders LATAM en 2026",
+    )
+
+
 def test_filter_urls_by_quality_returns_kept_and_discarded():
     """End-to-end: a mixed list of WhatsApp-style URLs is correctly split."""
     sf = _fp()
