@@ -32,7 +32,20 @@ type Signal = {
   published_at: number | null;
   analysis: SignalAnalysis | null;
   item_titles: string[];
+  content_type: string;
   created_at: number;
+};
+
+const CONTENT_TYPE_META: Record<string, { icon: string; label: string; color: string }> = {
+  news:            { icon: "📰", label: "Noticia",      color: "#FFB800" },
+  blog:            { icon: "📝", label: "Blog",         color: "#A78BFA" },
+  research_paper:  { icon: "🔬", label: "Estudio",      color: "#00D4FF" },
+  tool_product:    { icon: "🛠️", label: "Producto",     color: "#00E5A0" },
+  course_tutorial: { icon: "🎓", label: "Curso",        color: "#FFB800" },
+  video_podcast:   { icon: "🎙️", label: "Video",        color: "#FF8C42" },
+  community:       { icon: "💬", label: "Foro",         color: "#A78BFA" },
+  corporate:       { icon: "🏢", label: "Corporativo",  color: "#94a3b8" },
+  unknown:         { icon: "❓", label: "Otro",         color: "#64748b" },
 };
 
 function fmtDate(ts: number | null | undefined): string {
@@ -204,6 +217,25 @@ export default function SignalDetailPage() {
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
           <span style={{ color: "#00D4FF", fontSize: 13, fontWeight: 600 }}>
             📡 {signal.source_name || signal.source_kind}
+            {(() => {
+              const meta = CONTENT_TYPE_META[signal.content_type] || CONTENT_TYPE_META.unknown;
+              return (
+                <span
+                  style={{
+                    marginLeft: 10,
+                    padding: "2px 8px",
+                    background: `${meta.color}15`,
+                    color: meta.color,
+                    border: `1px solid ${meta.color}40`,
+                    borderRadius: 4,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  {meta.icon} {meta.label}
+                </span>
+              );
+            })()}
           </span>
           <span style={{
             padding: "2px 6px", background: "rgba(0,212,255,0.1)", color: "#00D4FF",

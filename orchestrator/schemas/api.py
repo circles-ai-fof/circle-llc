@@ -418,6 +418,9 @@ class SignalItem(BaseModel):
     published_at: Optional[int] = None  # original publication ts of the source content
     analysis: Optional[Dict] = None  # IdeaAnalyzer output (M3.5), null until "Analizar" clicked
     item_titles: List[str] = Field(default_factory=list)  # Parallel to evidence_urls (M3.6)
+    # M4.3 — content type classification: news | blog | research_paper |
+    # tool_product | course_tutorial | video_podcast | community | corporate | unknown
+    content_type: str = Field(default="unknown")
     created_at: int
 
 

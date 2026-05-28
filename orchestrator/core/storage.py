@@ -202,6 +202,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
             logger.info("storage: migrated signals.published_at column")
         except sqlite3.OperationalError as e:
             logger.warning("storage: migration published_at failed: %s", e)
+    # M4.3 — content_type classification (heuristic, sin LLM)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
+    if "content_type" not in cols:
+        try:
+            conn.execute("ALTER TABLE signals ADD COLUMN content_type TEXT")
+            logger.info("storage: migrated signals.content_type column")
+        except sqlite3.OperationalError as e:
+            logger.warning("storage: migration content_type failed: %s", e)
     # M3.5: optional analysis JSON blob (idea_analyzer output) — nullable until
     # the founder clicks "Analizar" in the dashboard
     cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
@@ -713,13 +721,19 @@ class SignalsStore:
         titles_json = json.dumps(item_titles or [], ensure_ascii=False)
         # Compute trend_score: +1 per other signal with similar theme in last 7 days
         trend = self._compute_trend_score(theme, ts)
+        # M4.3 — auto-classify content type from URL + theme + excerpt
+        from .content_type import classify_content_type
+        cat, _, _ = classify_content_type(
+            evidence_urls[0] if evidence_urls else "",
+            theme, excerpt,
+        )
         if _db_path:
             with _conn() as c:
                 cur = c.execute(
                     "INSERT INTO signals(source_id,source_kind,theme,score,excerpt,"
-                    "evidence_json,suggested_topic,trend_score,published_at,item_titles_json,created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic, trend, published_at, titles_json, ts),
+                    "evidence_json,suggested_topic,trend_score,published_at,item_titles_json,content_type,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic, trend, published_at, titles_json, cat, ts),
                 )
                 return int(cur.lastrowid)
         new_id = max([s["id"] for s in _memory_signals], default=0) + 1
@@ -729,7 +743,7 @@ class SignalsStore:
             "evidence_json": ev_json, "suggested_topic": suggested_topic,
             "feedback": None, "promoted_run_id": None,
             "trend_score": trend, "published_at": published_at,
-            "item_titles_json": titles_json, "created_at": ts,
+            "item_titles_json": titles_json, "content_type": cat, "created_at": ts,
         })
         return new_id
 
@@ -780,7 +794,7 @@ class SignalsStore:
                 if like:
                     rows = c.execute(
                         "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                        "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,created_at "
+                        "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,content_type,created_at "
                         "FROM signals WHERE score>=? AND ("
                         " LOWER(theme) LIKE ? OR LOWER(excerpt) LIKE ? OR LOWER(suggested_topic) LIKE ?"
                         ") ORDER BY trend_score DESC, score DESC, created_at DESC LIMIT ?",
@@ -789,7 +803,7 @@ class SignalsStore:
                 else:
                     rows = c.execute(
                         "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                        "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,created_at "
+                        "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,content_type,created_at "
                         "FROM signals WHERE score>=? "
                         "ORDER BY trend_score DESC, score DESC, created_at DESC LIMIT ?",
                         (min_score, limit),
@@ -818,7 +832,7 @@ class SignalsStore:
             with _conn() as c:
                 row = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,content_type,created_at "
                     "FROM signals WHERE id=?", (signal_id,),
                 ).fetchone()
                 return _signal_row_to_dict(dict(row)) if row else None
@@ -839,7 +853,7 @@ class SignalsStore:
             with _conn() as c:
                 rows = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,content_type,created_at "
                     "FROM signals WHERE promoted_run_id IS NOT NULL "
                     "ORDER BY created_at DESC LIMIT ?",
                     (limit,),
@@ -1217,6 +1231,19 @@ def _signal_row_to_dict(row: Dict) -> Dict:
     # Ensure trend_score + published_at are always present (legacy rows may lack)
     row.setdefault("trend_score", 0)
     row.setdefault("published_at", None)
+    # M4.3 — content_type may be NULL (legacy rows). Compute on the fly if missing.
+    if not row.get("content_type"):
+        try:
+            from .content_type import classify_content_type
+            urls = row.get("evidence_urls", [])
+            cat, _, _ = classify_content_type(
+                urls[0] if urls else "",
+                row.get("theme", ""),
+                row.get("excerpt", ""),
+            )
+            row["content_type"] = cat
+        except Exception:  # noqa: BLE001
+            row["content_type"] = "unknown"
     return row
 
 

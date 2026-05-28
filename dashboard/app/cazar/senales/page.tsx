@@ -32,7 +32,21 @@ type Signal = {
   published_at: number | null;
   analysis: SignalAnalysis | null;
   item_titles: string[];
+  content_type: string;
   created_at: number;
+};
+
+// M4.3 — content type → icon + label es
+const CONTENT_TYPE_META: Record<string, { icon: string; label: string; color: string }> = {
+  news:            { icon: "📰", label: "Noticia",      color: "#FFB800" },
+  blog:            { icon: "📝", label: "Blog",         color: "#A78BFA" },
+  research_paper:  { icon: "🔬", label: "Estudio",      color: "#00D4FF" },
+  tool_product:    { icon: "🛠️", label: "Producto",     color: "#00E5A0" },
+  course_tutorial: { icon: "🎓", label: "Curso",        color: "#FFB800" },
+  video_podcast:   { icon: "🎙️", label: "Video",        color: "#FF8C42" },
+  community:       { icon: "💬", label: "Foro",         color: "#A78BFA" },
+  corporate:       { icon: "🏢", label: "Corporativo",  color: "#94a3b8" },
+  unknown:         { icon: "❓", label: "Otro",         color: "#64748b" },
 };
 
 type SortKey = "recent" | "score" | "trend" | "published";
@@ -865,6 +879,26 @@ function SignalCard({
             }}>
               {signal.source_kind}
             </span>
+            {/* M4.3 — content type badge */}
+            {(() => {
+              const meta = CONTENT_TYPE_META[signal.content_type] || CONTENT_TYPE_META.unknown;
+              return (
+                <span
+                  title={`Tipo de contenido: ${meta.label}`}
+                  style={{
+                    padding: "1px 8px",
+                    background: `${meta.color}15`,
+                    color: meta.color,
+                    border: `1px solid ${meta.color}40`,
+                    borderRadius: 4,
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
+                >
+                  {meta.icon} {meta.label}
+                </span>
+              );
+            })()}
           </div>
           {/* Badges row */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
