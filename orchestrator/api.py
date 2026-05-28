@@ -2101,12 +2101,15 @@ def signals_delete_by_type(
     body: SignalsDeleteByTypeRequest, request: Request
 ) -> SignalsDeleteByTypeResponse:
     """Founder request: 'debe existir la opción de eliminar las noticias por
-    tipo noticia, blog, estudio, etc.'
+    tipo noticia, blog, estudio, etc.' (M4.6) — extendido en M4.6b para
+    también borrar por fuente (source_kind / source_id).
 
-    Borra todas las señales con el content_type dado. Por defecto preserva
-    las que tienen feedback (👍/👎) o fueron promovidas, para no destruir
-    el historial de decisiones del founder. Si quiere borrarlo todo, pasar
-    keep_promoted=false y keep_feedback=false.
+    Combina los filtros con AND. Al menos uno de
+    {content_type, source_kind, source_id} debe estar presente.
+
+    Por defecto preserva las que tienen feedback (👍/👎) o fueron promovidas,
+    para no destruir el historial de decisiones del founder. Si quiere
+    borrarlo todo, pasar keep_promoted=false y keep_feedback=false.
 
     El body usa POST en lugar de DELETE para evitar el problema de CORS
     preflight para verbs no-CORS-simples y para soportar payload con
@@ -2114,25 +2117,44 @@ def signals_delete_by_type(
     """
     _require_user(request)
     from .core.storage import signals_store
+    # Validación: al menos un filtro
+    if body.content_type is None and body.source_kind is None and body.source_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Debes proveer al menos uno de: content_type, source_kind, source_id",
+        )
     # Contar las preservadas ANTES del delete para poder informar al usuario
     rows = signals_store.list(limit=10_000, min_score=0.0)
-    same_type = [
-        r for r in rows
-        if (
-            (body.content_type == "unknown" and r.get("content_type") in (None, "", "unknown"))
-            or r.get("content_type") == body.content_type
-        )
-    ]
-    kept_promoted = sum(1 for r in same_type if r.get("promoted_run_id"))
-    kept_feedback = sum(1 for r in same_type if r.get("feedback"))
-    deleted = signals_store.delete_by_content_type(
+
+    def _matches_filter(r: Dict) -> bool:
+        if body.content_type is not None:
+            ct = r.get("content_type")
+            if body.content_type == "unknown":
+                if ct not in (None, "", "unknown"):
+                    return False
+            elif ct != body.content_type:
+                return False
+        if body.source_kind is not None and r.get("source_kind") != body.source_kind:
+            return False
+        if body.source_id is not None and r.get("source_id") != body.source_id:
+            return False
+        return True
+
+    matching = [r for r in rows if _matches_filter(r)]
+    kept_promoted = sum(1 for r in matching if r.get("promoted_run_id"))
+    kept_feedback = sum(1 for r in matching if r.get("feedback"))
+    deleted = signals_store.delete_bulk(
         content_type=body.content_type,
+        source_kind=body.source_kind,
+        source_id=body.source_id,
         keep_promoted=body.keep_promoted,
         keep_feedback=body.keep_feedback,
     )
     return SignalsDeleteByTypeResponse(
         deleted=deleted,
         content_type=body.content_type,
+        source_kind=body.source_kind,
+        source_id=body.source_id,
         kept_promoted=kept_promoted if body.keep_promoted else 0,
         kept_feedback=kept_feedback if body.keep_feedback else 0,
     )

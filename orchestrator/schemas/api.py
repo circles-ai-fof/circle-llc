@@ -459,10 +459,24 @@ class SignalsCleanupMocksResponse(BaseModel):
 
 
 # M4.6 — bulk delete by content_type
+# M4.6b — extendido para aceptar también source_kind y source_id (opcionales)
 class SignalsDeleteByTypeRequest(BaseModel):
-    content_type: str = Field(
+    """Acepta cualquier combinación de filtros — al menos uno debe estar
+    presente. El endpoint valida que (content_type | source_kind | source_id)
+    no sean todos None."""
+    content_type: Optional[str] = Field(
+        default=None,
         pattern="^(news|blog|research_paper|tool_product|course_tutorial|video_podcast|community|corporate|unknown)$",
         description="Tipo de contenido a borrar (clasificación heurística de M4.3)",
+    )
+    source_kind: Optional[str] = Field(
+        default=None,
+        pattern="^(rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram|url)$",
+        description="Filtra por kind de fuente (M4.6b)",
+    )
+    source_id: Optional[int] = Field(
+        default=None,
+        description="Filtra por id puntual de fuente (M4.6b)",
     )
     keep_promoted: bool = Field(
         default=True,
@@ -476,9 +490,11 @@ class SignalsDeleteByTypeRequest(BaseModel):
 
 class SignalsDeleteByTypeResponse(BaseModel):
     deleted: int = Field(description="Cantidad de señales eliminadas")
-    content_type: str
-    kept_promoted: int = Field(description="Señales del mismo tipo preservadas por estar promovidas")
-    kept_feedback: int = Field(description="Señales del mismo tipo preservadas por tener feedback")
+    content_type: Optional[str] = None
+    source_kind: Optional[str] = None
+    source_id: Optional[int] = None
+    kept_promoted: int = Field(description="Señales del filtro preservadas por estar promovidas")
+    kept_feedback: int = Field(description="Señales del filtro preservadas por tener feedback")
 
 
 class SignalAnalysisItem(BaseModel):

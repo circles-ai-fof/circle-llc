@@ -1153,42 +1153,47 @@ class SignalsStore:
                 c.execute("DELETE FROM signals")
         _memory_signals.clear()
 
-    def delete_by_content_type(
+    def delete_bulk(
         self,
-        content_type: str,
+        content_type: Optional[str] = None,
+        source_kind: Optional[str] = None,
+        source_id: Optional[int] = None,
         keep_promoted: bool = True,
         keep_feedback: bool = True,
     ) -> int:
-        """M4.6 — Borra todas las señales cuyo content_type coincida.
+        """M4.6b — Borrado masivo de señales por content_type Y/O fuente.
 
-        Founder request: "debe existir la opción de eliminar las noticias por
-        tipo noticia, blog, estudio, etc."
+        Generaliza delete_by_content_type para aceptar también filtros por
+        source_kind ("rss", "url", "hn"...) y source_id (fuente puntual).
+        Al menos uno de los tres filtros debe ser no-None. Si se pasan
+        varios, se combinan con AND (intersección).
 
-        Por defecto preserva señales que el founder marcó (👍/👎) o promovió,
-        para no destruir historial valioso. El UI puede sobrescribir con
-        force=True si quiere borrar todo (incluye historial).
-
-        Args:
-            content_type: "news" / "blog" / "research_paper" / "tool_product" /
-                          "course_tutorial" / "video_podcast" / "community" /
-                          "corporate" / "unknown"
-            keep_promoted: si True, no borra signals con promoted_run_id
-            keep_feedback: si True, no borra signals con feedback up/down
+        Por defecto preserva promovidas y con feedback (igual que el método
+        anterior).
 
         Returns:
             count of deleted rows
         """
+        if content_type is None and source_kind is None and source_id is None:
+            raise ValueError("delete_bulk requires at least one filter")
         _ensure_init()
-        # 'unknown' incluye filas con content_type NULL (legacy pre-M4.3)
+
         if _db_path:
             with _conn() as c:
-                where = []
+                where: list = []
                 params: list = []
-                if content_type == "unknown":
-                    where.append("(content_type IS NULL OR content_type = 'unknown' OR content_type = '')")
-                else:
-                    where.append("content_type = ?")
-                    params.append(content_type)
+                if content_type is not None:
+                    if content_type == "unknown":
+                        where.append("(content_type IS NULL OR content_type = 'unknown' OR content_type = '')")
+                    else:
+                        where.append("content_type = ?")
+                        params.append(content_type)
+                if source_kind is not None:
+                    where.append("source_kind = ?")
+                    params.append(source_kind)
+                if source_id is not None:
+                    where.append("source_id = ?")
+                    params.append(source_id)
                 if keep_promoted:
                     where.append("promoted_run_id IS NULL")
                 if keep_feedback:
@@ -1200,12 +1205,16 @@ class SignalsStore:
         before = len(_memory_signals)
 
         def matches(r: Dict) -> bool:
-            ct = r.get("content_type")
-            if content_type == "unknown":
-                ct_match = ct is None or ct == "unknown" or ct == ""
-            else:
-                ct_match = ct == content_type
-            if not ct_match:
+            if content_type is not None:
+                ct = r.get("content_type")
+                if content_type == "unknown":
+                    if ct not in (None, "", "unknown"):
+                        return False
+                elif ct != content_type:
+                    return False
+            if source_kind is not None and r.get("source_kind") != source_kind:
+                return False
+            if source_id is not None and r.get("source_id") != source_id:
                 return False
             if keep_promoted and r.get("promoted_run_id"):
                 return False
@@ -1215,6 +1224,24 @@ class SignalsStore:
 
         _memory_signals[:] = [r for r in _memory_signals if not matches(r)]
         return before - len(_memory_signals)
+
+    def delete_by_content_type(
+        self,
+        content_type: str,
+        keep_promoted: bool = True,
+        keep_feedback: bool = True,
+    ) -> int:
+        """M4.6 — Borra todas las señales cuyo content_type coincida.
+
+        Compat: delega en delete_bulk (M4.6b) para no romper callers.
+        Founder request: "debe existir la opción de eliminar las noticias por
+        tipo noticia, blog, estudio, etc."
+        """
+        return self.delete_bulk(
+            content_type=content_type,
+            keep_promoted=keep_promoted,
+            keep_feedback=keep_feedback,
+        )
 
     def cleanup_stale(self, older_than_days: int = 30) -> int:
         """Delete signals older than `older_than_days` that have NO feedback AND

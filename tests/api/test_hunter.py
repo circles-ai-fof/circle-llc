@@ -384,6 +384,120 @@ def test_delete_signals_by_type_requires_auth(client):
     assert r.status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# M4.6b — extensión: borrar por source_kind / source_id
+# ---------------------------------------------------------------------------
+
+
+def test_delete_signals_by_source_kind(client, auth):
+    """Founder: además del tipo, borrar señales de una fuente específica
+    (p.ej. todas las RSS, o todas las del chat importado)."""
+    from orchestrator.core.storage import signals_store
+    signals_store.add(
+        source_id=None, source_kind="rss", theme="RSS to delete M46b",
+        score=0.5, excerpt="ex", evidence_urls=["https://example.com/rss-a"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    signals_store.add(
+        source_id=None, source_kind="hn", theme="HN to keep M46b",
+        score=0.5, excerpt="ex", evidence_urls=["https://news.ycombinator.com/item?id=1"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth, json={"source_kind": "rss"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["source_kind"] == "rss"
+    assert data["deleted"] >= 1
+    listed = client.get(
+        "/api/v1/signals?min_score=0.0&limit=500", headers=auth
+    ).json()["items"]
+    themes = {it["theme"] for it in listed}
+    assert "RSS to delete M46b" not in themes
+    assert "HN to keep M46b" in themes
+
+
+def test_delete_signals_by_source_id(client, auth):
+    from orchestrator.core.storage import signals_store, sources_store
+    sid = sources_store.add(kind="rss", target="https://example.com/feed", name="Test M46b")
+    signals_store.add(
+        source_id=sid, source_kind="rss", theme="Signal from src M46b",
+        score=0.5, excerpt="ex", evidence_urls=["https://example.com/a"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    signals_store.add(
+        source_id=None, source_kind="rss", theme="Signal without src M46b",
+        score=0.5, excerpt="ex", evidence_urls=["https://example.com/b"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth, json={"source_id": sid},
+    )
+    assert r.status_code == 200
+    listed = client.get(
+        "/api/v1/signals?min_score=0.0&limit=500", headers=auth
+    ).json()["items"]
+    themes = {it["theme"] for it in listed}
+    assert "Signal from src M46b" not in themes
+    assert "Signal without src M46b" in themes
+
+
+def test_delete_signals_by_type_and_source_kind_combined(client, auth):
+    """AND de filtros: borrar sólo las NOTICIAS DE RSS — no las noticias de HN
+    ni las herramientas de RSS."""
+    from orchestrator.core.storage import signals_store
+    signals_store.add(
+        source_id=None, source_kind="rss", theme="BBC via RSS M46b",
+        score=0.5, excerpt="ex",
+        evidence_urls=["https://www.bbc.com/news/article-and-m46b"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    signals_store.add(
+        source_id=None, source_kind="hn", theme="BBC via HN M46b",
+        score=0.5, excerpt="ex",
+        evidence_urls=["https://www.bbc.com/news/article-and-hn-m46b"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    signals_store.add(
+        source_id=None, source_kind="rss", theme="GH via RSS M46b",
+        score=0.5, excerpt="ex",
+        evidence_urls=["https://github.com/foo/bar-and-m46b"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth, json={"content_type": "news", "source_kind": "rss"},
+    )
+    assert r.status_code == 200
+    listed = client.get(
+        "/api/v1/signals?min_score=0.0&limit=500", headers=auth
+    ).json()["items"]
+    themes = {it["theme"] for it in listed}
+    assert "BBC via RSS M46b" not in themes  # borrada (news + rss)
+    assert "BBC via HN M46b" in themes        # conservada (news pero NO rss)
+    assert "GH via RSS M46b" in themes        # conservada (rss pero NO news)
+
+
+def test_delete_signals_by_type_rejects_no_filter(client, auth):
+    """Si no se pasa NINGÚN filtro, retorna 422 — no permitimos borrar todo."""
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth, json={},
+    )
+    assert r.status_code == 422
+
+
+def test_delete_signals_by_source_kind_rejects_invalid(client, auth):
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth, json={"source_kind": "banana"},
+    )
+    assert r.status_code == 422
+
+
 def test_check_platform_detects_youtube_url(client, auth):
     r = client.post(
         "/api/v1/sources/check-platform",

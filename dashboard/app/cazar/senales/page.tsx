@@ -237,33 +237,49 @@ export default function SenalesPage() {
   // M4.6 — borrar todas las señales de un content_type (con preservación de
   // promovidas + con feedback por defecto). Founder request: "debe existir la
   // opción de eliminar las noticias por tipo".
+  // M4.6b — extendido para aceptar también source_kind como filtro independiente.
   const [deletingType, setDeletingType] = useState<boolean>(false);
-  const deleteByType = async (forceAll: boolean = false) => {
-    if (!contentTypeFilter) {
-      alert("Selecciona primero un tipo en el filtro 'Tipo' para indicar qué borrar.");
+  const deleteBulk = async (
+    opts: { content_type?: string; source_kind?: string; force?: boolean }
+  ) => {
+    const { content_type, source_kind, force } = opts;
+    if (!content_type && !source_kind) {
+      alert("Debes seleccionar un filtro de Tipo o de Fuente antes de borrar.");
       return;
     }
-    const meta = CONTENT_TYPE_META[contentTypeFilter] || CONTENT_TYPE_META.unknown;
-    const msg = forceAll
-      ? `¿Borrar TODAS las señales de tipo "${meta.label}", incluyendo las marcadas con 👍/👎 o promovidas? Esta acción no se puede deshacer.`
-      : `¿Borrar todas las señales de tipo "${meta.label}"? Conservaremos las que tienen feedback (👍/👎) o ya fueron promovidas a una idea, como historial.`;
+    // Construir etiqueta humana para el confirm
+    const parts: string[] = [];
+    if (content_type) {
+      const meta = CONTENT_TYPE_META[content_type] || CONTENT_TYPE_META.unknown;
+      parts.push(`tipo "${meta.label}"`);
+    }
+    if (source_kind) {
+      const sk = SOURCE_KINDS.find((k) => k.value === source_kind)?.label || source_kind;
+      parts.push(`fuente "${sk}"`);
+    }
+    const label = parts.join(" + ");
+    const msg = force
+      ? `¿Borrar TODAS las señales de ${label}, incluyendo las marcadas con 👍/👎 o promovidas? Esta acción NO se puede deshacer.`
+      : `¿Borrar todas las señales de ${label}? Conservaremos las que tienen feedback (👍/👎) o ya fueron promovidas a una idea, como historial.`;
     if (!confirm(msg)) return;
     if (deletingType) return;
     setDeletingType(true);
     try {
+      const body: Record<string, unknown> = {
+        keep_promoted: !force,
+        keep_feedback: !force,
+      };
+      if (content_type) body.content_type = content_type;
+      if (source_kind) body.source_kind = source_kind;
       const r = await authFetch("/api/v1/signals/delete-by-type", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content_type: contentTypeFilter,
-          keep_promoted: !forceAll,
-          keep_feedback: !forceAll,
-        }),
+        body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
       alert(
-        `✓ Borradas ${d.deleted} señales de tipo "${meta.label}".\n` +
+        `✓ Borradas ${d.deleted} señales (${label}).\n` +
         (d.kept_promoted > 0 ? `Conservadas por estar promovidas: ${d.kept_promoted}\n` : "") +
         (d.kept_feedback > 0 ? `Conservadas por tener feedback: ${d.kept_feedback}\n` : "")
       );
@@ -274,6 +290,10 @@ export default function SenalesPage() {
       setDeletingType(false);
     }
   };
+
+  // Alias compat: el botón existente del filtro de tipo llama esta función.
+  const deleteByType = (forceAll: boolean = false) =>
+    deleteBulk({ content_type: contentTypeFilter, force: forceAll });
 
   const cleanupMocks = async () => {
     if (
@@ -543,6 +563,35 @@ export default function SenalesPage() {
             </option>
           ))}
         </select>
+
+        {/* M4.6b — botón contextual de borrar señales por kind de fuente */}
+        {kindFilter && (
+          <button
+            onClick={() => deleteBulk({ source_kind: kindFilter, force: false })}
+            disabled={deletingType}
+            title={`Borra todas las señales de tipo de fuente ${kindFilter.toUpperCase()}. Shift+click fuerza incluir promovidas y con feedback.`}
+            onMouseDown={(e) => {
+              if (e.shiftKey && !deletingType) {
+                e.preventDefault();
+                deleteBulk({ source_kind: kindFilter, force: true });
+              }
+            }}
+            style={{
+              padding: "4px 10px",
+              background: "transparent",
+              color: deletingType ? "#64748b" : "#FF4444",
+              border: `1px solid ${deletingType ? "#1e293b" : "rgba(255,68,68,0.5)"}`,
+              borderRadius: 6,
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: deletingType ? "wait" : "pointer",
+            }}
+          >
+            {deletingType
+              ? "Borrando…"
+              : `🗑️ Borrar ${SOURCE_KINDS.find((k) => k.value === kindFilter)?.label || kindFilter}`}
+          </button>
+        )}
 
         {/* M4.5 — filtro por tipo de contenido clasificado */}
         <label style={{ color: "#94a3b8", fontSize: 12 }}>Tipo:</label>
