@@ -458,6 +458,29 @@ class SignalsCleanupMocksResponse(BaseModel):
     deleted: int = Field(description="Mock-mode signals removed (theme started with 'Mock signal from')")
 
 
+# M4.6 — bulk delete by content_type
+class SignalsDeleteByTypeRequest(BaseModel):
+    content_type: str = Field(
+        pattern="^(news|blog|research_paper|tool_product|course_tutorial|video_podcast|community|corporate|unknown)$",
+        description="Tipo de contenido a borrar (clasificación heurística de M4.3)",
+    )
+    keep_promoted: bool = Field(
+        default=True,
+        description="Si True, conserva señales promovidas a un run (historial)",
+    )
+    keep_feedback: bool = Field(
+        default=True,
+        description="Si True, conserva señales con 👍/👎 (decisión del founder)",
+    )
+
+
+class SignalsDeleteByTypeResponse(BaseModel):
+    deleted: int = Field(description="Cantidad de señales eliminadas")
+    content_type: str
+    kept_promoted: int = Field(description="Señales del mismo tipo preservadas por estar promovidas")
+    kept_feedback: int = Field(description="Señales del mismo tipo preservadas por tener feedback")
+
+
 class SignalAnalysisItem(BaseModel):
     """Output of IdeaAnalyzer — attached to a signal so the founder can
     decide whether to spend $0.06 promoting it to a full workflow run."""

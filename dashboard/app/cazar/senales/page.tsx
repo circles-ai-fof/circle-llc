@@ -234,6 +234,47 @@ export default function SenalesPage() {
     }
   };
 
+  // M4.6 — borrar todas las señales de un content_type (con preservación de
+  // promovidas + con feedback por defecto). Founder request: "debe existir la
+  // opción de eliminar las noticias por tipo".
+  const [deletingType, setDeletingType] = useState<boolean>(false);
+  const deleteByType = async (forceAll: boolean = false) => {
+    if (!contentTypeFilter) {
+      alert("Selecciona primero un tipo en el filtro 'Tipo' para indicar qué borrar.");
+      return;
+    }
+    const meta = CONTENT_TYPE_META[contentTypeFilter] || CONTENT_TYPE_META.unknown;
+    const msg = forceAll
+      ? `¿Borrar TODAS las señales de tipo "${meta.label}", incluyendo las marcadas con 👍/👎 o promovidas? Esta acción no se puede deshacer.`
+      : `¿Borrar todas las señales de tipo "${meta.label}"? Conservaremos las que tienen feedback (👍/👎) o ya fueron promovidas a una idea, como historial.`;
+    if (!confirm(msg)) return;
+    if (deletingType) return;
+    setDeletingType(true);
+    try {
+      const r = await authFetch("/api/v1/signals/delete-by-type", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content_type: contentTypeFilter,
+          keep_promoted: !forceAll,
+          keep_feedback: !forceAll,
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      alert(
+        `✓ Borradas ${d.deleted} señales de tipo "${meta.label}".\n` +
+        (d.kept_promoted > 0 ? `Conservadas por estar promovidas: ${d.kept_promoted}\n` : "") +
+        (d.kept_feedback > 0 ? `Conservadas por tener feedback: ${d.kept_feedback}\n` : "")
+      );
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeletingType(false);
+    }
+  };
+
   const cleanupMocks = async () => {
     if (
       !confirm(
@@ -521,6 +562,36 @@ export default function SenalesPage() {
             </option>
           ))}
         </select>
+
+        {/* M4.6 — botón contextual de borrar por tipo (sólo cuando hay filtro) */}
+        {contentTypeFilter && (
+          <button
+            onClick={() => deleteByType(false)}
+            disabled={deletingType}
+            title={`Borra todas las señales del tipo seleccionado. Conserva las marcadas con 👍/👎 o promovidas. Mantén Shift+click para forzar TODO.`}
+            onMouseDown={(e) => {
+              // Shift+click = force=true
+              if (e.shiftKey && !deletingType) {
+                e.preventDefault();
+                deleteByType(true);
+              }
+            }}
+            style={{
+              padding: "4px 10px",
+              background: "transparent",
+              color: deletingType ? "#64748b" : "#FF4444",
+              border: `1px solid ${deletingType ? "#1e293b" : "rgba(255,68,68,0.5)"}`,
+              borderRadius: 6,
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: deletingType ? "wait" : "pointer",
+            }}
+          >
+            {deletingType
+              ? "Borrando…"
+              : `🗑️ Borrar ${CONTENT_TYPE_META[contentTypeFilter]?.label || contentTypeFilter}`}
+          </button>
+        )}
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button

@@ -64,6 +64,8 @@ from .schemas.api import (
     SignalFeedback,
     SignalItem,
     SignalsCleanupMocksResponse,
+    SignalsDeleteByTypeRequest,
+    SignalsDeleteByTypeResponse,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2086,6 +2088,53 @@ def signals_cleanup(request: Request, older_than_days: int = 30) -> SignalsClean
         deleted=deleted,
         older_than_days=older_than_days,
         survivors_kept_with_feedback=survivors,
+    )
+
+
+@app.post(
+    "/api/v1/signals/delete-by-type",
+    response_model=SignalsDeleteByTypeResponse,
+    summary="M4.6 — Bulk delete signals by classified content_type (news/blog/...)",
+    tags=["hunter"],
+)
+def signals_delete_by_type(
+    body: SignalsDeleteByTypeRequest, request: Request
+) -> SignalsDeleteByTypeResponse:
+    """Founder request: 'debe existir la opción de eliminar las noticias por
+    tipo noticia, blog, estudio, etc.'
+
+    Borra todas las señales con el content_type dado. Por defecto preserva
+    las que tienen feedback (👍/👎) o fueron promovidas, para no destruir
+    el historial de decisiones del founder. Si quiere borrarlo todo, pasar
+    keep_promoted=false y keep_feedback=false.
+
+    El body usa POST en lugar de DELETE para evitar el problema de CORS
+    preflight para verbs no-CORS-simples y para soportar payload con
+    parámetros.
+    """
+    _require_user(request)
+    from .core.storage import signals_store
+    # Contar las preservadas ANTES del delete para poder informar al usuario
+    rows = signals_store.list(limit=10_000, min_score=0.0)
+    same_type = [
+        r for r in rows
+        if (
+            (body.content_type == "unknown" and r.get("content_type") in (None, "", "unknown"))
+            or r.get("content_type") == body.content_type
+        )
+    ]
+    kept_promoted = sum(1 for r in same_type if r.get("promoted_run_id"))
+    kept_feedback = sum(1 for r in same_type if r.get("feedback"))
+    deleted = signals_store.delete_by_content_type(
+        content_type=body.content_type,
+        keep_promoted=body.keep_promoted,
+        keep_feedback=body.keep_feedback,
+    )
+    return SignalsDeleteByTypeResponse(
+        deleted=deleted,
+        content_type=body.content_type,
+        kept_promoted=kept_promoted if body.keep_promoted else 0,
+        kept_feedback=kept_feedback if body.keep_feedback else 0,
     )
 
 

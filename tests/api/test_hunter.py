@@ -259,6 +259,131 @@ def test_signals_filter_content_type_rejects_invalid(client, auth):
     assert r.status_code == 422
 
 
+# ---------------------------------------------------------------------------
+# M4.6 — bulk delete signals by content_type (founder request M4.6)
+# ---------------------------------------------------------------------------
+
+
+def test_delete_signals_by_type_news_preserves_other_types(client, auth):
+    """Founder: 'debe existir la opción de eliminar las noticias por tipo'."""
+    from orchestrator.core.storage import signals_store
+    sid_news = signals_store.add(
+        source_id=None, source_kind="rss", theme="BBC headline M46-news",
+        score=0.7, excerpt="news ex",
+        evidence_urls=["https://www.bbc.com/news/article-m46"],
+        suggested_topic="topic", item_titles=["t"],
+    )
+    sid_tool = signals_store.add(
+        source_id=None, source_kind="rss", theme="GitHub repo M46-tool",
+        score=0.7, excerpt="tool ex",
+        evidence_urls=["https://github.com/foo/bar-m46"],
+        suggested_topic="topic", item_titles=["t"],
+    )
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth, json={"content_type": "news"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["content_type"] == "news"
+    assert data["deleted"] >= 1
+    # La news debe estar borrada, el tool_product NO
+    listed = client.get(
+        "/api/v1/signals?min_score=0.0&limit=500", headers=auth
+    ).json()["items"]
+    themes = {it["theme"] for it in listed}
+    assert "BBC headline M46-news" not in themes
+    assert "GitHub repo M46-tool" in themes
+    # Cleanup
+    _ = sid_news, sid_tool
+
+
+def test_delete_signals_by_type_preserves_promoted_by_default(client, auth):
+    """No queremos romper el historial: si el founder promovió una noticia,
+    no la borramos al hacer 'borrar todas las noticias'."""
+    from orchestrator.core.storage import signals_store
+    sid = signals_store.add(
+        source_id=None, source_kind="rss", theme="BBC promoted M46",
+        score=0.9, excerpt="ex",
+        evidence_urls=["https://www.bbc.com/news/article-promoted-m46"],
+        suggested_topic="topic", item_titles=["t"],
+    )
+    # Marcar como promovida directamente en storage para no depender del LLM
+    signals_store.mark_promoted(sid, run_id="run-fake-uuid-m46")
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth, json={"content_type": "news", "keep_promoted": True},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    # La señal promovida NO debe haber sido borrada
+    listed = client.get(
+        "/api/v1/signals?min_score=0.0&limit=500", headers=auth
+    ).json()["items"]
+    themes = {it["theme"] for it in listed}
+    assert "BBC promoted M46" in themes
+    assert data["kept_promoted"] >= 1
+
+
+def test_delete_signals_by_type_preserves_feedback_by_default(client, auth):
+    from orchestrator.core.storage import signals_store
+    sid = signals_store.add(
+        source_id=None, source_kind="rss", theme="BBC liked M46",
+        score=0.5, excerpt="ex",
+        evidence_urls=["https://www.bbc.com/news/article-liked-m46"],
+        suggested_topic="topic", item_titles=["t"],
+    )
+    signals_store.set_feedback(sid, "up")
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth, json={"content_type": "news", "keep_feedback": True},
+    )
+    assert r.status_code == 200
+    listed = client.get(
+        "/api/v1/signals?min_score=0.0&limit=500", headers=auth
+    ).json()["items"]
+    themes = {it["theme"] for it in listed}
+    assert "BBC liked M46" in themes
+
+
+def test_delete_signals_by_type_force_includes_feedback(client, auth):
+    """Con keep_feedback=False y keep_promoted=False, borramos TODO el tipo."""
+    from orchestrator.core.storage import signals_store
+    sid = signals_store.add(
+        source_id=None, source_kind="rss", theme="BBC liked force M46",
+        score=0.5, excerpt="ex",
+        evidence_urls=["https://www.bbc.com/news/article-force-m46"],
+        suggested_topic="topic", item_titles=["t"],
+    )
+    signals_store.set_feedback(sid, "up")
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth,
+        json={"content_type": "news", "keep_promoted": False, "keep_feedback": False},
+    )
+    assert r.status_code == 200
+    listed = client.get(
+        "/api/v1/signals?min_score=0.0&limit=500", headers=auth
+    ).json()["items"]
+    themes = {it["theme"] for it in listed}
+    assert "BBC liked force M46" not in themes
+
+
+def test_delete_signals_by_type_rejects_invalid(client, auth):
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth, json={"content_type": "banana"},
+    )
+    assert r.status_code == 422
+
+
+def test_delete_signals_by_type_requires_auth(client):
+    r = client.post(
+        "/api/v1/signals/delete-by-type", json={"content_type": "news"}
+    )
+    assert r.status_code == 401
+
+
 def test_check_platform_detects_youtube_url(client, auth):
     r = client.post(
         "/api/v1/sources/check-platform",

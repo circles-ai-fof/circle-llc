@@ -1153,6 +1153,69 @@ class SignalsStore:
                 c.execute("DELETE FROM signals")
         _memory_signals.clear()
 
+    def delete_by_content_type(
+        self,
+        content_type: str,
+        keep_promoted: bool = True,
+        keep_feedback: bool = True,
+    ) -> int:
+        """M4.6 — Borra todas las señales cuyo content_type coincida.
+
+        Founder request: "debe existir la opción de eliminar las noticias por
+        tipo noticia, blog, estudio, etc."
+
+        Por defecto preserva señales que el founder marcó (👍/👎) o promovió,
+        para no destruir historial valioso. El UI puede sobrescribir con
+        force=True si quiere borrar todo (incluye historial).
+
+        Args:
+            content_type: "news" / "blog" / "research_paper" / "tool_product" /
+                          "course_tutorial" / "video_podcast" / "community" /
+                          "corporate" / "unknown"
+            keep_promoted: si True, no borra signals con promoted_run_id
+            keep_feedback: si True, no borra signals con feedback up/down
+
+        Returns:
+            count of deleted rows
+        """
+        _ensure_init()
+        # 'unknown' incluye filas con content_type NULL (legacy pre-M4.3)
+        if _db_path:
+            with _conn() as c:
+                where = []
+                params: list = []
+                if content_type == "unknown":
+                    where.append("(content_type IS NULL OR content_type = 'unknown' OR content_type = '')")
+                else:
+                    where.append("content_type = ?")
+                    params.append(content_type)
+                if keep_promoted:
+                    where.append("promoted_run_id IS NULL")
+                if keep_feedback:
+                    where.append("feedback IS NULL")
+                sql = "DELETE FROM signals WHERE " + " AND ".join(where)
+                cur = c.execute(sql, tuple(params))
+                return int(cur.rowcount or 0)
+        # In-memory fallback
+        before = len(_memory_signals)
+
+        def matches(r: Dict) -> bool:
+            ct = r.get("content_type")
+            if content_type == "unknown":
+                ct_match = ct is None or ct == "unknown" or ct == ""
+            else:
+                ct_match = ct == content_type
+            if not ct_match:
+                return False
+            if keep_promoted and r.get("promoted_run_id"):
+                return False
+            if keep_feedback and r.get("feedback"):
+                return False
+            return True
+
+        _memory_signals[:] = [r for r in _memory_signals if not matches(r)]
+        return before - len(_memory_signals)
+
     def cleanup_stale(self, older_than_days: int = 30) -> int:
         """Delete signals older than `older_than_days` that have NO feedback AND
         were NOT promoted. Returns count of deleted rows.
