@@ -326,9 +326,20 @@ def _serialize_run(run) -> RunGateResponse:  # noqa: ANN001  (EvidenceGateRun)
     tags=["meta"],
 )
 def health() -> HealthResponse:
-    """Returns API version, mode (live/mock), and workflow name."""
+    """Returns API version, mode (live/mock), and workflow name.
+
+    M3.12: also reports persistent_storage, autoscan_enabled, server_time —
+    useful for the founder to verify "is this prod or local?" + "is data
+    being persisted?" + "what time does the server think it is?".
+    """
     mode = "mock" if _workflow._mock_mode else "live"
-    return HealthResponse(version=API_VERSION, mode=mode)
+    return HealthResponse(
+        version=API_VERSION,
+        mode=mode,
+        persistent_storage=bool(os.getenv("DATABASE_PATH")),
+        autoscan_enabled=bool(_autoscan_state.get("enabled")),
+        server_time=int(time.time()),
+    )
 
 
 @app.get(

@@ -510,6 +510,10 @@ class HealthResponse(BaseModel):
     version: str
     mode: str = Field(description='"live" | "mock"')
     workflow: str = "EvidenceGateWorkflow"
+    # M3.12 extras for operational visibility (still safe to expose publicly)
+    persistent_storage: bool = Field(default=False, description="True if DATABASE_PATH is set (runs/signals survive restart)")
+    autoscan_enabled: bool = Field(default=False, description="True if the background scan loop is active")
+    server_time: int = Field(default=0, description="Server unix timestamp — useful to detect clock skew")
 
 
 # ---------------------------------------------------------------------------
