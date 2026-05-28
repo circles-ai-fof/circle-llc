@@ -435,12 +435,27 @@ class LinksLogResponse(BaseModel):
     items: List[LinkLogItem]
 
 
+class FileImportDiscardedItem(BaseModel):
+    """URL descarted by the quality filter (M3.15)."""
+    url: str
+    reason: str
+
+
 class FileImportResponse(BaseModel):
     filename: str
     urls_found: int
     urls_added: int
     sources_created: int
     skipped_duplicates: int
+    # M3.15 — filtro de calidad
+    urls_discarded_as_noise: int = Field(
+        default=0,
+        description="URLs descartadas por ser ruido (status de X/IG, llamadas, perfiles personales)",
+    )
+    discarded_samples: List[FileImportDiscardedItem] = Field(
+        default_factory=list,
+        description="Hasta 10 ejemplos de URLs descartadas con su razón (para transparencia)",
+    )
 
 
 class AnalyzeBatchRequest(BaseModel):

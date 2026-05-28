@@ -363,9 +363,23 @@ function FileImportSection({ onImported }: { onImported: () => void }) {
         throw new Error(b.detail || `HTTP ${r.status}`);
       }
       const d = await r.json();
-      setResult(
-        `✓ ${d.urls_found} URLs encontradas · ${d.sources_created} fuentes nuevas creadas · ${d.skipped_duplicates} duplicadas omitidas`,
-      );
+      // M3.15: el filtro de calidad descarta status de X/IG, reels, etc.
+      // Mostramos el resumen + qué se descartó con razón para que el founder
+      // entienda por qué algunas URLs no se guardaron.
+      const noiseCount = d.urls_discarded_as_noise || 0;
+      const samples = (d.discarded_samples || []) as { url: string; reason: string }[];
+      let msg = `✓ ${d.urls_found} URLs encontradas · ${d.sources_created} fuentes nuevas · ${d.skipped_duplicates} duplicadas`;
+      if (noiseCount > 0) {
+        msg += `\n🧹 ${noiseCount} descartadas como ruido (status de X/Instagram/llamadas):`;
+        for (const s of samples.slice(0, 5)) {
+          const shortUrl = s.url.length > 60 ? s.url.slice(0, 57) + "…" : s.url;
+          msg += `\n  • ${shortUrl} → ${s.reason}`;
+        }
+        if (samples.length > 5) {
+          msg += `\n  …y ${samples.length - 5} más`;
+        }
+      }
+      setResult(msg);
       onImported();
     } catch (e2) {
       setError(e2 instanceof Error ? e2.message : String(e2));
@@ -408,7 +422,21 @@ function FileImportSection({ onImported }: { onImported: () => void }) {
         {uploading && <span style={{ color: "#00D4FF", fontSize: 12 }}>Procesando…</span>}
       </div>
       {result && (
-        <div style={{ color: "#00E5A0", fontSize: 13, marginTop: 10 }}>{result}</div>
+        <div
+          style={{
+            color: "#00E5A0",
+            fontSize: 13,
+            marginTop: 10,
+            whiteSpace: "pre-line",
+            lineHeight: 1.55,
+            background: "#0B0F1A",
+            padding: "10px 12px",
+            borderRadius: 6,
+            border: "1px solid rgba(0,229,160,0.2)",
+          }}
+        >
+          {result}
+        </div>
       )}
       {error && (
         <div style={{ color: "#FF4444", fontSize: 13, marginTop: 10 }}>✗ {error}</div>

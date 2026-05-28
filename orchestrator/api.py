@@ -1951,7 +1951,7 @@ async def import_file(request: Request, file: UploadFile = File(...)) -> FileImp
     Triggers no LLM calls — analysis is on-demand via /api/v1/links/analyze.
     """
     _require_user(request)
-    from .core.file_parser import extract_urls, parse_file
+    from .core.file_parser import extract_urls, filter_urls_by_quality, parse_file
     from .core.storage import links_log_store, sources_store
 
     filename = (file.filename or "upload").strip()
@@ -1977,7 +1977,14 @@ async def import_file(request: Request, file: UploadFile = File(...)) -> FileImp
             detail="No se pudo extraer texto del archivo (¿requiere python-docx para .docx?)",
         )
 
-    urls = extract_urls(text)
+    all_urls = extract_urls(text)
+    # M3.15 — filtro de calidad: descarta status de X/IG, reels, perfiles,
+    # llamadas, etc. ANTES de guardar. Founder pidió: "filtrar solo las que
+    # puedan ser ideas, identificar qué es noticia y qué no, subir solo
+    # noticias que me sugieres". Lo hacemos con heurísticas (sin LLM, gratis)
+    # y reportamos qué se descartó con razón.
+    urls, discarded = filter_urls_by_quality(all_urls)
+
     urls_added = 0
     sources_created = 0
     skipped = 0
@@ -2004,10 +2011,14 @@ async def import_file(request: Request, file: UploadFile = File(...)) -> FileImp
 
     return FileImportResponse(
         filename=filename,
-        urls_found=len(urls),
+        urls_found=len(all_urls),
         urls_added=urls_added,
         sources_created=sources_created,
         skipped_duplicates=skipped,
+        urls_discarded_as_noise=len(discarded),
+        discarded_samples=[
+            {"url": d["url"], "reason": d["reason"]} for d in discarded[:10]
+        ],
     )
 
 

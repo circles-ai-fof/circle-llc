@@ -123,13 +123,44 @@ def test_import_file_extracts_urls_from_whatsapp_chat(client, auth):
 
 
 def test_import_file_dedups_urls(client, auth):
-    """Same URL twice in the file is only added once."""
-    text = "first https://x.com, second mention https://x.com, third https://y.com"
+    """Same URL twice in the file is only added once.
+
+    M3.15: uses domains the quality filter keeps (real .com sites, not
+    social-media noise like x.com/status or instagram.com/reel).
+    """
+    text = (
+        "first https://runachay.com, "
+        "second mention https://runachay.com, "
+        "third https://eventifica.com"
+    )
     files = {"file": ("notes.txt", io.BytesIO(text.encode()), "text/plain")}
     r = client.post("/api/v1/sources/import-file", files=files, headers=auth)
     data = r.json()
     assert data["urls_found"] == 2
     assert data["sources_created"] == 2
+
+
+def test_import_file_filters_social_media_noise(client, auth):
+    """M3.15: x.com/status, instagram.com/reel are discarded with reason."""
+    text = (
+        "Look at this https://x.com/foo/status/123\n"
+        "And this https://www.instagram.com/reel/abc\n"
+        "But this is real: https://runachay.com/\n"
+        "Phone https://wa.me/521234"
+    )
+    files = {"file": ("chat.txt", io.BytesIO(text.encode()), "text/plain")}
+    r = client.post("/api/v1/sources/import-file", files=files, headers=auth)
+    assert r.status_code == 201
+    data = r.json()
+    assert data["urls_found"] == 4
+    assert data["sources_created"] == 1  # only runachay.com survives
+    assert data["urls_discarded_as_noise"] == 3
+    # discarded_samples must include the actual URLs + reasons
+    assert len(data["discarded_samples"]) == 3
+    discarded_urls = {d["url"] for d in data["discarded_samples"]}
+    assert "https://x.com/foo/status/123" in discarded_urls
+    assert "https://www.instagram.com/reel/abc" in discarded_urls
+    assert "https://wa.me/521234" in discarded_urls
 
 
 def test_import_file_rejects_disallowed_extension(client, auth):
