@@ -159,8 +159,38 @@ def _truncate(s: str, n: int) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _meta_content(html: str, *names: str) -> Optional[str]:
+    """Extract <meta name|property="X" content="Y"> for any of the given names.
+
+    Order matters: prefer og: / twitter: tags (curated by the publisher).
+    """
+    for name in names:
+        # property="og:title" or name="description" — both shapes
+        pattern = (
+            rf'<meta\s+(?:[^>]*?\s)?(?:property|name)\s*=\s*["\']{re.escape(name)}["\']'
+            rf'[^>]*?\scontent\s*=\s*["\']([^"\']+)["\']'
+        )
+        m = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
+        if m:
+            return _html_to_text(m.group(1))
+        # Reversed order: content first, then property
+        pattern2 = (
+            rf'<meta\s+(?:[^>]*?\s)?content\s*=\s*["\']([^"\']+)["\']'
+            rf'[^>]*?\s(?:property|name)\s*=\s*["\']{re.escape(name)}["\']'
+        )
+        m2 = re.search(pattern2, html, re.IGNORECASE | re.DOTALL)
+        if m2:
+            return _html_to_text(m2.group(1))
+    return None
+
+
 def fetch_url(url: str) -> Optional[FetchedItem]:
-    """Fetch one URL and extract plaintext. Returns None on error."""
+    """Fetch one URL and extract plaintext + structured metadata.
+
+    M3.17: prefers OpenGraph / Twitter card meta tags for title and summary
+    (publishers curate these for sharing — more informative than parsing the
+    body). Falls back to <title> + body text if meta tags are missing.
+    """
     raw = _http_get(url)
     if raw is None:
         return None
@@ -168,14 +198,22 @@ def fetch_url(url: str) -> Optional[FetchedItem]:
         html = raw.decode("utf-8", errors="replace")
     except Exception:  # noqa: BLE001
         return None
-    text = _html_to_text(html)
-    if not text:
-        return None
-    # Pick the longest <title> for a name (very crude — good enough)
+
+    # Title: prefer og:title → twitter:title → <title>
+    og_title = _meta_content(html, "og:title", "twitter:title")
     title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
-    title = _html_to_text(title_match.group(1)) if title_match else _truncate(text, 80)
+    title_tag = _html_to_text(title_match.group(1)) if title_match else None
+    title = og_title or title_tag or url
+
+    # Summary: prefer og:description → twitter:description → meta description → body
+    og_desc = _meta_content(
+        html, "og:description", "twitter:description", "description"
+    )
+    text = _html_to_text(html)
     body = _truncate(text, MAX_CHARS_PER_SOURCE)
-    summary = _truncate(text, 400)
+    summary = og_desc or _truncate(text, 400)
+    if not summary:
+        return None
     return FetchedItem(
         source_kind="url",
         url=url,

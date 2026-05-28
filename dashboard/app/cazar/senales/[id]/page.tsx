@@ -90,6 +90,35 @@ export default function SignalDetailPage() {
     }
   };
 
+  // M3.17: enriquecer SIN LLM — hace fetch de las URLs y extrae og:title /
+  // og:description / <title>, actualizando theme y excerpt con info real.
+  // Costo: $0. Útil cuando la señal viene de un chat y el theme es genérico
+  // ("Instagram", "Mock signal from rss") porque no sabes de qué trata.
+  const [enriching, setEnriching] = useState(false);
+  const enrich = async () => {
+    if (enriching) return;
+    setEnriching(true);
+    try {
+      const r = await authFetch(`/api/v1/signals/${id}/enrich`, { method: "POST" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      if (d.urls_fetched === 0) {
+        alert(`No se pudo extraer contenido de las URLs (${d.urls_failed} fallaron).`);
+      } else {
+        alert(
+          `✓ Contenido extraído de ${d.urls_fetched} URLs (${d.urls_failed} fallaron).\n` +
+          `Theme actualizado: ${d.theme_updated ? "sí" : "no"}\n` +
+          `Excerpt actualizado: ${d.excerpt_updated ? "sí" : "no"}`
+        );
+      }
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEnriching(false);
+    }
+  };
+
   const setFeedback = async (fb: "up" | "down" | "clear") => {
     try {
       await authFetch(`/api/v1/signals/${id}/feedback`, {
@@ -250,8 +279,22 @@ export default function SignalDetailPage() {
           </button>
         )}
         <button
+          onClick={enrich}
+          disabled={enriching}
+          title="Hace fetch de las URLs y extrae og:title + og:description. SIN LLM, costo $0. Mejora theme + excerpt con info real de las páginas."
+          style={{
+            padding: "8px 16px", background: "transparent",
+            color: enriching ? "#64748b" : "#00D4FF",
+            border: `1px solid ${enriching ? "#1e293b" : "#00D4FF"}`,
+            borderRadius: 6, fontSize: 13, cursor: enriching ? "wait" : "pointer",
+          }}
+        >
+          {enriching ? "Extrayendo…" : "🔍 Extraer contenido (gratis)"}
+        </button>
+        <button
           onClick={reanalyze}
           disabled={analyzing}
+          title="Ejecuta IdeaAnalyzer con LLM. Costo ~$0.005."
           style={{
             padding: "8px 16px", background: "transparent",
             color: analyzing ? "#64748b" : "#A78BFA",
@@ -259,7 +302,7 @@ export default function SignalDetailPage() {
             borderRadius: 6, fontSize: 13, cursor: analyzing ? "wait" : "pointer",
           }}
         >
-          {analyzing ? "Analizando…" : signal.analysis ? "🔄 Re-analizar" : "🤖 Analizar con IA"}
+          {analyzing ? "Analizando…" : signal.analysis ? "🔄 Re-analizar" : "🤖 Analizar con IA ($0.005)"}
         </button>
         <div style={{ marginLeft: "auto" }}>
           <button

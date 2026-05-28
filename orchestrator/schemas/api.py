@@ -362,6 +362,18 @@ class AnalyzeSignalResponse(BaseModel):
     cost_usd_estimated: float = Field(description="LLM cost for this analyze call")
 
 
+class EnrichSignalResponse(BaseModel):
+    """M3.17: result of fetching the signal's URLs and extracting content."""
+    signal_id: int
+    urls_fetched: int
+    urls_failed: int
+    theme_updated: bool
+    excerpt_updated: bool
+    item_titles_updated: bool
+    new_theme: Optional[str] = None
+    new_excerpt: Optional[str] = None
+
+
 class AnalyzeSignalsBatchRequest(BaseModel):
     """Pick which signals to analyze. Either explicit IDs, OR auto-pick top N
     not-yet-analyzed signals with at least min_trend trend_score."""

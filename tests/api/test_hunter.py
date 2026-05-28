@@ -547,6 +547,83 @@ def test_autoscan_status_requires_auth(client):
 # ---------------------------------------------------------------------------
 
 
+def test_enrich_signal_uses_og_tags(client, auth):
+    """M3.17: /signals/{id}/enrich extrae og:title + og:description y
+    actualiza theme + excerpt SIN llamar al LLM."""
+    from unittest.mock import patch
+    from orchestrator.core.storage import signals_store
+    from orchestrator.core.source_fetcher import FetchedItem
+
+    signal_id = signals_store.add(
+        None, "url", "Instagram",  # theme genérico
+        0.6, "Single item: Instagram", ["https://example.com/article"],
+        "topic",
+    )
+
+    fake_item = FetchedItem(
+        source_kind="url",
+        url="https://example.com/article",
+        title="Cómo construir un SaaS B2B para LATAM en 90 días",
+        summary="Guía práctica para founders ecuatorianos sobre cómo lanzar una idea SaaS B2B con un budget mínimo y validar product-market fit en 90 días.",
+        body="...",
+    )
+    with patch("orchestrator.api.fetch_url", return_value=fake_item, create=True):
+        with patch("orchestrator.core.source_fetcher.fetch_url", return_value=fake_item):
+            r = client.post(f"/api/v1/signals/{signal_id}/enrich", headers=auth)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["urls_fetched"] == 1
+    assert data["theme_updated"] is True
+    assert data["excerpt_updated"] is True
+    assert data["item_titles_updated"] is True
+    assert "SaaS B2B" in data["new_theme"]
+
+    # Verificar que la BD se actualizó
+    updated = signals_store.get(signal_id)
+    assert "Instagram" not in updated["theme"]
+    assert "SaaS B2B" in updated["theme"]
+    assert "founders ecuatorianos" in updated["excerpt"]
+
+
+def test_enrich_signal_returns_404_for_unknown(client, auth):
+    r = client.post("/api/v1/signals/99999/enrich", headers=auth)
+    assert r.status_code == 404
+
+
+def test_enrich_signal_requires_auth(client):
+    r = client.post("/api/v1/signals/1/enrich")
+    assert r.status_code == 401
+
+
+def test_enrich_signal_handles_no_urls(client, auth):
+    """Una señal sin evidence_urls no rompe enrich (devuelve 0/0)."""
+    from orchestrator.core.storage import signals_store
+    signal_id = signals_store.add(
+        None, "rss", "Test", 0.5, "ex", [], "topic"
+    )
+    r = client.post(f"/api/v1/signals/{signal_id}/enrich", headers=auth)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["urls_fetched"] == 0
+    assert data["theme_updated"] is False
+
+
+def test_security_headers_present(client):
+    """M3.17: cada response debe traer todos los security headers."""
+    r = client.get("/api/v1/health")
+    assert r.headers.get("x-content-type-options") == "nosniff"
+    assert r.headers.get("x-frame-options") == "DENY"
+    assert r.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+    assert "Permissions-Policy" in dict(r.headers) or "permissions-policy" in dict(r.headers)
+    assert "max-age" in r.headers.get("strict-transport-security", "")
+    assert "default-src 'none'" in r.headers.get("content-security-policy", "")
+    assert r.headers.get("x-xss-protection") == "0"
+    assert r.headers.get("cross-origin-opener-policy") == "same-origin"
+    assert r.headers.get("cross-origin-resource-policy") == "same-origin"
+    # Anti enumeration: no debe exponer Uvicorn version
+    assert r.headers.get("server", "") == "circles-ai"
+
+
 def test_analyze_signal_returns_structured_analysis(client, auth):
     """POST /signals/{id}/analyze returns market/ICP/competitors/recommendation."""
     from orchestrator.core.storage import signals_store, sources_store

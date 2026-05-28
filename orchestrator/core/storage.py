@@ -816,6 +816,51 @@ class SignalsStore:
         rows = sorted(rows, key=lambda r: r.get("created_at", 0), reverse=True)[:limit]
         return [_signal_row_to_dict(dict(r)) for r in rows]
 
+    def update_content(
+        self,
+        signal_id: int,
+        *,
+        theme: Optional[str] = None,
+        excerpt: Optional[str] = None,
+        item_titles: Optional[List[str]] = None,
+    ) -> None:
+        """M3.17: enrich a signal in-place with content scraped from its
+        evidence URLs (og:title, og:description). Used by /signals/{id}/enrich.
+
+        Only updates the fields that are provided (non-None).
+        """
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                sets: List[str] = []
+                params: List = []
+                if theme is not None:
+                    sets.append("theme=?")
+                    params.append(theme[:240])
+                if excerpt is not None:
+                    sets.append("excerpt=?")
+                    params.append(excerpt[:2000])
+                if item_titles is not None:
+                    sets.append("item_titles_json=?")
+                    params.append(json.dumps(item_titles, ensure_ascii=False))
+                if not sets:
+                    return
+                params.append(signal_id)
+                c.execute(
+                    f"UPDATE signals SET {', '.join(sets)} WHERE id=?",
+                    tuple(params),
+                )
+            return
+        for r in _memory_signals:
+            if r["id"] == signal_id:
+                if theme is not None:
+                    r["theme"] = theme[:240]
+                if excerpt is not None:
+                    r["excerpt"] = excerpt[:2000]
+                if item_titles is not None:
+                    r["item_titles_json"] = json.dumps(item_titles, ensure_ascii=False)
+                return
+
     def set_analysis(self, signal_id: int, analysis: Optional[Dict]) -> None:
         """Persist a JSON blob with the IdeaAnalyzer output (M3.5).
 

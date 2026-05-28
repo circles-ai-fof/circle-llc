@@ -59,6 +59,7 @@ from .schemas.api import (
     AnalyzeSignalResponse,
     AnalyzeSignalsBatchRequest,
     AnalyzeSignalsBatchResponse,
+    EnrichSignalResponse,
     SignalAnalysisItem,
     SignalFeedback,
     SignalItem,
@@ -239,9 +240,17 @@ app.add_middleware(
 )
 
 
-# Security headers middleware (OWASP basic hardening)
+# Security headers middleware (OWASP hardening — M3.17 reforzado)
 @app.middleware("http")
 async def _security_headers(request: Request, call_next):
+    # M3.17: log y bloquea requests con Origin no autorizado (defense in depth
+    # — CORSMiddleware ya lo hace pero queremos auditoría)
+    origin = request.headers.get("origin")
+    if origin and origin not in _DEFAULT_ALLOWED_ORIGINS + _extra_origins:
+        # No bloqueamos (CORS ya rechaza la response) pero loggeamos para
+        # detectar intentos de scraping cross-origin desde sitios desconocidos
+        logger.info("CORS: request from non-allowlisted origin %r blocked by CORSMiddleware", origin)
+
     response = await call_next(request)
     # Defence-in-depth: prevent clickjacking, MIME sniffing, info leaks
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -254,6 +263,14 @@ async def _security_headers(request: Request, call_next):
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
     )
+    # M3.17: extras OWASP
+    # Disable the legacy XSS auditor (it actually adds attack surface in modern browsers)
+    response.headers["X-XSS-Protection"] = "0"
+    # Cross-origin process isolation (anti Spectre + XS-Leaks)
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    # Anti enumeration: no exponer la versión del servidor
+    response.headers["Server"] = "circles-ai"
     return response
 
 # ---------------------------------------------------------------------------
@@ -1694,6 +1711,91 @@ def signals_cleanup_mocks(request: Request) -> SignalsCleanupMocksResponse:
     from .core.storage import signals_store
     deleted = signals_store.cleanup_mocks()
     return SignalsCleanupMocksResponse(deleted=deleted)
+
+
+@app.post(
+    "/api/v1/signals/{signal_id}/enrich",
+    response_model=EnrichSignalResponse,
+    summary="Fetch the signal's evidence URLs and pull og:title/og:description into theme+excerpt",
+    tags=["hunter"],
+)
+def enrich_signal(signal_id: int, request: Request) -> EnrichSignalResponse:
+    """M3.17 — enriquece una señal SIN LLM.
+
+    Para cada evidence_url, hace fetch del HTML y extrae:
+      - og:title o twitter:title o <title>
+      - og:description o twitter:description o meta description
+      - Texto del body como fallback
+    Y actualiza el theme + excerpt + item_titles de la señal con info real.
+
+    Útil cuando una señal viene de un chat (theme="Instagram") y no
+    sabes de qué trata realmente. Tras enrich, theme y excerpt reflejan
+    el contenido real de las páginas linkeadas.
+
+    NO usa LLM (cost: $0). Solo HTTP GET + regex.
+    """
+    _require_user(request)
+    from .core.storage import signals_store
+    from .core.source_fetcher import fetch_url
+
+    sig = signals_store.get(signal_id)
+    if not sig:
+        raise HTTPException(status_code=404, detail="signal not found")
+
+    urls = sig.get("evidence_urls", []) or []
+    if not urls:
+        return EnrichSignalResponse(
+            signal_id=signal_id,
+            urls_fetched=0, urls_failed=0,
+            theme_updated=False, excerpt_updated=False, item_titles_updated=False,
+        )
+
+    fetched = []
+    failed = 0
+    for u in urls[:5]:  # cap a 5 para no bloquear
+        item = fetch_url(u)
+        if item is None:
+            failed += 1
+            continue
+        fetched.append(item)
+
+    if not fetched:
+        return EnrichSignalResponse(
+            signal_id=signal_id,
+            urls_fetched=0, urls_failed=failed,
+            theme_updated=False, excerpt_updated=False, item_titles_updated=False,
+        )
+
+    # New theme = title del primer item (mejor que "Instagram")
+    new_theme = fetched[0].title[:240]
+    # New excerpt = concatenación de los summaries (cap a 1500 chars)
+    summaries = [it.summary for it in fetched if it.summary]
+    new_excerpt = " | ".join(summaries)[:1500] or sig.get("excerpt", "")
+    # New item_titles = títulos de cada item fetcheado, padded a len(urls)
+    new_titles = [it.title for it in fetched] + [""] * (len(urls) - len(fetched))
+
+    # Solo actualizar si lo nuevo es mejor (no degradar)
+    theme_updated = bool(new_theme) and new_theme != sig.get("theme", "")
+    excerpt_updated = bool(new_excerpt) and new_excerpt != sig.get("excerpt", "")
+    titles_updated = any(t for t in new_titles)  # al menos un título real
+
+    signals_store.update_content(
+        signal_id,
+        theme=new_theme if theme_updated else None,
+        excerpt=new_excerpt if excerpt_updated else None,
+        item_titles=new_titles if titles_updated else None,
+    )
+
+    return EnrichSignalResponse(
+        signal_id=signal_id,
+        urls_fetched=len(fetched),
+        urls_failed=failed,
+        theme_updated=theme_updated,
+        excerpt_updated=excerpt_updated,
+        item_titles_updated=titles_updated,
+        new_theme=new_theme if theme_updated else None,
+        new_excerpt=new_excerpt if excerpt_updated else None,
+    )
 
 
 @app.post(
