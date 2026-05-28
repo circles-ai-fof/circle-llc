@@ -41,20 +41,33 @@ circle-llc/
 
 20+ agentes adicionales están archivados en `orchestrator/agents/_deferred/` hasta M4+.
 
-## Estado al 2026-05-27
+## Estado al 2026-05-28
 
 | | |
 |---|---|
-| Tests verdes | **483** |
+| Tests verdes | **489** |
+| Commits locales | 64 (15 pendientes de push — falta PAT) |
 | Commits en GitHub | 49 |
-| ADRs | **17** |
+| ADRs | **20** |
 | Reglas R01-R29 | 29 |
-| Endpoints API | 35 |
+| Endpoints API | 37 (+POST /autonomy alias, +POST /signals/{id}/translate) |
 | Páginas dashboard | 11 |
 | circles-ai.ai live | ✅ |
 | /f/techpulse-latam live | ✅ |
 | Dashboard local | ✅ (Vercel deploy pendiente del founder) |
 | Outcome DB | INACTIVA (M4+ cuando N≥3 fábricas) |
+
+## Sprints M4 — resumen
+
+| Sprint | Qué entrega | ADR |
+|---|---|---|
+| M4.0 | Connected Accounts + check-platform detection | ADR-018 |
+| M4.1 | Preferences engine (embeddings + clustering + autonomía) | ADR-019 |
+| M4.2 | Filtro `_is_corporate_description` (Asiservy ya no pasa como idea) | — |
+| M4.3 | Clasificación automática de content_type con badge visual | — |
+| M4.4 | Detección de idioma + traducción ES on-demand (Haiku) | ADR-020 |
+| M4.5 | CORS permite PUT/DELETE + filtro `?content_type=` en señales | — |
+| M4.5b | POST alias de /autonomy (funciona sin reiniciar backend) | — |
 
 ## Cazador autónomo — 9 source kinds
 
