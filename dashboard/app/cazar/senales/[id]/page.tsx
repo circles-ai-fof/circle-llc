@@ -127,14 +127,14 @@ export default function SignalDetailPage() {
 
   if (loading) {
     return (
-      <main style={{ padding: "32px 40px", color: "#94a3b8", textAlign: "center" }}>
+      <main style={{ padding: "clamp(20px, 4vw, 32px) clamp(16px, 4vw, 40px)", color: "#94a3b8", textAlign: "center" }}>
         Cargando señal…
       </main>
     );
   }
   if (error || !signal) {
     return (
-      <main style={{ padding: "32px 40px", maxWidth: 800, margin: "0 auto" }}>
+      <main style={{ padding: "clamp(20px, 4vw, 32px) clamp(16px, 4vw, 40px)", maxWidth: 800, margin: "0 auto" }}>
         <a href="/cazar/senales" style={{ color: "#00D4FF" }}>← Volver a Señales</a>
         <div style={{ color: "#FF4444", padding: 16, marginTop: 16 }}>
           {error || "Señal no encontrada"}
@@ -155,7 +155,7 @@ export default function SignalDetailPage() {
     signal.score >= 0.8 ? "#00E5A0" : signal.score >= 0.6 ? "#FFB800" : "#94a3b8";
 
   return (
-    <main style={{ padding: "32px 40px", maxWidth: 980, margin: "0 auto" }}>
+    <main style={{ padding: "clamp(20px, 4vw, 32px) clamp(16px, 4vw, 40px)", maxWidth: 980, margin: "0 auto" }}>
       <div style={{ marginBottom: 20 }}>
         <a
           href="/cazar/senales"

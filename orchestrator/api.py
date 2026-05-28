@@ -271,7 +271,7 @@ def _serialize_run(run) -> RunGateResponse:  # noqa: ANN001  (EvidenceGateRun)
     """Convert an EvidenceGateRun dataclass to RunGateResponse."""
     # Ensemble votes (if recorded in key_evidence)
     ensemble_votes = [e for e in run.decision.key_evidence if "/" in e]
-    return RunGateResponse(
+    resp = RunGateResponse(
         run_id=str(run.run_id),
         status="completed",
         idea_title=run.idea.title,
@@ -296,6 +296,22 @@ def _serialize_run(run) -> RunGateResponse:  # noqa: ANN001  (EvidenceGateRun)
             else None
         ),
     )
+    # Fire pending-review webhook (best-effort, never raises)
+    if resp.needs_human_review and resp.human_override is None:
+        try:
+            from .core import webhooks as _wh
+            base = (os.getenv("DASHBOARD_BASE_URL") or "").rstrip("/")
+            _wh.emit("run.pending_review", {
+                "run_id": resp.run_id,
+                "theme": resp.idea_title,
+                "verdict": resp.verdict,
+                "confidence": resp.confidence,
+                "recommendation": resp.review_reason,
+                "dashboard_url": f"{base}/revision" if base else None,
+            })
+        except Exception:  # noqa: BLE001
+            pass
+    return resp
 
 
 # ---------------------------------------------------------------------------
@@ -792,6 +808,9 @@ def diagnostic() -> DiagnosticResponse:
             "google_key_present": bool(os.getenv("GOOGLE_API_KEY")),
             "anthropic_key_present": bool(os.getenv("ANTHROPIC_API_KEY")),
             "persistent_storage": bool(os.getenv("DATABASE_PATH")),
+            "webhooks_configured": bool(
+                os.getenv("WEBHOOK_URL_SLACK") or os.getenv("WEBHOOK_URL_GENERIC")
+            ),
         },
         leads_count_total=leads_store.count(),
         runs_count_total=len(runs_store.values()),
@@ -1305,6 +1324,18 @@ def _run_scan_internal(
                         auto_analyzed += 1
                     except Exception as exc:  # noqa: BLE001
                         logger.warning("scan: auto-analyze failed for signal %s: %s", signal_id, exc)
+            # Webhook: high-trend signal (configurable threshold via WEBHOOK_MIN_TREND)
+            try:
+                fresh_for_hook = signals_store.get(signal_id)
+                if fresh_for_hook:
+                    from .core import webhooks as _wh
+                    _wh.emit_signal_event(
+                        "signal.high_trend",
+                        fresh_for_hook,
+                        source_name=src.get("name"),
+                    )
+            except Exception:  # noqa: BLE001
+                pass
             # Auto-promote by score (existing) OR by trend (new)
             should_promote = False
             if auto_promote_threshold > 0 and sig.score >= auto_promote_threshold:
@@ -1320,6 +1351,20 @@ def _run_scan_internal(
                     auto_promoted.append(str(run.run_id))
                     response = _serialize_run(run)
                     _runs[response.run_id] = response
+                    # Webhook: auto-promoted signal
+                    try:
+                        from .core import webhooks as _wh
+                        _wh.emit("signal.auto_promoted", {
+                            "signal_id": signal_id,
+                            "theme": sig.theme,
+                            "source_name": src.get("name"),
+                            "verdict": response.verdict,
+                            "confidence": response.confidence,
+                            "run_id": response.run_id,
+                            "dashboard_url": _wh._signal_url(signal_id),
+                        })
+                    except Exception:  # noqa: BLE001
+                        pass
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("scan: auto-promote failed for signal %s: %s", signal_id, exc)
         sources_store.mark_scanned(src["id"])
@@ -1571,6 +1616,19 @@ def analyze_signal(signal_id: int, request: Request) -> AnalyzeSignalResponse:
     )
     # Persist so the dashboard can re-show without re-running the LLM
     signals_store.set_analysis(signal_id, analysis.to_dict())
+    # Webhook: ping when analyzer recommends promote (high-value signal)
+    if analysis.recommendation == "promote":
+        try:
+            from .core import webhooks as _wh
+            sig_fresh = signals_store.get(signal_id)
+            if sig_fresh:
+                _wh.emit_signal_event(
+                    "signal.analyzed.promote",
+                    {**sig_fresh, "analysis": analysis.to_dict()},
+                    source_name=source_name,
+                )
+        except Exception:  # noqa: BLE001
+            pass
     return AnalyzeSignalResponse(
         signal_id=signal_id,
         analysis=SignalAnalysisItem(**analysis.to_dict()),

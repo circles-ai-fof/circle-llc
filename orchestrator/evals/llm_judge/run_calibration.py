@@ -18,6 +18,8 @@ LABEL_MAP = {
     "pass": "pass", "kill": "kill", "iterate": "iterate",
     "good_idea": "good", "ok_idea": "ok", "bad_idea": "bad",
     "good_maturation": "good", "ok_maturation": "ok", "bad_maturation": "bad",
+    # idea_analyzer labels (identity-mapped — already in canonical form)
+    "promote": "promote", "wait_for_more_data": "wait_for_more_data", "discard": "discard",
 }
 
 # ──────────────────────────────────────────────
@@ -116,6 +118,27 @@ def _llm_idea_verdict(client: anthropic.Anthropic, ex: dict) -> str:
     return raw if raw in {"good", "ok", "bad"} else "unknown"
 
 
+# ──────────────────────────────────────────────
+# IDEA ANALYZER — runs the actual agent (single Haiku call) and returns
+# the recommendation value to compare against the human label.
+# ──────────────────────────────────────────────
+def _run_idea_analyzer(client: anthropic.Anthropic, ex: dict) -> str:
+    """Execute IdeaAnalyzerAgent on the test case and return its recommendation."""
+    from orchestrator.agents.idea_analyzer import IdeaAnalyzerAgent
+    agent = IdeaAnalyzerAgent(mock_mode=False, client=client)
+    inp = ex["input"]
+    try:
+        result = agent.analyze(
+            theme=inp["theme"],
+            excerpt=inp["excerpt"],
+            suggested_topic=inp["suggested_topic"],
+        )
+        return result.recommendation
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ERROR running idea_analyzer on {ex['id']}: {exc}")
+        return "error"
+
+
 def main() -> int:
     key = os.getenv("ANTHROPIC_API_KEY")
     if not key:
@@ -136,6 +159,8 @@ def main() -> int:
 
         if agent == "gate_decider":
             llm = _deterministic_gate_verdict(ex)
+        elif agent == "idea_analyzer":
+            llm = _run_idea_analyzer(client, ex)
         else:
             llm = _llm_idea_verdict(client, ex)
 
@@ -167,6 +192,7 @@ def main() -> int:
         "target_met": pct >= 80,
         "gate_method": "deterministic_python",
         "idea_method": "llm_sonnet_few_shot",
+        "idea_analyzer_method": "agent_invocation_haiku",
         "mismatches": mismatches,
     }
     results_path.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
