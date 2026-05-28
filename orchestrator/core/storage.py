@@ -130,6 +130,27 @@ CREATE TABLE IF NOT EXISTS connected_accounts (
     notes           TEXT,                -- libre — el founder anota qué hizo
     configured_at   INTEGER              -- unix ts cuando se marcó como configurada
 );
+
+-- M4.1 / ADR-019 — embeddings de señales para aprendizaje de preferencias
+-- vector_blob: bytes packed con struct ('<384f') para ahorrar espacio vs JSON
+-- cluster_id: -1 == ruido / no clasificado
+CREATE TABLE IF NOT EXISTS signal_embeddings (
+    signal_id      INTEGER PRIMARY KEY,
+    vector_blob    BLOB NOT NULL,
+    cluster_id     INTEGER NOT NULL DEFAULT -1,
+    model_version  TEXT NOT NULL,
+    created_at     INTEGER NOT NULL,
+    FOREIGN KEY (signal_id) REFERENCES signals(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_emb_cluster ON signal_embeddings(cluster_id);
+
+-- M4.1 / ADR-019 — nivel de autonomía del cazador (single-row)
+CREATE TABLE IF NOT EXISTS autonomy (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),  -- enforce single row
+    level        TEXT NOT NULL DEFAULT 'manual',      -- manual|assisted|autonomous_with_approval
+    updated_at   INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO autonomy(id, level, updated_at) VALUES(1, 'manual', strftime('%s','now'));
 """
 
 # Singleton path; resolved at first import after env load
@@ -936,6 +957,36 @@ class SignalsStore:
             ("theme LIKE ?", "Iniciar sesión%"),
             ("theme LIKE ?", "Redirecting%"),
             ("theme LIKE ?", "Loading%"),
+            # M4.2 — descripciones corporativas (founder feedback: "Asiservy
+            # — Alimentos del Mar con Propósito" pasó como idea pero es la
+            # home de la empresa, no una idea)
+            ("excerpt LIKE ?", "%Empresa líder en%"),
+            ("excerpt LIKE ?", "%empresa lider en%"),
+            ("excerpt LIKE ?", "%trazabilidad blockchain%"),
+            ("excerpt LIKE ?", "%certificaciones globales%"),
+            ("excerpt LIKE ?", "%años de experiencia%"),
+            ("excerpt LIKE ?", "%anos de experiencia%"),
+            ("excerpt LIKE ?", "%Nuestra misión%"),
+            ("excerpt LIKE ?", "%nuestra mision%"),
+            ("theme LIKE ?", "%Acerca de%"),
+            ("theme LIKE ?", "%About Us%"),
+            ("theme LIKE ?", "%Quiénes Somos%"),
+            ("theme LIKE ?", "%Quienes Somos%"),
+            ("theme LIKE ?", "%Sobre Nosotros%"),
+            # M4.2b — más patterns observados en BD real del founder
+            ("excerpt LIKE ?", "%Procesamiento y exportacion%"),
+            ("excerpt LIKE ?", "%procesamos y exportamos%"),
+            ("excerpt LIKE ?", "%Nosotros Negocios%"),
+            ("excerpt LIKE ?", "%Del Mar al Mundo%"),
+            ("excerpt LIKE ?", "%alimentos del mar%"),
+            ("theme LIKE ?", "Asiservy%"),
+            ("theme LIKE ?", "ASISERVY%"),
+            ("theme LIKE ?", "App Asiservy%"),
+            # Zoom join links genéricos
+            ("theme LIKE ?", "Join our Cloud HD Video Meeting%"),
+            ("theme LIKE ?", "Video Conferencing, Web Conferencing%"),
+            ("theme LIKE ?", "Google Maps%"),
+            ("theme LIKE ?", "Google Photos%"),
         ]
         if _db_path:
             with _conn() as c:
@@ -948,6 +999,23 @@ class SignalsStore:
             theme = str(r.get("theme", ""))
             topic = str(r.get("suggested_topic", ""))
             excerpt = str(r.get("excerpt", ""))
+            # M4.2 corporate descriptions
+            blob = f"{theme} {excerpt}".lower()
+            corporate_signals = (
+                "empresa líder en", "empresa lider en",
+                "trazabilidad blockchain",
+                "certificaciones globales",
+                "años de experiencia", "anos de experiencia",
+                "nuestra misión", "nuestra mision",
+                "nuestra visión", "nuestra vision",
+                "fundada en", "founded in",
+                "quiénes somos", "quienes somos",
+                "sobre nosotros", "acerca de nosotros",
+                "about us",
+            )
+            corporate_hits = sum(1 for s in corporate_signals if s in blob)
+            is_corporate = corporate_hits >= 2
+
             # M3.18 SPA fallbacks + homepage titles genéricos
             generic_titles = {
                 "Instagram", "TikTok - Make Your Day", "TikTok",
@@ -972,6 +1040,16 @@ class SignalsStore:
                 or theme.startswith("Redirecting")
                 or theme.startswith("Loading")
                 or theme in generic_titles
+                or is_corporate
+                or theme.startswith("Asiservy")
+                or theme.startswith("ASISERVY")
+                or theme.startswith("App Asiservy")
+                or theme.startswith("Join our Cloud HD Video Meeting")
+                or theme.startswith("Video Conferencing")
+                or theme.startswith("Google Maps")
+                or "Procesamiento y exportacion" in excerpt
+                or "procesamos y exportamos" in excerpt
+                or "Del Mar al Mundo" in excerpt
             )
             return (
                 theme.startswith("Mock signal from ")
@@ -1341,6 +1419,173 @@ class ConnectedAccountsStore:
 _memory_connected: List[Dict] = []
 
 
+# ---------------------------------------------------------------------------
+# M4.1 / ADR-019 — embeddings + autonomy stores
+# ---------------------------------------------------------------------------
+import struct as _struct
+
+
+def _pack_vector(vec: List[float]) -> bytes:
+    return _struct.pack(f"<{len(vec)}f", *vec)
+
+
+def _unpack_vector(blob: bytes) -> List[float]:
+    n = len(blob) // 4
+    return list(_struct.unpack(f"<{n}f", blob))
+
+
+_memory_embeddings: Dict[int, Dict] = {}
+_memory_autonomy = {"level": "manual", "updated_at": int(time.time())}
+
+
+class EmbeddingsStore:
+    """Stores 384-dim embeddings per signal + cluster_id."""
+
+    def upsert(
+        self,
+        signal_id: int,
+        vector: List[float],
+        cluster_id: int = -1,
+        model_version: str = "fallback-1",
+    ) -> None:
+        _ensure_init()
+        blob = _pack_vector(vector)
+        ts = int(time.time())
+        if _db_path:
+            with _conn() as c:
+                c.execute(
+                    "INSERT INTO signal_embeddings(signal_id,vector_blob,cluster_id,model_version,created_at) "
+                    "VALUES(?,?,?,?,?) "
+                    "ON CONFLICT(signal_id) DO UPDATE SET "
+                    "  vector_blob=excluded.vector_blob, "
+                    "  cluster_id=excluded.cluster_id, "
+                    "  model_version=excluded.model_version",
+                    (signal_id, blob, cluster_id, model_version, ts),
+                )
+            return
+        _memory_embeddings[signal_id] = {
+            "signal_id": signal_id, "vector": vector,
+            "cluster_id": cluster_id, "model_version": model_version,
+            "created_at": ts,
+        }
+
+    def get_vector(self, signal_id: int) -> Optional[List[float]]:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                row = c.execute(
+                    "SELECT vector_blob FROM signal_embeddings WHERE signal_id=?",
+                    (signal_id,),
+                ).fetchone()
+                return _unpack_vector(row["vector_blob"]) if row else None
+        rec = _memory_embeddings.get(signal_id)
+        return list(rec["vector"]) if rec else None
+
+    def set_cluster(self, signal_id: int, cluster_id: int) -> None:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                c.execute(
+                    "UPDATE signal_embeddings SET cluster_id=? WHERE signal_id=?",
+                    (cluster_id, signal_id),
+                )
+            return
+        if signal_id in _memory_embeddings:
+            _memory_embeddings[signal_id]["cluster_id"] = cluster_id
+
+    def list_all(self) -> List[Dict]:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                rows = c.execute(
+                    "SELECT signal_id,vector_blob,cluster_id,model_version,created_at "
+                    "FROM signal_embeddings"
+                ).fetchall()
+                return [
+                    {
+                        "signal_id": r["signal_id"],
+                        "vector": _unpack_vector(r["vector_blob"]),
+                        "cluster_id": r["cluster_id"],
+                        "model_version": r["model_version"],
+                        "created_at": r["created_at"],
+                    }
+                    for r in rows
+                ]
+        return [dict(r, vector=list(r["vector"])) for r in _memory_embeddings.values()]
+
+    def get_by_signal_ids(self, signal_ids: List[int]) -> Dict[int, List[float]]:
+        """Bulk fetch vectors for a set of signal IDs (used by scoring)."""
+        _ensure_init()
+        if not signal_ids:
+            return {}
+        if _db_path:
+            with _conn() as c:
+                placeholders = ",".join("?" for _ in signal_ids)
+                rows = c.execute(
+                    f"SELECT signal_id, vector_blob FROM signal_embeddings "
+                    f"WHERE signal_id IN ({placeholders})",
+                    tuple(signal_ids),
+                ).fetchall()
+                return {r["signal_id"]: _unpack_vector(r["vector_blob"]) for r in rows}
+        return {
+            sid: list(rec["vector"])
+            for sid, rec in _memory_embeddings.items()
+            if sid in signal_ids
+        }
+
+    def clear(self) -> None:
+        if _db_path:
+            with _conn() as c:
+                c.execute("DELETE FROM signal_embeddings")
+        _memory_embeddings.clear()
+
+
+class AutonomyStore:
+    """Single-row store for the cazador's autonomy level (M4.1)."""
+
+    VALID_LEVELS = ("manual", "assisted", "autonomous_with_approval")
+
+    def get_level(self) -> str:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                row = c.execute("SELECT level FROM autonomy WHERE id=1").fetchone()
+                return row["level"] if row else "manual"
+        return _memory_autonomy["level"]
+
+    def set_level(self, level: str) -> None:
+        if level not in self.VALID_LEVELS:
+            raise ValueError(f"Invalid autonomy level: {level!r}")
+        _ensure_init()
+        ts = int(time.time())
+        if _db_path:
+            with _conn() as c:
+                c.execute(
+                    "UPDATE autonomy SET level=?, updated_at=? WHERE id=1",
+                    (level, ts),
+                )
+            return
+        _memory_autonomy["level"] = level
+        _memory_autonomy["updated_at"] = ts
+
+    def get_full(self) -> Dict:
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                row = c.execute(
+                    "SELECT level, updated_at FROM autonomy WHERE id=1"
+                ).fetchone()
+                return dict(row) if row else {"level": "manual", "updated_at": 0}
+        return dict(_memory_autonomy)
+
+    def clear(self) -> None:
+        if _db_path:
+            with _conn() as c:
+                c.execute("UPDATE autonomy SET level='manual' WHERE id=1")
+        _memory_autonomy["level"] = "manual"
+        _memory_autonomy["updated_at"] = int(time.time())
+
+
 # Module-level singletons used by api.py
 leads_store = LeadsStore()
 runs_store = RunsStore()
@@ -1349,10 +1594,14 @@ sources_store = SourcesStore()
 signals_store = SignalsStore()
 links_log_store = LinksLogStore()
 connected_accounts_store = ConnectedAccountsStore()
+embeddings_store = EmbeddingsStore()
+autonomy_store = AutonomyStore()
 
 
 __all__ = [
     "ConnectedAccountsStore", "connected_accounts_store",
+    "EmbeddingsStore", "embeddings_store",
+    "AutonomyStore", "autonomy_store",
     "leads_store",
     "runs_store",
     "auth_store",

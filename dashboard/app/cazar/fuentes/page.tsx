@@ -73,6 +73,17 @@ export default function FuentesPage() {
   };
   const [platformCheck, setPlatformCheck] = useState<PlatformCheck | null>(null);
 
+  // M4.1: autonomy level + source suggestions
+  type Suggestion = {
+    cluster_id: number;
+    keywords: string[];
+    suggested_query: string;
+    rationale: string;
+  };
+  const [autonomyLevel, setAutonomyLevel] = useState<string>("manual");
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [reclustering, setReclustering] = useState(false);
+
   const refresh = async () => {
     setLoading(true);
     setError(null);
@@ -99,7 +110,66 @@ export default function FuentesPage() {
 
   useEffect(() => {
     refresh();
+    // M4.1: load autonomy + suggestions
+    (async () => {
+      try {
+        const [rA, rS] = await Promise.all([
+          authFetch("/api/v1/autonomy"),
+          authFetch("/api/v1/sources/suggestions"),
+        ]);
+        if (rA.ok) setAutonomyLevel((await rA.json()).level);
+        if (rS.ok) setSuggestions((await rS.json()).items || []);
+      } catch {
+        /* best-effort */
+      }
+    })();
   }, []);
+
+  const changeAutonomy = async (level: string) => {
+    try {
+      const r = await authFetch("/api/v1/autonomy", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setAutonomyLevel(level);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const runRecluster = async () => {
+    if (reclustering) return;
+    setReclustering(true);
+    try {
+      const r = await authFetch("/api/v1/preferences/recluster", { method: "POST" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      alert(
+        `✓ Reclusterización completa.\n` +
+        `Modo: ${d.mode}\n` +
+        `Señales embedded: ${d.signals_embedded}\n` +
+        `Clusters encontrados: ${d.clusters_found}`
+      );
+      // Reload suggestions
+      const rS = await authFetch("/api/v1/sources/suggestions");
+      if (rS.ok) setSuggestions((await rS.json()).items || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReclustering(false);
+    }
+  };
+
+  const addFromSuggestion = (s: Suggestion) => {
+    // Pre-fill the form with bluesky search + the keywords
+    setKind("bluesky");
+    setTarget(s.suggested_query);
+    setName(`Sugerencia · ${s.keywords.slice(0, 3).join(" + ")}`);
+    // Scroll up to form
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   // M4.0: debounce check-platform cuando el founder pega/escribe una URL
   useEffect(() => {
@@ -391,6 +461,115 @@ export default function FuentesPage() {
                 → Ver estado de todas las plataformas
               </a>
             </div>
+          </div>
+        )}
+      </section>
+
+      {/* M4.1: Autonomy selector + suggestions */}
+      <section
+        style={{
+          background: "#0F1525",
+          border: "1px solid #1e293b",
+          borderRadius: 12,
+          padding: 18,
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 280px" }}>
+            <div style={{ color: "#A78BFA", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+              🧠 Nivel de autonomía del cazador
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {[
+                { value: "manual", label: "🛑 Manual", desc: "Tú añades todas las fuentes" },
+                { value: "assisted", label: "🧠 Asistido", desc: "El sistema sugiere, tú apruebas" },
+                { value: "autonomous_with_approval", label: "🤖 Autónomo", desc: "El sistema añade pendientes de aprobar" },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => changeAutonomy(opt.value)}
+                  title={opt.desc}
+                  style={{
+                    padding: "8px 14px",
+                    background: autonomyLevel === opt.value ? "rgba(167,139,250,0.15)" : "transparent",
+                    color: autonomyLevel === opt.value ? "#A78BFA" : "#94a3b8",
+                    border: `1px solid ${autonomyLevel === opt.value ? "#A78BFA" : "#1e293b"}`,
+                    borderRadius: 6,
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ color: "#64748b", fontSize: 11, marginTop: 6 }}>
+              {autonomyLevel === "manual" && "El cazador NO sugiere fuentes — tú decides qué monitorear."}
+              {autonomyLevel === "assisted" && "El cazador muestra sugerencias basadas en tus 👍 — apruebas o rechazas."}
+              {autonomyLevel === "autonomous_with_approval" && "El cazador añade sugerencias automáticamente como pendientes de tu aprobación."}
+            </div>
+          </div>
+          <button
+            onClick={runRecluster}
+            disabled={reclustering}
+            title="Genera embeddings de todas las señales sin uno y reagrupa con clustering. Sin costo LLM."
+            style={{
+              padding: "8px 14px", background: "transparent",
+              color: reclustering ? "#64748b" : "#A78BFA",
+              border: `1px solid ${reclustering ? "#1e293b" : "#A78BFA"}`,
+              borderRadius: 6, fontSize: 12, cursor: reclustering ? "wait" : "pointer",
+            }}
+          >
+            {reclustering ? "Procesando…" : "🔁 Re-cluster (gratis)"}
+          </button>
+        </div>
+
+        {/* Sugerencias del cluster */}
+        {autonomyLevel !== "manual" && suggestions.length > 0 && (
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #1e293b" }}>
+            <div style={{ color: "#94a3b8", fontSize: 11, fontWeight: 600, textTransform: "uppercase", marginBottom: 8 }}>
+              🌱 Sugerencias basadas en tus 👍
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {suggestions.map((s) => (
+                <div
+                  key={s.cluster_id}
+                  style={{
+                    padding: "10px 14px",
+                    background: "#0B0F1A",
+                    border: "1px solid rgba(167,139,250,0.2)",
+                    borderRadius: 8,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {s.keywords.slice(0, 5).map((k) => (
+                        <code key={k} style={{
+                          background: "rgba(167,139,250,0.1)", color: "#A78BFA",
+                          padding: "1px 6px", borderRadius: 3, fontSize: 11,
+                        }}>{k}</code>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => addFromSuggestion(s)}
+                      style={{
+                        padding: "4px 10px", background: "#A78BFA", color: "#0B0F1A",
+                        border: "none", borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                      }}
+                    >
+                      + Crear fuente Bluesky
+                    </button>
+                  </div>
+                  <div style={{ color: "#cbd5e1", fontSize: 12, lineHeight: 1.5 }}>{s.rationale}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {autonomyLevel !== "manual" && suggestions.length === 0 && (
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #1e293b", color: "#64748b", fontSize: 12 }}>
+            Aún no hay sugerencias. Marca 👍 a 3+ señales similares y ejecuta &quot;🔁 Re-cluster&quot; para que aparezcan.
           </div>
         )}
       </section>

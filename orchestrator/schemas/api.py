@@ -331,6 +331,61 @@ class ConnectedAccountUpsertRequest(BaseModel):
     notes: Optional[str] = Field(default=None, max_length=500)
 
 
+# ---------------------------------------------------------------------------
+# M4.1 — Preferences + autonomy (ADR-019)
+# ---------------------------------------------------------------------------
+
+
+class PreferencesEngineInfo(BaseModel):
+    mode: str = Field(description='"real" if sentence-transformers installed, else "fallback"')
+    embedding_lib: Optional[str] = None
+    clustering_lib: Optional[str] = None
+    embedding_model: Optional[str] = None
+    notes: str = ""
+
+
+class ClusterItem(BaseModel):
+    cluster_id: int
+    signal_ids: List[int]
+    sample_themes: List[str]
+    feedback_up: int
+    feedback_down: int
+    keywords: List[str]
+
+
+class ClustersResponse(BaseModel):
+    total_clusters: int
+    mode: str
+    items: List[ClusterItem]
+
+
+class SourceSuggestionItem(BaseModel):
+    cluster_id: int
+    keywords: List[str]
+    suggested_query: str
+    rationale: str
+
+
+class SourceSuggestionsResponse(BaseModel):
+    mode: str
+    items: List[SourceSuggestionItem]
+
+
+class AutonomyResponse(BaseModel):
+    level: str = Field(description='manual | assisted | autonomous_with_approval')
+    updated_at: int
+
+
+class AutonomyUpdateRequest(BaseModel):
+    level: str = Field(pattern='^(manual|assisted|autonomous_with_approval)$')
+
+
+class ReclusterResponse(BaseModel):
+    signals_embedded: int
+    clusters_found: int
+    mode: str
+
+
 class SourceQuality(BaseModel):
     source_id: int
     name: str

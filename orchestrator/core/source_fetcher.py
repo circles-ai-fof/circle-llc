@@ -214,6 +214,68 @@ def _is_spa_fallback(title: str, summary: str) -> bool:
     return any(pat in blob for pat in _SPA_FALLBACK_PATTERNS)
 
 
+# M4.2 — detección de descripciones corporativas (NO son ideas de negocio).
+# Una "idea" describe un PROBLEMA y una posible SOLUCIÓN. Una "descripción
+# corporativa" describe lo que ya hace una empresa establecida. El founder
+# reportó: "Asiservy — Alimentos del Mar con Propósito" pasó como idea pero
+# es la home de la empresa con texto tipo "Empresa líder en procesamiento de
+# atún. 30 años, 31+ países, trazabilidad blockchain, certificaciones".
+_CORPORATE_DESCRIPTION_PATTERNS = (
+    "empresa líder en",
+    "empresa lider en",
+    "compañía líder",
+    "compania lider",
+    "leading company in",
+    "líder en el sector",
+    "lider en el sector",
+    "fundada en",
+    "founded in",
+    "desde hace",
+    "since 19",
+    "since 20",
+    "años de experiencia",
+    "years of experience",
+    "+ países",
+    "+ paises",
+    "+ countries",
+    "trazabilidad blockchain",
+    "certificaciones globales",
+    "certificaciones internacionales",
+    "global certifications",
+    "iso 9001",
+    "iso 14001",
+    "iso 22000",
+    "haccp",
+    "brc certified",
+    "msc certified",
+    "fda approved",
+    "our mission is",
+    "nuestra misión",
+    "nuestra mision",
+    "nuestra visión",
+    "nuestra vision",
+    "nuestros valores",
+    "our values",
+    "quiénes somos",
+    "quienes somos",
+    "about us",
+    "sobre nosotros",
+    "acerca de nosotros",
+    "contact us",
+    "contáctanos",
+    "contactanos",
+)
+
+
+def _is_corporate_description(title: str, summary: str) -> bool:
+    """True si el texto parece descripción corporativa / home de empresa,
+    NO una idea de negocio."""
+    blob = f"{title} {summary}".lower()
+    # Necesita 2+ patterns para reducir falsos positivos
+    hits = sum(1 for pat in _CORPORATE_DESCRIPTION_PATTERNS if pat in blob)
+    return hits >= 2
+
+
 def fetch_url(url: str) -> Optional[FetchedItem]:
     """Fetch one URL and extract plaintext + structured metadata.
 
@@ -252,6 +314,11 @@ def fetch_url(url: str) -> Optional[FetchedItem]:
     # M3.18: si lo que extrajimos es el fallback de no-JS, NO es contenido válido
     if _is_spa_fallback(title, summary):
         logger.info("fetch_url: skipping SPA fallback content for %s", url)
+        return None
+
+    # M4.2: si es descripción corporativa, no es una idea — descartar
+    if _is_corporate_description(title, summary):
+        logger.info("fetch_url: skipping corporate description content for %s", url)
         return None
 
     return FetchedItem(

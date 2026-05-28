@@ -20,6 +20,13 @@ langfuse>=2.35.0
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.9
 
+# M4.1 / ADR-019 — Cazador Fase 3: aprendizaje de preferencias
+# OPCIONALES: el módulo preferences.py funciona sin estos (fallback determinista
+# hash-based). Instálalos para activar embeddings reales en producción:
+# sentence-transformers>=3.0        # 80MB modelo multilingual ES-friendly
+# hdbscan>=0.8                       # clustering jerárquico
+# scikit-learn>=1.4                  # TF-IDF + cosine similarity
+
 # dev / test
 pytest>=8.2.0
 pytest-asyncio>=0.23.0

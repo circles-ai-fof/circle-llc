@@ -143,6 +143,36 @@ def test_classify_url_discards_wa_me_telegram():
     assert not sf.classify_url("https://t.me/somechannel")[0]
 
 
+def test_is_corporate_description_detects_company_homepage():
+    """M4.2: founder feedback — 'Asiservy — Alimentos del Mar con Propósito'
+    pasó como idea, pero es la home corporativa, no una idea."""
+    import importlib
+    src_fetch = importlib.import_module("orchestrator.core.source_fetcher")
+    # Caso real exacto
+    assert src_fetch._is_corporate_description(
+        "Asiservy — Alimentos del Mar con Propósito",
+        "Empresa ecuatoriana líder en procesamiento y comercialización de "
+        "atún y alimentos del mar. 30 años, 31+ países, trazabilidad "
+        "blockchain, certificaciones globales.",
+    )
+    # About-us típico
+    assert src_fetch._is_corporate_description(
+        "About Us",
+        "Founded in 1995, our company is a leader in tuna processing. "
+        "Quiénes somos: empresa líder en exportación.",
+    )
+    # Idea real NO debe matchear
+    assert not src_fetch._is_corporate_description(
+        "Plataforma fintech para PYMEs Ecuador",
+        "Permite reconciliación bancaria automática entre SAP B1 y bancos locales.",
+    )
+    # 1 keyword solo no es suficiente (evita falso positivo)
+    assert not src_fetch._is_corporate_description(
+        "Nuestra misión es escalar startups LATAM",
+        "Idea de incubadora para founders de Ecuador",
+    )
+
+
 def test_is_spa_fallback_detects_x_com_no_js_page():
     """M3.18: el HTML que sirve x.com sin JS dice 'JavaScript is not available' —
     no es contenido real, debemos descartarlo."""

@@ -70,11 +70,19 @@ from .schemas.api import (
     SourceCreate,
     SourceItem,
     SourceQuality,
+    AutonomyResponse,
+    AutonomyUpdateRequest,
     CheckPlatformRequest,
     CheckPlatformResponse,
+    ClusterItem,
+    ClustersResponse,
     ConnectedAccountItem,
     ConnectedAccountUpsertRequest,
     ConnectedAccountsListResponse,
+    PreferencesEngineInfo,
+    ReclusterResponse,
+    SourceSuggestionItem,
+    SourceSuggestionsResponse,
     SourcesBulkDeleteRequest,
     SourcesBulkDeleteResponse,
     SourcesListResponse,
@@ -1444,6 +1452,204 @@ def upsert_connected_account(
     )
 
 
+# ---------------------------------------------------------------------------
+# M4.1 / ADR-019 — preferences + autonomy
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/api/v1/preferences/engine",
+    response_model=PreferencesEngineInfo,
+    summary="Which engine is active for embeddings + clustering",
+    tags=["hunter"],
+)
+def preferences_engine(request: Request) -> PreferencesEngineInfo:
+    _require_user(request)
+    from .core.preferences import get_engine_info
+    info = get_engine_info()
+    return PreferencesEngineInfo(**info)
+
+
+@app.post(
+    "/api/v1/preferences/recluster",
+    response_model=ReclusterResponse,
+    summary="Embed missing signals + recluster all (HDBSCAN if available)",
+    tags=["hunter"],
+)
+def recluster(request: Request) -> ReclusterResponse:
+    """Garantiza que cada signal tenga embedding y reasigna cluster_ids.
+
+    Idempotente — puede ejecutarse manualmente desde la UI. En el futuro
+    podría correr como cron job semanal.
+    """
+    _require_user(request)
+    from .core.preferences import compute_embedding, cluster_embeddings, get_engine_info
+    from .core.storage import signals_store, embeddings_store
+
+    all_signals = signals_store.list(limit=10_000, min_score=0)
+    existing = {e["signal_id"]: e["vector"] for e in embeddings_store.list_all()}
+
+    # 1. Embed missing
+    mode = get_engine_info()["mode"]
+    embedded_count = 0
+    for s in all_signals:
+        if s["id"] in existing:
+            continue
+        text = f"{s.get('theme','')} {s.get('excerpt','')} {s.get('suggested_topic','')}"
+        vec = compute_embedding(text)
+        embeddings_store.upsert(s["id"], vec, cluster_id=-1, model_version=mode)
+        existing[s["id"]] = vec
+        embedded_count += 1
+
+    # 2. Recluster all
+    sig_ids = list(existing.keys())
+    if not sig_ids:
+        return ReclusterResponse(signals_embedded=0, clusters_found=0, mode=mode)
+    vectors = [existing[sid] for sid in sig_ids]
+    labels = cluster_embeddings(vectors)
+    for sid, label in zip(sig_ids, labels):
+        embeddings_store.set_cluster(sid, int(label))
+    unique_clusters = len({l for l in labels if l >= 0})
+
+    return ReclusterResponse(
+        signals_embedded=embedded_count,
+        clusters_found=unique_clusters,
+        mode=mode,
+    )
+
+
+@app.get(
+    "/api/v1/preferences/clusters",
+    response_model=ClustersResponse,
+    summary="Top clusters with their signals + keywords + feedback breakdown",
+    tags=["hunter"],
+)
+def list_clusters(request: Request, limit: int = 10) -> ClustersResponse:
+    _require_user(request)
+    from .core.preferences import extract_keywords, get_engine_info
+    from .core.storage import signals_store, embeddings_store
+
+    embs = embeddings_store.list_all()
+    all_signals = {s["id"]: s for s in signals_store.list(limit=10_000, min_score=0)}
+
+    # Group signals by cluster
+    by_cluster: Dict[int, List[int]] = {}
+    for e in embs:
+        cid = e["cluster_id"]
+        if cid < 0:
+            continue
+        by_cluster.setdefault(cid, []).append(e["signal_id"])
+
+    items: List[ClusterItem] = []
+    for cid, sids in by_cluster.items():
+        valid_signals = [all_signals[s] for s in sids if s in all_signals]
+        themes = [s["theme"] for s in valid_signals]
+        up = sum(1 for s in valid_signals if s.get("feedback") == "up")
+        down = sum(1 for s in valid_signals if s.get("feedback") == "down")
+        keywords = extract_keywords(
+            [f"{s.get('theme','')} {s.get('excerpt','')}" for s in valid_signals],
+            top_n=5,
+        )
+        items.append(ClusterItem(
+            cluster_id=cid,
+            signal_ids=sids,
+            sample_themes=themes[:3],
+            feedback_up=up,
+            feedback_down=down,
+            keywords=keywords,
+        ))
+
+    # Sort by feedback_up desc then size desc
+    items.sort(key=lambda c: (-c.feedback_up, -len(c.signal_ids)))
+    items = items[:limit]
+
+    return ClustersResponse(
+        total_clusters=len(by_cluster),
+        mode=get_engine_info()["mode"],
+        items=items,
+    )
+
+
+@app.get(
+    "/api/v1/sources/suggestions",
+    response_model=SourceSuggestionsResponse,
+    summary="Source suggestions based on clusters of approved signals (Cazador Fase 3)",
+    tags=["hunter"],
+)
+def source_suggestions(request: Request, limit: int = 5) -> SourceSuggestionsResponse:
+    """Genera sugerencias de fuentes/búsquedas basadas en los clusters
+    cuyas señales el founder ha aprobado (👍). 'Cluster #5 sobre fintech LATAM
+    tiene 8 aprobadas — añade búsqueda Bluesky con esos keywords.'
+
+    Costo: $0 (sin LLM). Solo agregación de keywords.
+    """
+    _require_user(request)
+    from .core.preferences import suggest_sources_from_clusters, get_engine_info
+    from .core.storage import signals_store, embeddings_store
+
+    all_signals = {s["id"]: s for s in signals_store.list(limit=10_000, min_score=0)}
+    embs = embeddings_store.list_all()
+    # Solo clusters con al menos 1 feedback positivo
+    cluster_texts: Dict[int, List[str]] = {}
+    cluster_has_positive: Dict[int, bool] = {}
+    for e in embs:
+        cid = e["cluster_id"]
+        sig = all_signals.get(e["signal_id"])
+        if not sig or cid < 0:
+            continue
+        if sig.get("feedback") == "up":
+            cluster_has_positive[cid] = True
+        cluster_texts.setdefault(cid, []).append(
+            f"{sig.get('theme','')} {sig.get('excerpt','')}"
+        )
+    # Filtrar a solo los que tienen positivos
+    filtered = {
+        cid: texts for cid, texts in cluster_texts.items()
+        if cluster_has_positive.get(cid)
+    }
+
+    suggestions = suggest_sources_from_clusters(filtered, max_suggestions=limit)
+    return SourceSuggestionsResponse(
+        mode=get_engine_info()["mode"],
+        items=[SourceSuggestionItem(**s) for s in suggestions],
+    )
+
+
+@app.get(
+    "/api/v1/autonomy",
+    response_model=AutonomyResponse,
+    summary="Get current autonomy level of the cazador",
+    tags=["hunter"],
+)
+def get_autonomy(request: Request) -> AutonomyResponse:
+    _require_user(request)
+    from .core.storage import autonomy_store
+    data = autonomy_store.get_full()
+    return AutonomyResponse(level=data["level"], updated_at=data["updated_at"])
+
+
+@app.put(
+    "/api/v1/autonomy",
+    response_model=AutonomyResponse,
+    summary="Set autonomy level: manual | assisted | autonomous_with_approval",
+    tags=["hunter"],
+)
+def set_autonomy(body: AutonomyUpdateRequest, request: Request) -> AutonomyResponse:
+    """M4.1: 3 niveles de autonomía configurable.
+
+    - manual: founder añade fuentes manualmente, sin sugerencias.
+    - assisted (default tras M4.1): sistema muestra sugerencias en
+      /cazar/fuentes; founder aprueba o rechaza una por una.
+    - autonomous_with_approval: sistema añade sugerencias automáticamente
+      pero las marca como "pendiente aprobación" antes de escanearlas.
+    """
+    _require_user(request)
+    from .core.storage import autonomy_store
+    autonomy_store.set_level(body.level)
+    data = autonomy_store.get_full()
+    return AutonomyResponse(level=data["level"], updated_at=data["updated_at"])
+
+
 def _run_scan_internal(
     source_ids: Optional[List[int]] = None,
     auto_promote_threshold: float = 0.0,
@@ -1513,6 +1719,20 @@ def _run_scan_internal(
                 item_titles=getattr(sig, "item_titles", None),
             )
             signals_created += 1
+            # M4.1: auto-embed la señal (fallback determinista si sentence-transformers
+            # no está instalado — siempre funciona, no rompe el scan).
+            try:
+                from .core.preferences import compute_embedding, get_engine_info
+                from .core.storage import embeddings_store
+                text = f"{sig.theme} {sig.excerpt} {sig.suggested_topic}"
+                vec = compute_embedding(text)
+                mode = get_engine_info()["mode"]
+                embeddings_store.upsert(
+                    signal_id, vec, cluster_id=-1,
+                    model_version=mode,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("scan: auto-embed failed for signal %s: %s", signal_id, exc)
             # Auto-analyze if trend score is interesting enough
             if analyzer is not None:
                 # Re-fetch signal to get the computed trend_score

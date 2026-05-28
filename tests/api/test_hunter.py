@@ -63,6 +63,106 @@ def test_add_source_invalid_kind_422(client, auth):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# M4.1 — preferences + autonomy (ADR-019)
+# ---------------------------------------------------------------------------
+
+
+def test_preferences_engine_reports_mode(client, auth):
+    r = client.get("/api/v1/preferences/engine", headers=auth)
+    assert r.status_code == 200
+    d = r.json()
+    assert d["mode"] in ("real", "fallback")
+
+
+def test_preferences_engine_requires_auth(client):
+    assert client.get("/api/v1/preferences/engine").status_code == 401
+
+
+def test_recluster_embeds_and_assigns_clusters(client, auth):
+    """Recluster genera embeddings para todas las señales sin uno y aplica
+    clustering."""
+    from orchestrator.core.storage import signals_store, embeddings_store
+    for i in range(6):
+        signals_store.add(
+            None, "rss", f"Fintech LATAM #{i}", 0.7,
+            f"Tema sobre fintech y reconciliación bancaria {i}",
+            [], "topic fintech",
+        )
+
+    r = client.post("/api/v1/preferences/recluster", headers=auth)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["signals_embedded"] == 6
+    # All 6 embeddings exist in the store
+    assert len(embeddings_store.list_all()) == 6
+
+
+def test_list_clusters_returns_grouped_signals(client, auth):
+    from orchestrator.core.storage import signals_store
+    for i in range(5):
+        sig_id = signals_store.add(
+            None, "rss", f"Tema {i}", 0.7, "excerpt", [], "topic"
+        )
+    # Recluster first
+    client.post("/api/v1/preferences/recluster", headers=auth)
+    r = client.get("/api/v1/preferences/clusters", headers=auth)
+    assert r.status_code == 200
+    d = r.json()
+    assert "items" in d
+    assert d["mode"] in ("real", "fallback")
+
+
+def test_clusters_requires_auth(client):
+    assert client.get("/api/v1/preferences/clusters").status_code == 401
+
+
+def test_source_suggestions_returns_keywords(client, auth):
+    from orchestrator.core.storage import signals_store, embeddings_store
+    from orchestrator.core.preferences import compute_embedding
+    # Create signals with shared keywords + positive feedback
+    s1 = signals_store.add(None, "rss", "Fintech para PYMEs LATAM",
+                            0.8, "Reconciliación bancaria automática",
+                            [], "topic")
+    s2 = signals_store.add(None, "rss", "Fintech automática PYMEs Ecuador",
+                            0.8, "Reconciliación contable para empresas",
+                            [], "topic")
+    signals_store.set_feedback(s1, "up")
+    signals_store.set_feedback(s2, "up")
+    # Embed them with the same cluster_id (force grouping)
+    for sid in (s1, s2):
+        embeddings_store.upsert(sid, compute_embedding("fintech pymes latam"), cluster_id=42)
+
+    r = client.get("/api/v1/sources/suggestions", headers=auth)
+    assert r.status_code == 200
+    d = r.json()
+    assert isinstance(d["items"], list)
+
+
+def test_get_autonomy_default_is_manual(client, auth):
+    r = client.get("/api/v1/autonomy", headers=auth)
+    assert r.status_code == 200
+    assert r.json()["level"] == "manual"
+
+
+def test_set_autonomy_persists(client, auth):
+    r = client.put("/api/v1/autonomy", headers=auth, json={"level": "assisted"})
+    assert r.status_code == 200
+    assert r.json()["level"] == "assisted"
+    # Re-read
+    assert client.get("/api/v1/autonomy", headers=auth).json()["level"] == "assisted"
+
+
+def test_set_autonomy_rejects_invalid_level(client, auth):
+    r = client.put("/api/v1/autonomy", headers=auth, json={"level": "banana"})
+    assert r.status_code == 422
+
+
+def test_autonomy_requires_auth(client):
+    assert client.get("/api/v1/autonomy").status_code == 401
+    assert client.put("/api/v1/autonomy", json={"level": "manual"}).status_code == 401
+
+
 def test_check_platform_detects_youtube_url(client, auth):
     r = client.post(
         "/api/v1/sources/check-platform",
