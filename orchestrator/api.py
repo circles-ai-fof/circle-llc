@@ -67,6 +67,7 @@ from .schemas.api import (
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
+    TranslateSignalResponse,
     SourceCreate,
     SourceItem,
     SourceQuality,
@@ -2063,6 +2064,98 @@ def signals_cleanup_mocks(request: Request) -> SignalsCleanupMocksResponse:
     from .core.storage import signals_store
     deleted = signals_store.cleanup_mocks()
     return SignalsCleanupMocksResponse(deleted=deleted)
+
+
+@app.post(
+    "/api/v1/signals/{signal_id}/translate",
+    response_model=TranslateSignalResponse,
+    summary="Translate the signal's theme + excerpt to Spanish (LLM call ~$0.001)",
+    tags=["hunter"],
+)
+def translate_signal(signal_id: int, request: Request) -> TranslateSignalResponse:
+    """M4.4 — traduce theme + excerpt al español con Claude Haiku.
+
+    Si la señal ya está en español (detected language=es), devuelve sin
+    cambios + already_in_spanish=true sin gastar LLM.
+
+    Si la señal NO está en español, hace una llamada Haiku (~$0.001) y
+    persiste la traducción. Posteriormente, el dashboard puede mostrar
+    'ver original / ver traducción' alternando los campos.
+    """
+    _require_user(request)
+    from .core.storage import signals_store
+    from .core.language import detect_language
+
+    sig = signals_store.get(signal_id)
+    if not sig:
+        raise HTTPException(status_code=404, detail="signal not found")
+
+    theme = sig.get("theme", "")
+    excerpt = sig.get("excerpt", "")
+    lang, _ = detect_language(f"{theme} {excerpt}")
+
+    # Shortcut: already in Spanish — no LLM call
+    if lang == "es":
+        return TranslateSignalResponse(
+            signal_id=signal_id,
+            original_language="es",
+            translated_theme=theme,
+            translated_excerpt=excerpt,
+            cost_usd_estimated=0.0,
+            already_in_spanish=True,
+        )
+
+    # In mock_mode (no API key), use a deterministic placeholder
+    if _workflow._mock_mode:
+        t_theme = f"[Traducción demo] {theme}"
+        t_excerpt = f"[Traducción demo] {excerpt}"
+        signals_store.set_translation(signal_id, t_theme, t_excerpt, original_language=lang)
+        return TranslateSignalResponse(
+            signal_id=signal_id,
+            original_language=lang,
+            translated_theme=t_theme,
+            translated_excerpt=t_excerpt,
+            cost_usd_estimated=0.0,
+            already_in_spanish=False,
+        )
+
+    # Real LLM call via the existing Anthropic client
+    try:
+        client = _workflow._idea_hunter._client
+        if client is None:
+            raise RuntimeError("LLM client not initialised")
+        prompt = (
+            f"Traduce este título y resumen al español neutro (LATAM). "
+            f"Mantén nombres propios y términos técnicos. Devuelve JSON con "
+            f"keys 'theme' y 'excerpt'.\n\n"
+            f"TITLE: {theme}\n\n"
+            f"EXCERPT: {excerpt[:1500]}"
+        )
+        resp = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=2048,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.content[0].text if resp.content else ""
+        import json as _json
+        # Best-effort JSON extraction
+        m = __import__("re").search(r"\{[^{}]*\}", raw, __import__("re").DOTALL)
+        data = _json.loads(m.group(0)) if m else {}
+        t_theme = (data.get("theme") or theme)[:240]
+        t_excerpt = (data.get("excerpt") or excerpt)[:1500]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("translate: LLM call failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Translation failed: {exc}")
+
+    signals_store.set_translation(signal_id, t_theme, t_excerpt, original_language=lang)
+    return TranslateSignalResponse(
+        signal_id=signal_id,
+        original_language=lang,
+        translated_theme=t_theme,
+        translated_excerpt=t_excerpt,
+        cost_usd_estimated=0.001,
+        already_in_spanish=False,
+    )
 
 
 @app.post(

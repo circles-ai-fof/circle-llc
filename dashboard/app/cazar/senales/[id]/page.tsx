@@ -33,6 +33,10 @@ type Signal = {
   analysis: SignalAnalysis | null;
   item_titles: string[];
   content_type: string;
+  // M4.4 — language + on-demand translation
+  language: string;
+  translated_theme: string | null;
+  translated_excerpt: string | null;
   created_at: number;
 };
 
@@ -66,6 +70,9 @@ export default function SignalDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [promoting, setPromoting] = useState(false);
+  // M4.4 — translation state
+  const [translating, setTranslating] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
 
   const refresh = async () => {
     setError(null);
@@ -129,6 +136,23 @@ export default function SignalDetailPage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setEnriching(false);
+    }
+  };
+
+  // M4.4 — Traducir al español con Claude Haiku (~$0.0005). Si el idioma ya es
+  // español, el backend retorna already_in_spanish=true sin gastar tokens.
+  const translate = async () => {
+    if (translating) return;
+    setTranslating(true);
+    try {
+      const r = await authFetch(`/api/v1/signals/${id}/translate`, { method: "POST" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      await refresh();
+      setShowOriginal(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTranslating(false);
     }
   };
 
@@ -197,6 +221,13 @@ export default function SignalDetailPage() {
     : "";
   const scoreColor =
     signal.score >= 0.8 ? "#00E5A0" : signal.score >= 0.6 ? "#FFB800" : "#94a3b8";
+
+  // M4.4 — translation display logic (same as listing page)
+  const hasTranslation = !!signal.translated_theme;
+  const needsTranslation = signal.language && signal.language !== "es" && signal.language !== "unknown";
+  const showingOriginal = hasTranslation && showOriginal;
+  const displayTheme = hasTranslation && !showOriginal ? signal.translated_theme! : signal.theme;
+  const displayExcerpt = hasTranslation && !showOriginal ? signal.translated_excerpt! : signal.excerpt;
 
   return (
     <main style={{ padding: "clamp(20px, 4vw, 32px) clamp(16px, 4vw, 40px)", maxWidth: 980, margin: "0 auto" }}>
@@ -268,8 +299,17 @@ export default function SignalDetailPage() {
           )}
         </div>
         <h1 style={{ color: "#fff", fontSize: 26, fontWeight: 700, lineHeight: 1.2, marginBottom: 12 }}>
-          {signal.theme}
+          {displayTheme}
         </h1>
+        {hasTranslation && (
+          <div style={{ marginBottom: 8, fontSize: 12, color: "#94a3b8" }}>
+            {showingOriginal ? (
+              <>📘 Mostrando original ({signal.language.toUpperCase()})</>
+            ) : (
+              <>🌐 Traducido del {signal.language.toUpperCase()} al español</>
+            )}
+          </div>
+        )}
         <div style={{ color: "#94a3b8", fontSize: 12 }}>
           Publicado: {fmtDate(signal.published_at)} · Capturado: {fmtDate(signal.created_at)}
         </div>
@@ -336,6 +376,44 @@ export default function SignalDetailPage() {
         >
           {analyzing ? "Analizando…" : signal.analysis ? "🔄 Re-analizar" : "🤖 Analizar con IA ($0.005)"}
         </button>
+        {/* M4.4 — translate to Spanish. Shown when the signal is in a foreign
+            language. If already translated, the same button alternates between
+            "ver original" and "ver traducción". */}
+        {needsTranslation && !hasTranslation && (
+          <button
+            onClick={translate}
+            disabled={translating}
+            title={`Traducir al español (idioma detectado: ${signal.language.toUpperCase()}). Usa Claude Haiku, ~$0.0005.`}
+            style={{
+              padding: "8px 16px",
+              background: "transparent",
+              color: translating ? "#64748b" : "#FFB800",
+              border: `1px solid ${translating ? "#1e293b" : "#FFB800"}`,
+              borderRadius: 6,
+              fontSize: 13,
+              cursor: translating ? "wait" : "pointer",
+            }}
+          >
+            {translating ? "Traduciendo…" : `🌐 Traducir desde ${signal.language.toUpperCase()}`}
+          </button>
+        )}
+        {hasTranslation && (
+          <button
+            onClick={() => setShowOriginal((v) => !v)}
+            title="Alternar entre versión traducida y original"
+            style={{
+              padding: "8px 16px",
+              background: "transparent",
+              color: "#FFB800",
+              border: "1px solid #FFB800",
+              borderRadius: 6,
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            {showingOriginal ? "🇪🇸 Ver traducción" : `🌐 Ver original (${signal.language.toUpperCase()})`}
+          </button>
+        )}
         <div style={{ marginLeft: "auto" }}>
           <button
             onClick={promote}
@@ -470,7 +548,7 @@ export default function SignalDetailPage() {
             borderRadius: 8, color: "#cbd5e1", fontSize: 14, lineHeight: 1.6,
           }}
         >
-          {signal.excerpt}
+          {displayExcerpt}
         </div>
       </section>
 

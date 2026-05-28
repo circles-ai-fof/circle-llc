@@ -202,6 +202,22 @@ def _migrate(conn: sqlite3.Connection) -> None:
             logger.info("storage: migrated signals.published_at column")
         except sqlite3.OperationalError as e:
             logger.warning("storage: migration published_at failed: %s", e)
+    # M4.4 — language detection + on-demand translation
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
+    if "language" not in cols:
+        try:
+            conn.execute("ALTER TABLE signals ADD COLUMN language TEXT")
+            logger.info("storage: migrated signals.language column")
+        except sqlite3.OperationalError as e:
+            logger.warning("storage: migration language failed: %s", e)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
+    if "translated_theme" not in cols:
+        try:
+            conn.execute("ALTER TABLE signals ADD COLUMN translated_theme TEXT")
+            conn.execute("ALTER TABLE signals ADD COLUMN translated_excerpt TEXT")
+            logger.info("storage: migrated signals.translated_theme + translated_excerpt columns")
+        except sqlite3.OperationalError as e:
+            logger.warning("storage: migration translation failed: %s", e)
     # M4.3 — content_type classification (heuristic, sin LLM)
     cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
     if "content_type" not in cols:
@@ -723,17 +739,20 @@ class SignalsStore:
         trend = self._compute_trend_score(theme, ts)
         # M4.3 — auto-classify content type from URL + theme + excerpt
         from .content_type import classify_content_type
+        from .language import detect_language
         cat, _, _ = classify_content_type(
             evidence_urls[0] if evidence_urls else "",
             theme, excerpt,
         )
+        # M4.4 — detect language of theme+excerpt
+        lang, _ = detect_language(f"{theme} {excerpt}")
         if _db_path:
             with _conn() as c:
                 cur = c.execute(
                     "INSERT INTO signals(source_id,source_kind,theme,score,excerpt,"
-                    "evidence_json,suggested_topic,trend_score,published_at,item_titles_json,content_type,created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic, trend, published_at, titles_json, cat, ts),
+                    "evidence_json,suggested_topic,trend_score,published_at,item_titles_json,content_type,language,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic, trend, published_at, titles_json, cat, lang, ts),
                 )
                 return int(cur.lastrowid)
         new_id = max([s["id"] for s in _memory_signals], default=0) + 1
@@ -743,7 +762,9 @@ class SignalsStore:
             "evidence_json": ev_json, "suggested_topic": suggested_topic,
             "feedback": None, "promoted_run_id": None,
             "trend_score": trend, "published_at": published_at,
-            "item_titles_json": titles_json, "content_type": cat, "created_at": ts,
+            "item_titles_json": titles_json, "content_type": cat,
+            "language": lang, "translated_theme": None, "translated_excerpt": None,
+            "created_at": ts,
         })
         return new_id
 
@@ -794,7 +815,7 @@ class SignalsStore:
                 if like:
                     rows = c.execute(
                         "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                        "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,content_type,created_at "
+                        "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,content_type,language,translated_theme,translated_excerpt,created_at "
                         "FROM signals WHERE score>=? AND ("
                         " LOWER(theme) LIKE ? OR LOWER(excerpt) LIKE ? OR LOWER(suggested_topic) LIKE ?"
                         ") ORDER BY trend_score DESC, score DESC, created_at DESC LIMIT ?",
@@ -803,7 +824,7 @@ class SignalsStore:
                 else:
                     rows = c.execute(
                         "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                        "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,content_type,created_at "
+                        "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,content_type,language,translated_theme,translated_excerpt,created_at "
                         "FROM signals WHERE score>=? "
                         "ORDER BY trend_score DESC, score DESC, created_at DESC LIMIT ?",
                         (min_score, limit),
@@ -832,7 +853,7 @@ class SignalsStore:
             with _conn() as c:
                 row = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,content_type,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,content_type,language,translated_theme,translated_excerpt,created_at "
                     "FROM signals WHERE id=?", (signal_id,),
                 ).fetchone()
                 return _signal_row_to_dict(dict(row)) if row else None
@@ -853,7 +874,7 @@ class SignalsStore:
             with _conn() as c:
                 rows = c.execute(
                     "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,content_type,created_at "
+                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,content_type,language,translated_theme,translated_excerpt,created_at "
                     "FROM signals WHERE promoted_run_id IS NOT NULL "
                     "ORDER BY created_at DESC LIMIT ?",
                     (limit,),
@@ -906,6 +927,30 @@ class SignalsStore:
                     r["excerpt"] = excerpt[:2000]
                 if item_titles is not None:
                     r["item_titles_json"] = json.dumps(item_titles, ensure_ascii=False)
+                return
+
+    def set_translation(
+        self,
+        signal_id: int,
+        translated_theme: str,
+        translated_excerpt: str,
+        original_language: str = "en",
+    ) -> None:
+        """M4.4 — persist the LLM-generated Spanish translation."""
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                c.execute(
+                    "UPDATE signals SET translated_theme=?, translated_excerpt=?, language=? "
+                    "WHERE id=?",
+                    (translated_theme[:240], translated_excerpt[:2000], original_language, signal_id),
+                )
+            return
+        for r in _memory_signals:
+            if r["id"] == signal_id:
+                r["translated_theme"] = translated_theme[:240]
+                r["translated_excerpt"] = translated_excerpt[:2000]
+                r["language"] = original_language
                 return
 
     def set_analysis(self, signal_id: int, analysis: Optional[Dict]) -> None:
@@ -1244,6 +1289,16 @@ def _signal_row_to_dict(row: Dict) -> Dict:
             row["content_type"] = cat
         except Exception:  # noqa: BLE001
             row["content_type"] = "unknown"
+    # M4.4 — language defaults + on-the-fly detection
+    if not row.get("language"):
+        try:
+            from .language import detect_language
+            lang, _ = detect_language(f"{row.get('theme','')} {row.get('excerpt','')}")
+            row["language"] = lang
+        except Exception:  # noqa: BLE001
+            row["language"] = "unknown"
+    row.setdefault("translated_theme", None)
+    row.setdefault("translated_excerpt", None)
     return row
 
 

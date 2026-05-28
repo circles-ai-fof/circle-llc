@@ -757,6 +757,57 @@ def test_autoscan_status_requires_auth(client):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# M4.4 — translation
+# ---------------------------------------------------------------------------
+
+
+def test_translate_signal_already_in_spanish_skips_llm(client, auth):
+    """Si la señal ya está en español, devuelve sin llamar al LLM."""
+    from orchestrator.core.storage import signals_store
+    sid = signals_store.add(
+        None, "rss", "Plataforma fintech para PYMEs LATAM",
+        0.7, "Reconciliación bancaria automática para empresas ecuatorianas",
+        [], "topic",
+    )
+    r = client.post(f"/api/v1/signals/{sid}/translate", headers=auth)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["already_in_spanish"]
+    assert d["original_language"] == "es"
+    assert d["cost_usd_estimated"] == 0.0
+
+
+def test_translate_signal_english_in_mock_mode(client, auth):
+    """En mock_mode genera placeholder y persiste."""
+    from orchestrator.core.storage import signals_store
+    sid = signals_store.add(
+        None, "rss", "Facebook and Google extend working from home",
+        0.7, "Tech companies announce extending remote work policies",
+        [], "topic",
+    )
+    r = client.post(f"/api/v1/signals/{sid}/translate", headers=auth)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert not d["already_in_spanish"]
+    assert d["original_language"] == "en"
+    assert "[Traducción demo]" in d["translated_theme"]
+    # Persisted in BD
+    sig_after = signals_store.get(sid)
+    assert sig_after["translated_theme"]
+    assert sig_after["translated_excerpt"]
+
+
+def test_translate_signal_404_for_unknown(client, auth):
+    r = client.post("/api/v1/signals/99999/translate", headers=auth)
+    assert r.status_code == 404
+
+
+def test_translate_signal_requires_auth(client):
+    r = client.post("/api/v1/signals/1/translate")
+    assert r.status_code == 401
+
+
 def test_enrich_signal_uses_og_tags(client, auth):
     """M3.17: /signals/{id}/enrich extrae og:title + og:description y
     actualiza theme + excerpt SIN llamar al LLM."""

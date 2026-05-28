@@ -421,7 +421,20 @@ class SignalItem(BaseModel):
     # M4.3 — content type classification: news | blog | research_paper |
     # tool_product | course_tutorial | video_podcast | community | corporate | unknown
     content_type: str = Field(default="unknown")
+    # M4.4 — language detection + on-demand translation
+    language: str = Field(default="unknown", description='Detected: es | en | unknown')
+    translated_theme: Optional[str] = None
+    translated_excerpt: Optional[str] = None
     created_at: int
+
+
+class TranslateSignalResponse(BaseModel):
+    signal_id: int
+    original_language: str
+    translated_theme: str
+    translated_excerpt: str
+    cost_usd_estimated: float = 0.0
+    already_in_spanish: bool = False
 
 
 class SignalsListResponse(BaseModel):

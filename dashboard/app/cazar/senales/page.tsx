@@ -33,6 +33,10 @@ type Signal = {
   analysis: SignalAnalysis | null;
   item_titles: string[];
   content_type: string;
+  // M4.4 — language + on-demand translation
+  language: string;
+  translated_theme: string | null;
+  translated_excerpt: string | null;
   created_at: number;
 };
 
@@ -83,6 +87,9 @@ export default function SenalesPage() {
   const [analyzing, setAnalyzing] = useState<Set<number>>(new Set());
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [batchAnalyzing, setBatchAnalyzing] = useState<boolean>(false);
+  // M4.4 — translation state per signal + toggle "ver original"
+  const [translating, setTranslating] = useState<Set<number>>(new Set());
+  const [showOriginal, setShowOriginal] = useState<Set<number>>(new Set());
 
   // Detect mock mode (backend running without ANTHROPIC_API_KEY) so we can
   // warn the founder that ideas are placeholders, not real LLM output.
@@ -304,6 +311,40 @@ export default function SenalesPage() {
     } finally {
       setBatchAnalyzing(false);
     }
+  };
+
+  const translate = async (id: number) => {
+    if (translating.has(id)) return;
+    setTranslating((prev) => new Set(prev).add(id));
+    try {
+      const r = await authFetch(`/api/v1/signals/${id}/translate`, { method: "POST" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      setSignals((prev) =>
+        prev.map((s) =>
+          s.id === id
+            ? { ...s, translated_theme: data.translated_theme, translated_excerpt: data.translated_excerpt, language: data.original_language }
+            : s
+        )
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTranslating((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const toggleOriginal = (id: number) => {
+    setShowOriginal((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const toggleExpanded = (id: number) => {
@@ -717,7 +758,11 @@ export default function SenalesPage() {
             signal={s}
             isAnalyzing={analyzing.has(s.id)}
             isExpanded={expanded.has(s.id)}
+            isTranslating={translating.has(s.id)}
+            showOriginal={showOriginal.has(s.id)}
             onAnalyze={() => analyze(s.id)}
+            onTranslate={() => translate(s.id)}
+            onToggleOriginal={() => toggleOriginal(s.id)}
             onToggleExpand={() => toggleExpanded(s.id)}
             onFeedback={(fb) => setFeedback(s.id, fb)}
             onPromote={() => promote(s.id)}
@@ -821,7 +866,11 @@ function SignalCard({
   signal,
   isAnalyzing,
   isExpanded,
+  isTranslating,
+  showOriginal,
   onAnalyze,
+  onTranslate,
+  onToggleOriginal,
   onToggleExpand,
   onFeedback,
   onPromote,
@@ -829,7 +878,11 @@ function SignalCard({
   signal: Signal;
   isAnalyzing: boolean;
   isExpanded: boolean;
+  isTranslating: boolean;
+  showOriginal: boolean;
   onAnalyze: () => void;
+  onTranslate: () => void;
+  onToggleOriginal: () => void;
   onToggleExpand: () => void;
   onFeedback: (fb: "up" | "down" | "clear") => void;
   onPromote: () => void;
@@ -840,6 +893,17 @@ function SignalCard({
   const capturedLabel = formatRelativeDate(signal.created_at, "capturado");
   const sourceLabel = signal.source_name || `Fuente ${signal.source_kind}`;
   const hasAnalysis = !!signal.analysis;
+  // M4.4 — translation display logic. We expose these as `effective*` because
+  // the JSX below has an IIFE that further refines the theme when it's a
+  // generic placeholder ("Mock signal from…"). Translation must be applied
+  // FIRST (so the generic check still works after substitution), then the
+  // generic→item_title swap is applied as a fallback only when the
+  // (possibly-translated) theme is still placeholder-shaped.
+  const hasTranslation = !!signal.translated_theme;
+  const needsTranslation = signal.language && signal.language !== "es" && signal.language !== "unknown";
+  const showingOriginal = hasTranslation && showOriginal;
+  const effectiveTheme = hasTranslation && !showOriginal ? signal.translated_theme! : signal.theme;
+  const effectiveExcerpt = hasTranslation && !showOriginal ? signal.translated_excerpt! : signal.excerpt;
   // Recommendation badge color: promote=green, wait=yellow, discard=red
   const recColor =
     signal.analysis?.recommendation === "promote"
@@ -879,23 +943,27 @@ function SignalCard({
             }}>
               {signal.source_kind}
             </span>
-            {/* M4.3 — content type badge */}
+            {/* M4.3 — content type badge — más prominente para visibilidad */}
             {(() => {
               const meta = CONTENT_TYPE_META[signal.content_type] || CONTENT_TYPE_META.unknown;
               return (
                 <span
                   title={`Tipo de contenido: ${meta.label}`}
                   style={{
-                    padding: "1px 8px",
-                    background: `${meta.color}15`,
+                    padding: "3px 10px",
+                    background: `${meta.color}20`,
                     color: meta.color,
-                    border: `1px solid ${meta.color}40`,
-                    borderRadius: 4,
-                    fontSize: 11,
-                    fontWeight: 600,
+                    border: `1px solid ${meta.color}`,
+                    borderRadius: 12,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
                   }}
                 >
-                  {meta.icon} {meta.label}
+                  <span style={{ fontSize: 14 }}>{meta.icon}</span>
+                  {meta.label}
                 </span>
               );
             })()}
@@ -954,19 +1022,29 @@ function SignalCard({
           {/* Display title: if theme is a generic placeholder, prefer the
               first item_title — it's much more informative. */}
           {(() => {
-            const themeIsGeneric = /^(Mock signal from|Tema recurrente en|Item de|Detected pattern)/i.test(signal.theme);
+            const themeIsGeneric = /^(Mock signal from|Tema recurrente en|Item de|Detected pattern)/i.test(effectiveTheme);
             const firstItemTitle = signal.item_titles?.find((t) => t && t.trim().length > 0);
             const displayTheme =
-              themeIsGeneric && firstItemTitle ? firstItemTitle : signal.theme;
-            const excerptIsGeneric = /^Detected pattern across/i.test(signal.excerpt);
+              themeIsGeneric && firstItemTitle ? firstItemTitle : effectiveTheme;
+            const excerptIsGeneric = /^Detected pattern across/i.test(effectiveExcerpt);
             return (
               <>
                 <h3 style={{ color: "#fff", fontSize: 17, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>
                   {displayTheme}
                 </h3>
+                {/* M4.4 — small chip showing translation state next to the title */}
+                {hasTranslation && (
+                  <div style={{ marginBottom: 8, fontSize: 11, color: "#94a3b8" }}>
+                    {showingOriginal ? (
+                      <>📘 Mostrando original ({signal.language.toUpperCase()})</>
+                    ) : (
+                      <>🌐 Traducido del {signal.language.toUpperCase()} al español</>
+                    )}
+                  </div>
+                )}
                 {!excerptIsGeneric && (
                   <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.55, marginBottom: 10 }}>
-                    {signal.excerpt}
+                    {effectiveExcerpt}
                   </p>
                 )}
                 {/* Items detectados — un bloque limpio en vez de chips repetidos */}
@@ -1174,6 +1252,46 @@ function SignalCard({
                   : "▼ Ver análisis"
                 : "🤖 Analizar"}
           </button>
+          {/* M4.4 — translate to Spanish (Haiku, ~$0.0005). Only show when the
+              signal is in a foreign language. If already translated, offer a
+              toggle to view the original. */}
+          {needsTranslation && !hasTranslation && (
+            <button
+              onClick={onTranslate}
+              disabled={isTranslating}
+              title={`Traducir al español (idioma detectado: ${signal.language.toUpperCase()}). Usa Claude Haiku, ~$0.0005.`}
+              style={{
+                marginTop: 4,
+                padding: "6px 12px",
+                background: "transparent",
+                color: isTranslating ? "#64748b" : "#FFB800",
+                border: `1px solid ${isTranslating ? "#1e293b" : "#FFB800"}`,
+                borderRadius: 6,
+                fontSize: 11,
+                cursor: isTranslating ? "wait" : "pointer",
+              }}
+            >
+              {isTranslating ? "Traduciendo…" : `🌐 Traducir (${signal.language.toUpperCase()})`}
+            </button>
+          )}
+          {hasTranslation && (
+            <button
+              onClick={onToggleOriginal}
+              title="Alternar entre versión traducida y original"
+              style={{
+                marginTop: 4,
+                padding: "6px 12px",
+                background: "transparent",
+                color: "#FFB800",
+                border: "1px solid #FFB800",
+                borderRadius: 6,
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              {showingOriginal ? "🇪🇸 Ver traducción" : `🌐 Ver original (${signal.language.toUpperCase()})`}
+            </button>
+          )}
         </div>
       </div>
 
