@@ -1415,6 +1415,7 @@ def list_signals(
     min_score: float = 0.0,
     sort: str = "recent",
     kind: str = "",
+    search: str = "",
 ) -> SignalsListResponse:
     """
     sort:
@@ -1422,7 +1423,9 @@ def list_signals(
       - "score"     — highest score first
       - "trend"     — highest trend_score first (then score)
       - "published" — most-recently-published-by-source first (NULLs last)
-    kind: filter by source_kind (rss/hn/reddit/url/youtube/...). Empty = all.
+    kind:    filter by source_kind (rss/hn/reddit/url/youtube/...). Empty = all.
+    search:  case-insensitive substring on theme/excerpt/suggested_topic.
+             Server-side LIKE — escalable a FTS5 cuando supere ~5k señales.
     """
     _require_user(request)
     from .core.storage import signals_store, sources_store
@@ -1430,7 +1433,12 @@ def list_signals(
         raise HTTPException(status_code=422, detail="limit must be 1-500")
     if sort not in {"recent", "score", "trend", "published"}:
         raise HTTPException(status_code=422, detail="sort must be one of: recent, score, trend, published")
-    rows = signals_store.list(limit=limit, min_score=min_score)
+    # Length-bound the search term to avoid SQL slowdown on absurd inputs
+    if len(search) > 200:
+        raise HTTPException(status_code=422, detail="search must be ≤200 chars")
+    rows = signals_store.list(
+        limit=limit, min_score=min_score, search=search or None,
+    )
     # Filter by source_kind if requested
     if kind:
         rows = [r for r in rows if r.get("source_kind") == kind]

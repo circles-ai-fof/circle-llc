@@ -100,7 +100,7 @@ export default function SenalesPage() {
     setShowPromoted((v) => !v);
   };
 
-  const refresh = async () => {
+  const refresh = async (overrides?: { search?: string }) => {
     setLoading(true);
     setError(null);
     try {
@@ -110,6 +110,8 @@ export default function SenalesPage() {
         sort,
       });
       if (kindFilter) params.set("kind", kindFilter);
+      const effectiveSearch = overrides?.search ?? search;
+      if (effectiveSearch) params.set("search", effectiveSearch);
       const r = await authFetch(`/api/v1/signals?${params.toString()}`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setSignals((await r.json()).items);
@@ -122,7 +124,15 @@ export default function SenalesPage() {
 
   useEffect(() => {
     refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [minScore, sort, kindFilter]);
+
+  // Debounced search — wait 350ms after the user stops typing
+  useEffect(() => {
+    const id = setTimeout(() => refresh({ search }), 350);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   const cleanup = async () => {
     if (
@@ -313,14 +323,9 @@ export default function SenalesPage() {
     }
   };
 
-  // Client-side filter: search (text), feedback filter, min trend
-  // Server still applies score/kind/sort — this is a fast in-browser refine.
+  // Server now handles score/kind/sort/search. Client-side filter is only
+  // for the cheap-but-frequent feedback + trend refinements.
   const visibleSignals = signals.filter((s) => {
-    if (search) {
-      const q = search.toLowerCase();
-      const hay = `${s.theme} ${s.excerpt} ${s.suggested_topic} ${s.source_name || ""}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
     if (feedbackFilter === "none" && s.feedback) return false;
     if (feedbackFilter === "up" && s.feedback !== "up") return false;
     if (feedbackFilter === "down" && s.feedback !== "down") return false;
@@ -456,7 +461,7 @@ export default function SenalesPage() {
             📊 CSV
           </button>
           <button
-            onClick={refresh}
+            onClick={() => refresh()}
             style={{
               padding: "6px 14px", background: "transparent",
               color: "#00D4FF", border: "1px solid #00D4FF", borderRadius: 6, fontSize: 13,

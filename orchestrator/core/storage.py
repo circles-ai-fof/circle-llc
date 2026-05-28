@@ -668,19 +668,51 @@ class SignalsStore:
                 hits += 1
         return min(5.0, float(hits))
 
-    def list(self, limit: int = 100, min_score: float = 0.0) -> List[Dict]:
+    def list(
+        self,
+        limit: int = 100,
+        min_score: float = 0.0,
+        search: Optional[str] = None,
+    ) -> List[Dict]:
+        """List signals filtered by score, optionally fuzzy-matched against
+        theme/excerpt/suggested_topic.
+
+        `search`: case-insensitive substring match. LIKE-based — good enough
+        for <5k signals. Upgrade to SQLite FTS5 (virtual table + MATCH) when
+        the dataset hits that scale.
+        """
         _ensure_init()
+        like = f"%{search.lower()}%" if search else None
         if _db_path:
             with _conn() as c:
-                rows = c.execute(
-                    "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
-                    "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,created_at "
-                    "FROM signals WHERE score>=? "
-                    "ORDER BY trend_score DESC, score DESC, created_at DESC LIMIT ?",
-                    (min_score, limit),
-                ).fetchall()
+                if like:
+                    rows = c.execute(
+                        "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
+                        "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,created_at "
+                        "FROM signals WHERE score>=? AND ("
+                        " LOWER(theme) LIKE ? OR LOWER(excerpt) LIKE ? OR LOWER(suggested_topic) LIKE ?"
+                        ") ORDER BY trend_score DESC, score DESC, created_at DESC LIMIT ?",
+                        (min_score, like, like, like, limit),
+                    ).fetchall()
+                else:
+                    rows = c.execute(
+                        "SELECT id,source_id,source_kind,theme,score,excerpt,evidence_json,"
+                        "suggested_topic,feedback,promoted_run_id,trend_score,published_at,analysis_json,item_titles_json,created_at "
+                        "FROM signals WHERE score>=? "
+                        "ORDER BY trend_score DESC, score DESC, created_at DESC LIMIT ?",
+                        (min_score, limit),
+                    ).fetchall()
                 return [_signal_row_to_dict(dict(r)) for r in rows]
+        # In-memory fallback
         rows = [r for r in _memory_signals if r["score"] >= min_score]
+        if like:
+            needle = search.lower()
+            rows = [
+                r for r in rows
+                if needle in (r.get("theme", "") or "").lower()
+                or needle in (r.get("excerpt", "") or "").lower()
+                or needle in (r.get("suggested_topic", "") or "").lower()
+            ]
         rows = sorted(
             rows,
             key=lambda r: (r.get("trend_score", 0), r["score"], r["created_at"]),

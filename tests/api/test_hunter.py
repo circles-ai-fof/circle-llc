@@ -650,6 +650,47 @@ def test_analyze_batch_requires_auth(client):
     assert client.post("/api/v1/signals/analyze-batch", json={}).status_code == 401
 
 
+def test_list_signals_search_filters_by_theme(client, auth):
+    """?search= does case-insensitive substring match on theme."""
+    from orchestrator.core.storage import signals_store
+    signals_store.add(None, "rss", "Plataforma fintech LATAM", 0.7, "ex1", [], "topic1")
+    signals_store.add(None, "rss", "Marketplace agrícola Colombia", 0.7, "ex2", [], "topic2")
+    signals_store.add(None, "hn", "Edtech para universitarios", 0.6, "ex3", [], "topic3")
+
+    r = client.get("/api/v1/signals?search=fintech", headers=auth)
+    assert r.status_code == 200
+    items = r.json()["items"]
+    themes = [it["theme"] for it in items]
+    assert "Plataforma fintech LATAM" in themes
+    assert "Marketplace agrícola Colombia" not in themes
+
+
+def test_list_signals_search_is_case_insensitive(client, auth):
+    from orchestrator.core.storage import signals_store
+    signals_store.add(None, "rss", "Plataforma FINTECH LATAM", 0.7, "ex", [], "topic")
+
+    r = client.get("/api/v1/signals?search=fintech", headers=auth)
+    assert r.status_code == 200
+    assert len(r.json()["items"]) == 1
+
+
+def test_list_signals_search_matches_excerpt_and_topic(client, auth):
+    from orchestrator.core.storage import signals_store
+    signals_store.add(None, "rss", "Tema A", 0.7, "Excerpt mentions LOGISTICA", [], "topic1")
+    signals_store.add(None, "rss", "Tema B", 0.7, "Otro extracto", [], "topic con logistica")
+    signals_store.add(None, "rss", "Tema C", 0.7, "irrelevant", [], "topic D")
+
+    r = client.get("/api/v1/signals?search=logistica", headers=auth)
+    assert r.status_code == 200
+    themes = [it["theme"] for it in r.json()["items"]]
+    assert set(themes) == {"Tema A", "Tema B"}
+
+
+def test_list_signals_search_too_long_422(client, auth):
+    r = client.get(f"/api/v1/signals?search={'x' * 300}", headers=auth)
+    assert r.status_code == 422
+
+
 def test_stats_endpoint_returns_aggregated_counts(client, auth):
     """GET /stats returns counts for signals, sources, runs, and cost."""
     from orchestrator.core.storage import signals_store, sources_store
