@@ -19,7 +19,7 @@ import logging
 import os
 import time
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
@@ -67,6 +67,10 @@ from .schemas.api import (
     SignalsDeleteByTypeRequest,
     SignalsDeleteByTypeResponse,
     SignalsStatsByTypeResponse,
+    SignalsBulkFeedbackRequest,
+    SignalsBulkFeedbackResponse,
+    SignalsBulkDeleteByIdsRequest,
+    SignalsBulkDeleteByIdsResponse,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2090,6 +2094,66 @@ def signals_cleanup(request: Request, older_than_days: int = 30) -> SignalsClean
         older_than_days=older_than_days,
         survivors_kept_with_feedback=survivors,
     )
+
+
+@app.post(
+    "/api/v1/signals/bulk-feedback",
+    response_model=SignalsBulkFeedbackResponse,
+    summary="M4.9 — Aplicar feedback (up/down/clear) a varias señales",
+    tags=["hunter"],
+)
+def signals_bulk_feedback(
+    body: SignalsBulkFeedbackRequest, request: Request
+) -> SignalsBulkFeedbackResponse:
+    """Founder request natural tras M4.6 (bulk-delete): poder marcar varias
+    señales como 👍 / 👎 de un click.
+
+    Iteramos signal_ids y aplicamos feedback. Si un id no existe, lo
+    contamos como skipped pero no fallamos el batch — esto evita que un
+    refresh stale en el cliente rompa todo el lote.
+    """
+    _require_user(request)
+    from .core.storage import signals_store
+    # feedback "clear" se persiste como None en el storage
+    fb_to_apply: Optional[str] = None if body.feedback == "clear" else body.feedback
+    # Para reportar `skipped_missing` con precisión hacemos un único query de
+    # existencia antes del bucle de UPDATEs (set_feedback es silent-no-op para
+    # IDs inexistentes). El cost es O(N) sobre signals pero N es < 5k en M4.
+    existing = {s["id"] for s in signals_store.list(limit=10_000, min_score=0.0)}
+    updated = 0
+    skipped = 0
+    for sid in body.signal_ids:
+        if sid not in existing:
+            skipped += 1
+            continue
+        signals_store.set_feedback(sid, fb_to_apply)
+        updated += 1
+    return SignalsBulkFeedbackResponse(
+        updated=updated,
+        feedback_applied=body.feedback,
+        skipped_missing=skipped,
+    )
+
+
+@app.post(
+    "/api/v1/signals/bulk-delete-by-ids",
+    response_model=SignalsBulkDeleteByIdsResponse,
+    summary="M4.9 — Borrado masivo de señales por lista explícita de IDs",
+    tags=["hunter"],
+)
+def signals_bulk_delete_by_ids(
+    body: SignalsBulkDeleteByIdsRequest, request: Request
+) -> SignalsBulkDeleteByIdsResponse:
+    """Companion de bulk-feedback. El founder seleccionó manualmente las
+    señales que quiere borrar — confiamos en esa decisión y NO preservamos
+    promovidas ni con feedback (diferente de delete-by-type que SÍ preserva
+    por defecto). Si seleccionas una señal promovida y la borras, te
+    quedaste sin la señal pero el run_id sigue vivo en /cazar/{run_id}.
+    """
+    _require_user(request)
+    from .core.storage import signals_store
+    deleted = signals_store.delete_by_ids(body.signal_ids)
+    return SignalsBulkDeleteByIdsResponse(deleted=deleted)
 
 
 @app.get(

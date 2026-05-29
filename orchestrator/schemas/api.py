@@ -497,6 +497,30 @@ class SignalsDeleteByTypeResponse(BaseModel):
     kept_feedback: int = Field(description="Señales del filtro preservadas por tener feedback")
 
 
+# M4.9 — bulk delete por lista de IDs (companion de bulk-feedback)
+class SignalsBulkDeleteByIdsRequest(BaseModel):
+    signal_ids: List[int] = Field(min_length=1, max_length=500)
+
+
+class SignalsBulkDeleteByIdsResponse(BaseModel):
+    deleted: int
+
+
+# M4.9 — bulk feedback (multi-select + marcar varias como 👍/👎)
+class SignalsBulkFeedbackRequest(BaseModel):
+    signal_ids: List[int] = Field(min_length=1, max_length=500, description="IDs a actualizar")
+    feedback: str = Field(
+        pattern="^(up|down|clear)$",
+        description="Feedback a aplicar: 'up' (👍), 'down' (👎), 'clear' (sin marcar)",
+    )
+
+
+class SignalsBulkFeedbackResponse(BaseModel):
+    updated: int = Field(description="Cantidad de señales realmente actualizadas")
+    feedback_applied: str
+    skipped_missing: int = Field(description="IDs que no existen en la base")
+
+
 # M4.7 — distribución de señales por content_type
 class SignalsStatsByTypeResponse(BaseModel):
     news: int = 0

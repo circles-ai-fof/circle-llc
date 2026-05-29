@@ -561,6 +561,176 @@ def test_signals_stats_by_type_requires_auth(client):
     assert client.get("/api/v1/signals/stats-by-type").status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# M4.9 — bulk feedback (multi-select + marcar varias como 👍/👎)
+# ---------------------------------------------------------------------------
+
+
+def test_bulk_feedback_up_marks_all_listed(client, auth):
+    from orchestrator.core.storage import signals_store
+    s1 = signals_store.add(
+        source_id=None, source_kind="rss", theme="Sig A M49",
+        score=0.5, excerpt="ex", evidence_urls=["https://example.com/a-m49"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    s2 = signals_store.add(
+        source_id=None, source_kind="rss", theme="Sig B M49",
+        score=0.5, excerpt="ex", evidence_urls=["https://example.com/b-m49"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    r = client.post(
+        "/api/v1/signals/bulk-feedback",
+        headers=auth, json={"signal_ids": [s1, s2], "feedback": "up"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["updated"] == 2
+    assert data["feedback_applied"] == "up"
+    assert data["skipped_missing"] == 0
+    # Verificar persistencia
+    listed = client.get(
+        "/api/v1/signals?min_score=0.0&limit=500", headers=auth
+    ).json()["items"]
+    by_id = {it["id"]: it for it in listed}
+    assert by_id[s1]["feedback"] == "up"
+    assert by_id[s2]["feedback"] == "up"
+
+
+def test_bulk_feedback_clear_removes_existing(client, auth):
+    from orchestrator.core.storage import signals_store
+    sid = signals_store.add(
+        source_id=None, source_kind="rss", theme="Sig clear M49",
+        score=0.5, excerpt="ex", evidence_urls=["https://example.com/clear-m49"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    signals_store.set_feedback(sid, "down")
+    r = client.post(
+        "/api/v1/signals/bulk-feedback",
+        headers=auth, json={"signal_ids": [sid], "feedback": "clear"},
+    )
+    assert r.status_code == 200
+    listed = client.get(
+        "/api/v1/signals?min_score=0.0&limit=500", headers=auth
+    ).json()["items"]
+    by_id = {it["id"]: it for it in listed}
+    assert by_id[sid]["feedback"] is None
+
+
+def test_bulk_feedback_counts_skipped_missing(client, auth):
+    """IDs que no existen suman a skipped_missing pero no fallan el batch."""
+    from orchestrator.core.storage import signals_store
+    sid = signals_store.add(
+        source_id=None, source_kind="rss", theme="Sig real M49",
+        score=0.5, excerpt="ex", evidence_urls=["https://example.com/real-m49"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    r = client.post(
+        "/api/v1/signals/bulk-feedback",
+        headers=auth,
+        json={"signal_ids": [sid, 999_999, 888_888], "feedback": "down"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["updated"] == 1
+    assert data["skipped_missing"] == 2
+
+
+def test_bulk_feedback_rejects_invalid_feedback(client, auth):
+    r = client.post(
+        "/api/v1/signals/bulk-feedback",
+        headers=auth, json={"signal_ids": [1], "feedback": "banana"},
+    )
+    assert r.status_code == 422
+
+
+def test_bulk_feedback_rejects_empty_list(client, auth):
+    r = client.post(
+        "/api/v1/signals/bulk-feedback",
+        headers=auth, json={"signal_ids": [], "feedback": "up"},
+    )
+    assert r.status_code == 422
+
+
+def test_bulk_feedback_caps_at_500_ids(client, auth):
+    """No queremos que un cliente malicioso meta 100k ids."""
+    r = client.post(
+        "/api/v1/signals/bulk-feedback",
+        headers=auth,
+        json={"signal_ids": list(range(1, 600)), "feedback": "up"},
+    )
+    assert r.status_code == 422
+
+
+def test_bulk_feedback_requires_auth(client):
+    r = client.post(
+        "/api/v1/signals/bulk-feedback",
+        json={"signal_ids": [1], "feedback": "up"},
+    )
+    assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# M4.9 — bulk delete por lista de IDs (companion del bulk-feedback)
+# ---------------------------------------------------------------------------
+
+
+def test_bulk_delete_by_ids_removes_signals(client, auth):
+    from orchestrator.core.storage import signals_store
+    s1 = signals_store.add(
+        source_id=None, source_kind="rss", theme="Sig del A M49",
+        score=0.5, excerpt="ex", evidence_urls=["https://example.com/del-a-m49"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    s2 = signals_store.add(
+        source_id=None, source_kind="rss", theme="Sig del B M49",
+        score=0.5, excerpt="ex", evidence_urls=["https://example.com/del-b-m49"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    survivor = signals_store.add(
+        source_id=None, source_kind="rss", theme="Sig keep M49",
+        score=0.5, excerpt="ex", evidence_urls=["https://example.com/keep-m49"],
+        suggested_topic="t", item_titles=["t"],
+    )
+    r = client.post(
+        "/api/v1/signals/bulk-delete-by-ids",
+        headers=auth, json={"signal_ids": [s1, s2]},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["deleted"] == 2
+    listed = client.get(
+        "/api/v1/signals?min_score=0.0&limit=500", headers=auth
+    ).json()["items"]
+    themes = {it["theme"] for it in listed}
+    assert "Sig del A M49" not in themes
+    assert "Sig del B M49" not in themes
+    assert "Sig keep M49" in themes
+    _ = survivor
+
+
+def test_bulk_delete_by_ids_rejects_empty_list(client, auth):
+    r = client.post(
+        "/api/v1/signals/bulk-delete-by-ids",
+        headers=auth, json={"signal_ids": []},
+    )
+    assert r.status_code == 422
+
+
+def test_bulk_delete_by_ids_caps_at_500(client, auth):
+    r = client.post(
+        "/api/v1/signals/bulk-delete-by-ids",
+        headers=auth, json={"signal_ids": list(range(1, 600))},
+    )
+    assert r.status_code == 422
+
+
+def test_bulk_delete_by_ids_requires_auth(client):
+    r = client.post(
+        "/api/v1/signals/bulk-delete-by-ids", json={"signal_ids": [1]}
+    )
+    assert r.status_code == 401
+
+
 def test_check_platform_detects_youtube_url(client, auth):
     r = client.post(
         "/api/v1/sources/check-platform",

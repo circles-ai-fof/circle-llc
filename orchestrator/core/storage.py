@@ -1243,6 +1243,29 @@ class SignalsStore:
             keep_feedback=keep_feedback,
         )
 
+    def delete_by_ids(self, signal_ids: List[int]) -> int:
+        """M4.9 — Borrado por lista explícita de IDs. No respeta promoted/
+        feedback porque el founder está seleccionando manualmente — confiamos
+        en su decisión.
+
+        Returns count of deleted rows.
+        """
+        if not signal_ids:
+            return 0
+        _ensure_init()
+        if _db_path:
+            with _conn() as c:
+                placeholders = ",".join("?" * len(signal_ids))
+                cur = c.execute(
+                    f"DELETE FROM signals WHERE id IN ({placeholders})",
+                    tuple(signal_ids),
+                )
+                return int(cur.rowcount or 0)
+        before = len(_memory_signals)
+        wanted = set(signal_ids)
+        _memory_signals[:] = [r for r in _memory_signals if r.get("id") not in wanted]
+        return before - len(_memory_signals)
+
     def stats_by_content_type(self) -> Dict[str, int]:
         """M4.7 — Distribución de señales activas por content_type.
 

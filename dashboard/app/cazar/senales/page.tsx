@@ -141,6 +141,9 @@ export default function SenalesPage() {
   const [showOriginal, setShowOriginal] = useState<Set<number>>(new Set());
   // M4.7 — distribución de señales por content_type (para barra de badges)
   const [statsByType, setStatsByType] = useState<Record<string, number> | null>(null);
+  // M4.9 — multi-select para bulk feedback / bulk delete
+  const [selectedSignals, setSelectedSignals] = useState<Set<number>>(new Set());
+  const [bulkActioning, setBulkActioning] = useState<boolean>(false);
 
   // M4.8 — Persistir filtros activos al cambiar cualquiera. Esto se llama
   // mucho (cada keypress en search debounceado a ~350ms, etc.) pero el
@@ -320,6 +323,85 @@ export default function SenalesPage() {
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  // M4.9 — toggle selección individual
+  const toggleSelectSignal = (id: number) => {
+    setSelectedSignals((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // M4.9 — seleccionar todas las visibles tras filtros
+  const selectAllVisible = () => {
+    setSelectedSignals(new Set(visibleSignals.map((s) => s.id)));
+  };
+
+  const clearSelection = () => setSelectedSignals(new Set());
+
+  // M4.9 — aplicar feedback en bloque
+  const bulkApplyFeedback = async (fb: "up" | "down" | "clear") => {
+    if (bulkActioning || selectedSignals.size === 0) return;
+    const verb = fb === "up" ? "marcar como 👍" : fb === "down" ? "marcar como 👎" : "limpiar el feedback de";
+    if (!confirm(`¿${verb} ${selectedSignals.size} señales seleccionadas?`)) return;
+    setBulkActioning(true);
+    try {
+      const r = await authFetch("/api/v1/signals/bulk-feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          signal_ids: Array.from(selectedSignals),
+          feedback: fb,
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      // Update local state optimistically para evitar un round-trip
+      const newFb = fb === "clear" ? null : fb;
+      setSignals((prev) =>
+        prev.map((s) => (selectedSignals.has(s.id) ? { ...s, feedback: newFb } : s))
+      );
+      clearSelection();
+      if (d.skipped_missing > 0) {
+        alert(`✓ Actualizadas ${d.updated} señales.\n⚠️ ${d.skipped_missing} no existían (probablemente borradas en otro tab).`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBulkActioning(false);
+    }
+  };
+
+  // M4.9 — borrar las señales seleccionadas (delegamos en delete-by-type
+  // pero usando IDs explícitos requeriría un endpoint nuevo; por ahora
+  // mostramos un warning de que está fuera de scope y sugerimos usar el
+  // feedback para excluir).
+  const bulkDeleteSelected = async () => {
+    if (bulkActioning || selectedSignals.size === 0) return;
+    if (!confirm(
+      `¿Borrar ${selectedSignals.size} señales seleccionadas? Esta acción NO se puede deshacer. ` +
+      `Las que tienen feedback (👍/👎) o ya fueron promovidas también se borrarán.`
+    )) return;
+    setBulkActioning(true);
+    try {
+      const r = await authFetch("/api/v1/signals/bulk-delete-by-ids", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ signal_ids: Array.from(selectedSignals) }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      alert(`✓ Borradas ${d.deleted} señales.`);
+      clearSelection();
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBulkActioning(false);
     }
   };
 
@@ -1070,6 +1152,130 @@ export default function SenalesPage() {
         </div>
       )}
 
+      {/* M4.9 — barra de selección + bulk actions. Sticky en la parte superior
+          mientras hay al menos una señal seleccionada. Permite acciones
+          rápidas sobre múltiples cards sin abandonar el feed. */}
+      {selectedSignals.size > 0 && (
+        <section
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 10,
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            padding: "10px 14px",
+            marginBottom: 12,
+            background: "rgba(0,212,255,0.08)",
+            border: "1px solid rgba(0,212,255,0.4)",
+            borderRadius: 8,
+            flexWrap: "wrap",
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          <span style={{ color: "#00D4FF", fontSize: 13, fontWeight: 700 }}>
+            {selectedSignals.size} seleccionada{selectedSignals.size === 1 ? "" : "s"}
+          </span>
+          <button
+            onClick={() => bulkApplyFeedback("up")}
+            disabled={bulkActioning}
+            style={{
+              padding: "6px 12px", background: "transparent",
+              color: bulkActioning ? "#64748b" : "#00E5A0",
+              border: `1px solid ${bulkActioning ? "#1e293b" : "#00E5A0"}`,
+              borderRadius: 6, fontSize: 12, fontWeight: 600,
+              cursor: bulkActioning ? "wait" : "pointer",
+            }}
+          >
+            👍 Up todas
+          </button>
+          <button
+            onClick={() => bulkApplyFeedback("down")}
+            disabled={bulkActioning}
+            style={{
+              padding: "6px 12px", background: "transparent",
+              color: bulkActioning ? "#64748b" : "#FF4444",
+              border: `1px solid ${bulkActioning ? "#1e293b" : "#FF4444"}`,
+              borderRadius: 6, fontSize: 12, fontWeight: 600,
+              cursor: bulkActioning ? "wait" : "pointer",
+            }}
+          >
+            👎 Down todas
+          </button>
+          <button
+            onClick={() => bulkApplyFeedback("clear")}
+            disabled={bulkActioning}
+            style={{
+              padding: "6px 12px", background: "transparent",
+              color: "#94a3b8",
+              border: "1px solid #1e293b",
+              borderRadius: 6, fontSize: 12,
+              cursor: bulkActioning ? "wait" : "pointer",
+            }}
+          >
+            Limpiar feedback
+          </button>
+          <button
+            onClick={bulkDeleteSelected}
+            disabled={bulkActioning}
+            title="Borra las señales seleccionadas. NO preserva promovidas ni con feedback — confiamos en tu selección manual."
+            style={{
+              padding: "6px 12px", background: "#FF4444",
+              color: "#fff", border: "none",
+              borderRadius: 6, fontSize: 12, fontWeight: 600,
+              cursor: bulkActioning ? "wait" : "pointer",
+            }}
+          >
+            {bulkActioning ? "Procesando…" : "🗑️ Borrar seleccionadas"}
+          </button>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            {selectedSignals.size < visibleSignals.length && (
+              <button
+                onClick={selectAllVisible}
+                style={{
+                  padding: "4px 10px", background: "transparent",
+                  color: "#00D4FF", border: "1px solid #00D4FF",
+                  borderRadius: 6, fontSize: 11, cursor: "pointer",
+                }}
+              >
+                Seleccionar todas visibles ({visibleSignals.length})
+              </button>
+            )}
+            <button
+              onClick={clearSelection}
+              style={{
+                padding: "4px 10px", background: "transparent",
+                color: "#94a3b8", border: "1px solid #1e293b",
+                borderRadius: 6, fontSize: 11, cursor: "pointer",
+              }}
+            >
+              Deseleccionar
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* M4.9 — "Seleccionar todas visibles" cuando no hay nada seleccionado.
+          Sirve de bootstrap para el flujo de bulk actions. */}
+      {selectedSignals.size === 0 && visibleSignals.length > 0 && (
+        <div style={{ marginBottom: 10, fontSize: 11, color: "#64748b" }}>
+          <button
+            onClick={selectAllVisible}
+            style={{
+              padding: "3px 9px",
+              background: "transparent",
+              color: "#64748b",
+              border: "1px dashed #1e293b",
+              borderRadius: 4,
+              fontSize: 11,
+              cursor: "pointer",
+            }}
+          >
+            ☐ Seleccionar todas las visibles ({visibleSignals.length}) para acciones en bloque
+          </button>
+        </div>
+      )}
+
       {/* Cards */}
       <div style={{ display: "grid", gap: 12 }}>
         {visibleSignals.map((s) => (
@@ -1080,6 +1286,8 @@ export default function SenalesPage() {
             isExpanded={expanded.has(s.id)}
             isTranslating={translating.has(s.id)}
             showOriginal={showOriginal.has(s.id)}
+            isSelected={selectedSignals.has(s.id)}
+            onToggleSelect={() => toggleSelectSignal(s.id)}
             onAnalyze={() => analyze(s.id)}
             onTranslate={() => translate(s.id)}
             onToggleOriginal={() => toggleOriginal(s.id)}
@@ -1188,6 +1396,8 @@ function SignalCard({
   isExpanded,
   isTranslating,
   showOriginal,
+  isSelected,
+  onToggleSelect,
   onAnalyze,
   onTranslate,
   onToggleOriginal,
@@ -1200,6 +1410,8 @@ function SignalCard({
   isExpanded: boolean;
   isTranslating: boolean;
   showOriginal: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
   onAnalyze: () => void;
   onTranslate: () => void;
   onToggleOriginal: () => void;
@@ -1244,13 +1456,29 @@ function SignalCard({
   return (
     <div
       style={{
-        background: "#0F1525",
-        border: "1px solid #1e293b",
+        background: isSelected ? "rgba(0,212,255,0.05)" : "#0F1525",
+        border: `1px solid ${isSelected ? "rgba(0,212,255,0.5)" : "#1e293b"}`,
         borderRadius: 12,
         padding: 18,
+        transition: "background 120ms ease, border-color 120ms ease",
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+        {/* M4.9 — checkbox de selección para bulk actions */}
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={onToggleSelect}
+          title="Seleccionar para acciones en bloque (bulk feedback / bulk delete)"
+          style={{
+            marginTop: 4,
+            width: 16,
+            height: 16,
+            accentColor: "#00D4FF",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        />
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* Source line — prominent */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
