@@ -180,3 +180,106 @@ After both deploys + Railway has the env vars + landing has NEXT_PUBLIC_API_URL:
 - Set `OUTCOME_DB_WRITABLE=true`
 - Migrate `leads` and `gate_runs` tables via `outcome-db/schema.sql`
 - Update `storage.py` to use SQLAlchemy with the existing schema
+
+---
+
+## Anexo M4.10 — Deploy paso a paso con `cristian.molina.ia.soporte@gmail.com`
+
+Esta sección complementa la guía de M2 con instrucciones específicas
+para hacer el deploy usando la cuenta `cristian.molina.ia.soporte@gmail.com`
+(que ya está en `ALLOWED_EMAILS` del backend).
+
+### Backend (Railway)
+
+1. https://railway.app/new → Sign in con `cristian.molina.ia.soporte@gmail.com`
+   (botón "Sign in with Google")
+2. **Deploy from GitHub repo** → `circles-ai-fof/circle-llc`
+3. Si Railway pide acceso al repo, autoriza desde GitHub
+4. Service settings:
+   - **Root directory:** `/` (raíz del repo)
+   - **Build:** `pip install -r orchestrator/requirements.txt`
+   - **Start:** `python -m uvicorn orchestrator.api:app --host 0.0.0.0 --port $PORT`
+5. Variables (Railway UI → Variables) — copia las críticas de tu `.env`:
+   ```
+   ANTHROPIC_API_KEY=…
+   OPENAI_API_KEY=…
+   GOOGLE_API_KEY=…
+   ALLOWED_EMAILS=crisan312@hotmail.com,jfnunez@asiservy.com,cristian.molina.ia.soporte@gmail.com
+   DATABASE_PATH=/data/circle.db
+   GATE_RUN_SECRET=<openssl rand -hex 32>
+   ENSEMBLE_GATE_ENABLED=true
+   ```
+6. **Volumen:** Railway → Volumes → New Volume, mount path `/data`, 1 GB
+7. Probar: `curl https://<URL_RAILWAY>/api/v1/health` → `{"status":"ok"}`
+
+### Dashboard (Vercel)
+
+1. https://vercel.com/new → Sign in con `cristian.molina.ia.soporte@gmail.com`
+2. **Import** → `circles-ai-fof/circle-llc`
+3. Configure:
+   - **Framework:** Next.js
+   - **Root Directory:** `dashboard` ← OBLIGATORIO (el repo es monorepo)
+   - **Build:** `next build` (default)
+4. Variables (Vercel UI):
+   ```
+   NEXT_PUBLIC_API_URL=https://<URL_RAILWAY>
+   ```
+5. Probar: abre la URL de Vercel → debe pintar `/login` → meter email → entrás.
+
+### Actualizar CORS del backend
+
+Después de saber la URL de Vercel, añade el dominio a `EXTRA_CORS_ORIGINS`
+en Railway (en vez de tocar código):
+```
+EXTRA_CORS_ORIGINS=https://<DOMINIO_VERCEL>.vercel.app
+```
+
+Backend re-deploya solo al cambiar la env var.
+
+### Activar el cron auto-scan
+
+1. Generar token (login al backend deployed):
+   ```bash
+   curl -X POST https://<RAILWAY_URL>/api/v1/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"email":"cristian.molina.ia.soporte@gmail.com"}'
+   ```
+   Copiá `token`.
+
+2. https://github.com/circles-ai-fof/circle-llc/settings/secrets/actions
+   - `AUTO_SCAN_API_URL` = URL Railway (sin `/` al final)
+   - `AUTO_SCAN_TOKEN` = el token de arriba
+
+3. Próximo run a las `xx:17` cada 6h. Disparar manual:
+   ```bash
+   gh workflow run hunter-auto-scan.yml
+   ```
+
+4. Renovar `AUTO_SCAN_TOKEN` cada 7 días (sesiones expiran).
+
+### Costos esperados
+
+| Servicio | Plan | Costo mensual |
+|---|---|---|
+| Railway (backend + volume 1GB) | Hobby | ~$5 |
+| Vercel (dashboard, free tier) | Hobby | $0 |
+| Anthropic / OpenAI / Gemini | pay-as-you-go | depende de uso |
+| GitHub Actions cron | gratis | $0 |
+| **Total infra fija** | | **~$5/mes** |
+
+### Tiempo estimado
+
+- Railway setup: 15-20 min
+- Vercel setup: 10 min
+- Configurar CORS + secrets cron: 10 min
+- Pruebas end-to-end: 15 min
+- **Total: ~1 hora**
+
+### Permisos necesarios en el repo
+
+`cristian.molina.ia.soporte@gmail.com` debe estar invitado como
+collaborator del repo `circles-ai-fof/circle-llc` con permiso `write`,
+para que Vercel y Railway puedan leer el código.
+
+Invitar desde:
+https://github.com/circles-ai-fof/circle-llc/settings/access
