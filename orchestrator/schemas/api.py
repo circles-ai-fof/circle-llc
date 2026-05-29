@@ -587,6 +587,23 @@ class AnalyzeSignalsBatchResponse(BaseModel):
     signal_ids_analyzed: List[int]
 
 
+# M4.10 — Listado de runs recientes para el dashboard de overview
+class RunListItem(BaseModel):
+    run_id: str
+    idea_title: str
+    verdict: str  # "pass" | "kill" | "iterate" | "unknown"
+    confidence: float
+    landing_slug: str
+    cost_usd_estimated: float
+    needs_human_review: bool
+    created_at: int  # epoch seconds; 0 si in-memory mode (sin persistencia)
+
+
+class RunsListResponse(BaseModel):
+    total: int  # cuántos retorna esta página
+    items: List[RunListItem]
+
+
 class StatsResponse(BaseModel):
     """Aggregated counts for sidebar badges + monthly cost indicator."""
     signals_total: int

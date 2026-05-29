@@ -71,6 +71,8 @@ from .schemas.api import (
     SignalsBulkFeedbackResponse,
     SignalsBulkDeleteByIdsRequest,
     SignalsBulkDeleteByIdsResponse,
+    RunsListResponse,
+    RunListItem,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -942,6 +944,39 @@ def stats(request: Request) -> StatsResponse:
         cost_usd_total_30d=round(cost_30d, 4),
         cost_usd_total_all_time=round(cost_all, 4),
     )
+
+
+@app.get(
+    "/api/v1/runs",
+    response_model=RunsListResponse,
+    summary="M4.10 — Lista de runs recientes para el dashboard de overview",
+    tags=["meta"],
+)
+def list_runs(
+    request: Request,
+    limit: int = 20,
+    verdict: str = "",
+) -> RunsListResponse:
+    """Lista runs ordenados por fecha desc. Payload ligero (sin landing
+    copy completo ni next_steps) — para el detalle hacer
+    GET /api/v1/gate/runs/{run_id}.
+
+    Args:
+        limit: 1-100 (default 20)
+        verdict: "pass" | "kill" | "iterate" o vacío para todos
+    """
+    _require_user(request)
+    from .core.storage import runs_store
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=422, detail="limit must be 1-100")
+    if verdict and verdict not in {"pass", "kill", "iterate"}:
+        raise HTTPException(
+            status_code=422,
+            detail="verdict must be 'pass'|'kill'|'iterate' o vacío",
+        )
+    rows = runs_store.list_recent(limit=limit, verdict=verdict or None)
+    items = [RunListItem(**r) for r in rows]
+    return RunsListResponse(total=len(items), items=items)
 
 
 @app.get(

@@ -408,6 +408,65 @@ class RunsStore:
         v = _memory_runs.get(run_id, default)
         return _to_response(v) if v is not default and v is not None else default
 
+    def list_recent(self, limit: int = 20, verdict: Optional[str] = None) -> List[Dict]:
+        """M4.10 — Lista de runs ordenados por fecha desc, lista para mostrar
+        en el dashboard de overview. Devuelve dicts con los campos
+        esenciales (no la RunGateResponse completa) para hacer el payload
+        más ligero. Si necesitás más detalle, hacer GET /gate/runs/{run_id}.
+
+        Args:
+            limit: máximo de runs a retornar (1-100)
+            verdict: filtra por "pass" / "kill" / "iterate" si está dado
+        """
+        _ensure_init()
+        rows: List[Dict] = []
+        if _db_path:
+            with _conn() as c:
+                q = "SELECT run_id, data_json, created_at FROM gate_runs ORDER BY created_at DESC"
+                if limit > 0:
+                    q += f" LIMIT {int(limit) * 4}"  # leemos extra por si filtramos
+                for row in c.execute(q):
+                    try:
+                        data = json.loads(row["data_json"])
+                    except (ValueError, TypeError):
+                        continue
+                    if verdict and data.get("verdict") != verdict:
+                        continue
+                    rows.append({
+                        "run_id": row["run_id"],
+                        "idea_title": data.get("idea_title") or "(sin título)",
+                        "verdict": data.get("verdict") or "unknown",
+                        "confidence": float(data.get("confidence") or 0),
+                        "landing_slug": data.get("landing_slug") or "",
+                        "cost_usd_estimated": float(data.get("cost_usd_estimated") or 0),
+                        "needs_human_review": bool(data.get("needs_human_review")),
+                        "created_at": int(row["created_at"]),
+                    })
+                    if limit > 0 and len(rows) >= limit:
+                        break
+            return rows
+        # In-memory fallback
+        items = list(_memory_runs.items())
+        # Sin timestamps en memoria — usamos orden de inserción (más nuevo último)
+        items.reverse()
+        for run_id, run_obj in items:
+            data = run_obj.model_dump(mode="json") if hasattr(run_obj, "model_dump") else (run_obj or {})
+            if verdict and data.get("verdict") != verdict:
+                continue
+            rows.append({
+                "run_id": run_id,
+                "idea_title": data.get("idea_title") or "(sin título)",
+                "verdict": data.get("verdict") or "unknown",
+                "confidence": float(data.get("confidence") or 0),
+                "landing_slug": data.get("landing_slug") or "",
+                "cost_usd_estimated": float(data.get("cost_usd_estimated") or 0),
+                "needs_human_review": bool(data.get("needs_human_review")),
+                "created_at": 0,
+            })
+            if limit > 0 and len(rows) >= limit:
+                break
+        return rows
+
     def values(self) -> List[Any]:
         _ensure_init()
         if _db_path:

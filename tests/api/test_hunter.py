@@ -731,6 +731,91 @@ def test_bulk_delete_by_ids_requires_auth(client):
     assert r.status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# M4.10 — listado de runs para el overview ejecutivo
+# ---------------------------------------------------------------------------
+
+
+def _inject_run(verdict: str = "iterate", idea_title: str = "Test M410") -> str:
+    """Helper para inyectar un run sintético directo en el store."""
+    from uuid import uuid4
+    from orchestrator.core.storage import runs_store
+    from orchestrator.schemas.api import RunGateResponse
+
+    run_id = str(uuid4())
+    runs_store[run_id] = RunGateResponse(
+        run_id=run_id,
+        status="completed",
+        idea_title=idea_title,
+        verdict=verdict,
+        confidence=0.7,
+        rationale="…",
+        next_steps=["…"],
+        landing_headline="…",
+        landing_slug=idea_title.lower().replace(" ", "-"),
+        test_design={"hypothesis": "…"},
+        canonical_goal_statement="…",
+        steps_used=5,
+        cost_usd_estimated=0.06,
+        needs_human_review=False,
+        review_reason=None,
+        ensemble_votes=None,
+    )
+    return run_id
+
+
+def test_list_runs_returns_recent(client, auth):
+    """El endpoint /api/v1/runs lista runs ordenados por created_at desc."""
+    rid1 = _inject_run(verdict="pass", idea_title="M410 pass A")
+    rid2 = _inject_run(verdict="kill", idea_title="M410 kill B")
+    r = client.get("/api/v1/runs?limit=50", headers=auth)
+    assert r.status_code == 200
+    data = r.json()
+    items_by_id = {it["run_id"]: it for it in data["items"]}
+    assert rid1 in items_by_id
+    assert rid2 in items_by_id
+    assert items_by_id[rid1]["verdict"] == "pass"
+    assert items_by_id[rid2]["verdict"] == "kill"
+    assert items_by_id[rid1]["idea_title"] == "M410 pass A"
+
+
+def test_list_runs_filter_by_verdict(client, auth):
+    _inject_run(verdict="pass", idea_title="M410 filter pass")
+    _inject_run(verdict="kill", idea_title="M410 filter kill")
+    r = client.get("/api/v1/runs?verdict=pass&limit=50", headers=auth)
+    assert r.status_code == 200
+    items = r.json()["items"]
+    # Todos los retornados deben ser pass
+    assert all(it["verdict"] == "pass" for it in items)
+
+
+def test_list_runs_respects_limit(client, auth):
+    # Inyectamos 5, pedimos 3
+    for i in range(5):
+        _inject_run(verdict="iterate", idea_title=f"M410 limit {i}")
+    r = client.get("/api/v1/runs?limit=3", headers=auth)
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert len(items) == 3
+
+
+def test_list_runs_rejects_invalid_limit(client, auth):
+    r = client.get("/api/v1/runs?limit=0", headers=auth)
+    assert r.status_code == 422
+    r = client.get("/api/v1/runs?limit=200", headers=auth)
+    assert r.status_code == 422
+
+
+def test_list_runs_rejects_invalid_verdict(client, auth):
+    r = client.get("/api/v1/runs?verdict=banana", headers=auth)
+    assert r.status_code == 422
+
+
+def test_list_runs_requires_auth(client):
+    r = client.get("/api/v1/runs")
+    assert r.status_code == 401
+
+
 def test_check_platform_detects_youtube_url(client, auth):
     r = client.post(
         "/api/v1/sources/check-platform",
