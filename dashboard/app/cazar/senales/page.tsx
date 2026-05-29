@@ -1,8 +1,43 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authFetch } from "@/lib/auth";
+
+/**
+ * M4.8 — Persistencia de filtros en localStorage.
+ *
+ * El founder pierde sus filtros cada vez que recarga la página o navega
+ * fuera y vuelve. Para una sesión típica de triaje de 60+ señales eso es
+ * un click extra cada vez. Persistimos los filtros activos en localStorage
+ * bajo una clave versionada (`v1`) — si en M5+ cambia el shape, podemos
+ * leer `v2` sin perder retrocompatibilidad.
+ */
+const FILTER_STORAGE_KEY = "circle.signals.filters.v1";
+
+type SavedFilters = {
+  minScore: number;
+  sort: "recent" | "score" | "trend" | "published";
+  kindFilter: string;
+  contentTypeFilter: string;
+  feedbackFilter: "all" | "none" | "up" | "down";
+  minTrend: number;
+  search: string;
+};
+
+function loadSavedFilters(): Partial<SavedFilters> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(FILTER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SavedFilters>;
+    return parsed;
+  } catch {
+    // localStorage podría fallar en modo incógnito estricto o si los datos
+    // están corruptos. En esos casos, simplemente caemos en los defaults.
+    return null;
+  }
+}
 
 type SignalAnalysis = {
   idea_summary: string;       // M3.11
@@ -74,18 +109,30 @@ export default function SenalesPage() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [minScore, setMinScore] = useState(0.5);
-  const [sort, setSort] = useState<SortKey>("recent");
-  const [kindFilter, setKindFilter] = useState<string>("");
+  // M4.8 — carga de filtros persistidos. useRef garantiza que loadSavedFilters
+  // se ejecute UNA VEZ en el primer render del lado del cliente (evita
+  // hydration mismatch porque Next.js renderiza primero en server con
+  // window undefined → loadSavedFilters retorna null y los useState usan los
+  // defaults; en cliente se hidrata con los mismos defaults y luego un effect
+  // los sobreescribe si hay datos guardados).
+  const initialFiltersRef = useRef<Partial<SavedFilters> | null>(null);
+  if (initialFiltersRef.current === null && typeof window !== "undefined") {
+    initialFiltersRef.current = loadSavedFilters();
+  }
+  const initial = initialFiltersRef.current;
+
+  const [minScore, setMinScore] = useState<number>(initial?.minScore ?? 0.5);
+  const [sort, setSort] = useState<SortKey>(initial?.sort ?? "recent");
+  const [kindFilter, setKindFilter] = useState<string>(initial?.kindFilter ?? "");
   // M4.5 — filtrar por tipo de contenido clasificado (news/blog/producto/...)
-  const [contentTypeFilter, setContentTypeFilter] = useState<string>("");
+  const [contentTypeFilter, setContentTypeFilter] = useState<string>(initial?.contentTypeFilter ?? "");
   const [mockMode, setMockMode] = useState<boolean>(false);
   const [promoted, setPromoted] = useState<Signal[]>([]);
   const [showPromoted, setShowPromoted] = useState<boolean>(false);
   // M3.5 — search + advanced filters + per-signal analyze state
-  const [search, setSearch] = useState<string>("");
-  const [feedbackFilter, setFeedbackFilter] = useState<FeedbackFilter>("all");
-  const [minTrend, setMinTrend] = useState<number>(0);
+  const [search, setSearch] = useState<string>(initial?.search ?? "");
+  const [feedbackFilter, setFeedbackFilter] = useState<FeedbackFilter>(initial?.feedbackFilter ?? "all");
+  const [minTrend, setMinTrend] = useState<number>(initial?.minTrend ?? 0);
   const [analyzing, setAnalyzing] = useState<Set<number>>(new Set());
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [batchAnalyzing, setBatchAnalyzing] = useState<boolean>(false);
@@ -94,6 +141,38 @@ export default function SenalesPage() {
   const [showOriginal, setShowOriginal] = useState<Set<number>>(new Set());
   // M4.7 — distribución de señales por content_type (para barra de badges)
   const [statsByType, setStatsByType] = useState<Record<string, number> | null>(null);
+
+  // M4.8 — Persistir filtros activos al cambiar cualquiera. Esto se llama
+  // mucho (cada keypress en search debounceado a ~350ms, etc.) pero el
+  // payload es de ~200 bytes; localStorage es síncrono pero rápido.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const payload: SavedFilters = {
+        minScore, sort, kindFilter, contentTypeFilter,
+        feedbackFilter, minTrend, search,
+      };
+      window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      /* localStorage lleno o restringido — ignoramos silenciosamente */
+    }
+  }, [minScore, sort, kindFilter, contentTypeFilter, feedbackFilter, minTrend, search]);
+
+  // M4.8 — botón "🔄 Resetear filtros" útil cuando el founder quiere empezar
+  // desde un estado conocido (defaults). No borra el feedback ni las señales,
+  // sólo los criterios de visualización.
+  const resetFilters = () => {
+    setMinScore(0.5);
+    setSort("recent");
+    setKindFilter("");
+    setContentTypeFilter("");
+    setFeedbackFilter("all");
+    setMinTrend(0);
+    setSearch("");
+    if (typeof window !== "undefined") {
+      try { window.localStorage.removeItem(FILTER_STORAGE_KEY); } catch { /* noop */ }
+    }
+  };
 
   // Detect mock mode (backend running without ANTHROPIC_API_KEY) so we can
   // warn the founder that ideas are placeholders, not real LLM output.
@@ -707,6 +786,21 @@ export default function SenalesPage() {
           >
             ↻ Refresh
           </button>
+          {/* M4.8 — reset filtros (sólo aparece cuando algún filtro no es default) */}
+          {(minScore !== 0.5 || sort !== "recent" || kindFilter || contentTypeFilter ||
+            feedbackFilter !== "all" || minTrend > 0 || search) && (
+            <button
+              onClick={resetFilters}
+              title="Volver todos los filtros a su valor por defecto y limpiar la búsqueda. Los filtros se guardan automáticamente entre sesiones (localStorage)."
+              style={{
+                padding: "6px 14px", background: "transparent",
+                color: "#FFB800", border: "1px solid #FFB800", borderRadius: 6, fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              ⟲ Resetear filtros
+            </button>
+          )}
         </div>
       </section>
 
