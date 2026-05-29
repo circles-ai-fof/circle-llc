@@ -183,15 +183,20 @@ After both deploys + Railway has the env vars + landing has NEXT_PUBLIC_API_URL:
 
 ---
 
-## Anexo M4.10 — Deploy paso a paso con `cristian.molina.ia.soporte@gmail.com`
+## Anexo M4.10 — Deploy paso a paso con `circles.fof.ai@gmail.com`
 
-Esta sección complementa la guía de M2 con instrucciones específicas
-para hacer el deploy usando la cuenta `cristian.molina.ia.soporte@gmail.com`
-(que ya está en `ALLOWED_EMAILS` del backend).
+`circles.fof.ai@gmail.com` es la **cuenta dueña del proyecto Circle LLC**:
+- Linkeada al GitHub user `circles-ai-fof` (dueño del repo)
+- Será la cuenta que firme commits, deploys (Railway + Vercel) y emails
+- Es la primera en `ALLOWED_EMAILS` del backend (login al dashboard)
+
+Las otras cuentas (`crisan312@hotmail.com`, `jfnunez@asiservy.com`,
+`cristian.molina.ia.soporte@gmail.com`) son colaboradores aprobados
+para el closed-beta.
 
 ### Backend (Railway)
 
-1. https://railway.app/new → Sign in con `cristian.molina.ia.soporte@gmail.com`
+1. https://railway.app/new → Sign in con `circles.fof.ai@gmail.com`
    (botón "Sign in with Google")
 2. **Deploy from GitHub repo** → `circles-ai-fof/circle-llc`
 3. Si Railway pide acceso al repo, autoriza desde GitHub
@@ -204,7 +209,7 @@ para hacer el deploy usando la cuenta `cristian.molina.ia.soporte@gmail.com`
    ANTHROPIC_API_KEY=…
    OPENAI_API_KEY=…
    GOOGLE_API_KEY=…
-   ALLOWED_EMAILS=crisan312@hotmail.com,jfnunez@asiservy.com,cristian.molina.ia.soporte@gmail.com
+   ALLOWED_EMAILS=circles.fof.ai@gmail.com,crisan312@hotmail.com,jfnunez@asiservy.com,cristian.molina.ia.soporte@gmail.com
    DATABASE_PATH=/data/circle.db
    GATE_RUN_SECRET=<openssl rand -hex 32>
    ENSEMBLE_GATE_ENABLED=true
@@ -214,7 +219,7 @@ para hacer el deploy usando la cuenta `cristian.molina.ia.soporte@gmail.com`
 
 ### Dashboard (Vercel)
 
-1. https://vercel.com/new → Sign in con `cristian.molina.ia.soporte@gmail.com`
+1. https://vercel.com/new → Sign in con `circles.fof.ai@gmail.com`
 2. **Import** → `circles-ai-fof/circle-llc`
 3. Configure:
    - **Framework:** Next.js
@@ -242,7 +247,7 @@ Backend re-deploya solo al cambiar la env var.
    ```bash
    curl -X POST https://<RAILWAY_URL>/api/v1/auth/login \
      -H "Content-Type: application/json" \
-     -d '{"email":"cristian.molina.ia.soporte@gmail.com"}'
+     -d '{"email":"circles.fof.ai@gmail.com"}'
    ```
    Copiá `token`.
 
@@ -275,11 +280,12 @@ Backend re-deploya solo al cambiar la env var.
 - Pruebas end-to-end: 15 min
 - **Total: ~1 hora**
 
-### Permisos necesarios en el repo
+### Permisos en el repo
 
-`cristian.molina.ia.soporte@gmail.com` debe estar invitado como
-collaborator del repo `circles-ai-fof/circle-llc` con permiso `write`,
-para que Vercel y Railway puedan leer el código.
+`circles.fof.ai@gmail.com` debería ser el email principal del usuario
+GitHub `circles-ai-fof` (dueño del repo), por lo que tiene acceso completo
+por defecto.
 
-Invitar desde:
+Si necesitas dar acceso a colaboradores adicionales (los otros 3 emails
+del closed-beta), invítalos desde:
 https://github.com/circles-ai-fof/circle-llc/settings/access
