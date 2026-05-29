@@ -28,8 +28,13 @@ jobs:
           TOKEN: ${{ secrets.AUTO_SCAN_TOKEN }}
         run: |
           if [ -z "$API_URL" ] || [ -z "$TOKEN" ]; then
-            echo "::error::AUTO_SCAN_API_URL and AUTO_SCAN_TOKEN secrets must be set"
-            exit 1
+            # M4.10: cuando el backend aún no está deployed (Railway pendiente),
+            # los secrets no existen. En vez de fallar el run (que ensucia el
+            # historial y dispara emails de GitHub), salimos con éxito y un
+            # warning visible. Cuando despliegues, configura los secrets en:
+            # https://github.com/circles-ai-fof/circle-llc/settings/secrets/actions
+            echo "::warning::AUTO_SCAN_API_URL/AUTO_SCAN_TOKEN no configurados — skip silencioso. Configura los secrets cuando despliegues el backend a Railway."
+            exit 0
           fi
           set -e
           RESP=$(curl --silent --show-error --max-time 300 \
