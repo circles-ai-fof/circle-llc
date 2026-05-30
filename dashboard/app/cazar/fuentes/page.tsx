@@ -24,9 +24,10 @@ const KIND_LABELS: Record<string, string> = {
   bluesky: "Bluesky (búsqueda)",
   telegram: "Telegram canal público",
   events: "Eventos / Ferias / Congresos (M4.13)",
+  sec_edgar: "SEC EDGAR (filings públicas US) (M4.12)",
 };
 
-const KIND_NEEDS_TARGET = new Set(["url", "rss", "reddit", "youtube", "bluesky", "telegram", "events"]);
+const KIND_NEEDS_TARGET = new Set(["url", "rss", "reddit", "youtube", "bluesky", "telegram", "events", "sec_edgar"]);
 
 const KIND_PLACEHOLDERS: Record<string, string> = {
   url: "https://artículo.com/post",
@@ -36,6 +37,7 @@ const KIND_PLACEHOLDERS: Record<string, string> = {
   bluesky: 'fintech LATAM  o  from:handle.bsky.social',
   telegram: "channelhandle (sin @ ni t.me/)",
   events: "https://lu.ma/feed.xml  o  https://eventbrite.com/rss/...",
+  sec_edgar: "CIK numérico (ej. 320193 = Apple, 789019 = Microsoft)",
 };
 
 export default function FuentesPage() {

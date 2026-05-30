@@ -102,6 +102,7 @@ const SOURCE_KINDS: { value: string; label: string }[] = [
   { value: "bluesky", label: "Bluesky" },
   { value: "telegram", label: "Telegram" },
   { value: "events", label: "Eventos / Ferias (M4.13)" },
+  { value: "sec_edgar", label: "SEC EDGAR (M4.12)" },
   { value: "url", label: "URL importada" },
 ];
 

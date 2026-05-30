@@ -1302,6 +1302,136 @@ class SignalsStore:
             keep_feedback=keep_feedback,
         )
 
+    def niche_opportunities(
+        self,
+        min_parent_size: int = 5,
+        max_niche_size: int = 3,
+        top_parents: int = 10,
+    ) -> List[Dict]:
+        """M4.15 — Niche-en-gigante detector (heurístico Phase 1).
+
+        Founder del audio: "recoger las migajas de donde están los gigantes —
+        pero recoger migajas es demasiado grande para nuestra realidad".
+
+        Heurística: agrupa todas las señales por su "parent market" (primeras
+        2 palabras significativas del suggested_topic). Dentro de cada
+        gigante, identifica sub-niches (suggested_topic completo) con poca
+        actividad pero que pertenecen al mismo mercado padre.
+
+        Las micro-niches representan oportunidades sub-exploradas dentro de
+        verticales grandes — donde los gigantes no se molestan en competir.
+
+        Args:
+            min_parent_size: mínimo de señales totales en el parent para que
+                cuente como "gigante". Default 5.
+            max_niche_size: máximo de señales en un sub-niche para que se
+                considere "sub-explorado". Default 3.
+            top_parents: cuántos parents (gigantes) retornar como máximo.
+                Default 10, ordenados por tamaño desc.
+
+        Returns:
+            Lista [{ parent_market: str, parent_size: int,
+                    leader_niche: {topic, signals, sample_themes},
+                    underexplored_niches: [{topic, signals, sample_themes}, ...],
+                    opportunity_count: int }]
+        """
+        import re as _re
+        _ensure_init()
+        rows = self.list(limit=10_000, min_score=0.0)
+
+        # Stop-words típicos en suggested_topic que no aportan al "parent market"
+        STOP = {
+            "para", "en", "con", "de", "del", "la", "el", "los", "las",
+            "y", "o", "u", "a", "ai", "ia", "saas", "automática",
+            "automatica", "automatizada", "para pymes", "for", "with",
+            "to", "and", "or", "based", "powered",
+        }
+        # Países que vamos a ignorar para evitar que se vuelvan el parent
+        COUNTRIES = {
+            "ecuador", "méxico", "mexico", "colombia", "perú", "peru",
+            "chile", "argentina", "brasil", "uruguay", "panamá", "panama",
+            "costa rica", "españa", "espana", "usa", "us", "latam",
+            "estados unidos", "estados", "unidos",
+        }
+
+        def parent_market_of(topic: str) -> str:
+            """Extrae la primera palabra significativa como parent market.
+
+            Decisión de diseño: usar SOLO la primera palabra (no bigrama) para
+            que sub-niches distintos del mismo gigante agrupen juntos. Ej:
+            "fintech para PYMEs" y "fintech para adultos mayores" comparten el
+            parent "fintech" — exactamente lo que el founder pide cuando habla
+            de "migajas del gigante fintech".
+            """
+            if not topic:
+                return ""
+            cleaned = _re.sub(r"[^\w\s]", " ", topic.lower()).strip()
+            tokens = [t for t in cleaned.split() if t and t not in STOP]
+            # Quitar países del inicio
+            while tokens and tokens[0] in COUNTRIES:
+                tokens = tokens[1:]
+            if not tokens:
+                return ""
+            return tokens[0][:40]
+
+        # Index: parent_market → { sub_topic → list[signal_row] }
+        from collections import defaultdict
+        parents: Dict[str, Dict[str, List[Dict]]] = defaultdict(lambda: defaultdict(list))
+        for r in rows:
+            topic = (r.get("suggested_topic") or r.get("theme") or "").strip()
+            parent = parent_market_of(topic)
+            if not parent:
+                continue
+            # sub-niche = el topic completo (sin truncar) para preservar matiz
+            sub = topic.lower().strip()[:80]
+            if not sub:
+                continue
+            parents[parent][sub].append(r)
+
+        results: List[Dict] = []
+        for parent, subs in parents.items():
+            total = sum(len(sigs) for sigs in subs.values())
+            if total < min_parent_size:
+                continue  # no es un "gigante" todavía
+            if len(subs) < 2:
+                continue  # 1 solo sub-niche, no hay dispersión real
+
+            # Identificar leader_niche (el sub con más signals) y los under-explored
+            ordered = sorted(subs.items(), key=lambda kv: len(kv[1]), reverse=True)
+            leader_topic, leader_sigs = ordered[0]
+            leader = {
+                "topic": leader_topic,
+                "signals": len(leader_sigs),
+                "sample_themes": [s.get("theme") or "" for s in leader_sigs[:3]],
+            }
+            underexplored = []
+            for sub_topic, sub_sigs in ordered[1:]:
+                n = len(sub_sigs)
+                if n > max_niche_size:
+                    continue  # ya no es "sub-explorado"
+                underexplored.append({
+                    "topic": sub_topic,
+                    "signals": n,
+                    "sample_themes": [s.get("theme") or "" for s in sub_sigs[:3]],
+                })
+                if len(underexplored) >= 5:
+                    break  # cap por visualización
+
+            if not underexplored:
+                continue  # no hay niches sub-explorados en este gigante
+
+            results.append({
+                "parent_market": parent,
+                "parent_size": total,
+                "leader_niche": leader,
+                "underexplored_niches": underexplored,
+                "opportunity_count": len(underexplored),
+            })
+
+        # Ordenar por opportunity_count desc, luego por parent_size desc
+        results.sort(key=lambda r: (r["opportunity_count"], r["parent_size"]), reverse=True)
+        return results[:top_parents]
+
     def cross_country_gaps(
         self,
         min_validation_signals: int = 2,

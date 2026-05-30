@@ -76,6 +76,9 @@ from .schemas.api import (
     TrendGapsResponse,
     TrendGapItem,
     CountryValidation,
+    NicheOpportunitiesResponse,
+    NicheOpportunity,
+    NicheSubItem,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2192,6 +2195,48 @@ def signals_bulk_delete_by_ids(
     from .core.storage import signals_store
     deleted = signals_store.delete_by_ids(body.signal_ids)
     return SignalsBulkDeleteByIdsResponse(deleted=deleted)
+
+
+@app.get(
+    "/api/v1/niche-opportunities",
+    response_model=NicheOpportunitiesResponse,
+    summary="M4.15 — Sub-niches sub-explorados dentro de mercados gigantes",
+    tags=["hunter"],
+)
+def niche_opportunities(
+    request: Request,
+    min_parent_size: int = 5,
+    max_niche_size: int = 3,
+    top_parents: int = 10,
+) -> NicheOpportunitiesResponse:
+    """Founder del audio: 'recoger las migajas de donde están los gigantes'.
+
+    Detecta clusters de ideas dentro de un mercado padre grande (≥
+    min_parent_size señales totales) donde hay sub-niches sub-explorados
+    (≤ max_niche_size señales) — son las "migajas" del gigante.
+
+    Args:
+        min_parent_size: tamaño mínimo del parent para considerarlo gigante.
+            Default 5.
+        max_niche_size: max signals en un sub-niche para considerarlo
+            sub-explorado. Default 3.
+        top_parents: cuántos gigantes retornar. Default 10.
+    """
+    _require_user(request)
+    from .core.storage import signals_store
+    if min_parent_size < 2 or min_parent_size > 1000:
+        raise HTTPException(status_code=422, detail="min_parent_size must be 2-1000")
+    if max_niche_size < 1 or max_niche_size > 100:
+        raise HTTPException(status_code=422, detail="max_niche_size must be 1-100")
+    if top_parents < 1 or top_parents > 100:
+        raise HTTPException(status_code=422, detail="top_parents must be 1-100")
+    items_raw = signals_store.niche_opportunities(
+        min_parent_size=min_parent_size,
+        max_niche_size=max_niche_size,
+        top_parents=top_parents,
+    )
+    items = [NicheOpportunity(**it) for it in items_raw]
+    return NicheOpportunitiesResponse(total=len(items), items=items)
 
 
 @app.get(

@@ -1008,6 +1008,154 @@ def test_events_kind_delete_by_source_kind(client, auth):
     assert r.status_code == 200  # passes even if no signals exist yet
 
 
+# ---------------------------------------------------------------------------
+# M4.15 — Niche-en-gigante detector (heurístico Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def _add_signal_with_topic(theme: str, suggested_topic: str) -> int:
+    """Helper: inyecta signal con suggested_topic específico."""
+    from orchestrator.core.storage import signals_store
+    return signals_store.add(
+        source_id=None, source_kind="rss", theme=theme,
+        score=0.5, excerpt="ex",
+        evidence_urls=[f"https://example.com/{suggested_topic[:30].replace(' ', '-').lower()}"],
+        suggested_topic=suggested_topic, item_titles=[theme],
+    )
+
+
+def test_niche_detects_giant_with_underexplored_subniche(client, auth):
+    """Founder: 'recoger las migajas de los gigantes'. Si hay 5+ signals en
+    'fintech' como gigante, pero sólo 1 en 'fintech para adultos mayores',
+    ese sub-niche es una oportunidad."""
+    # 5 signals en fintech para PYMEs (el líder del gigante "fintech")
+    for i in range(5):
+        _add_signal_with_topic(
+            f"Fintech PYME signal #{i} M415",
+            suggested_topic="fintech para pymes ecuador",
+        )
+    # 1 signal en una niche sub-explorada del mismo gigante
+    _add_signal_with_topic(
+        "Fintech adultos mayores M415",
+        suggested_topic="fintech para adultos mayores",
+    )
+    r = client.get(
+        "/api/v1/niche-opportunities?min_parent_size=3&max_niche_size=2",
+        headers=auth,
+    )
+    assert r.status_code == 200
+    data = r.json()
+    fintech = next(
+        (it for it in data["items"] if "fintech" in it["parent_market"].lower()),
+        None,
+    )
+    assert fintech is not None, f"fintech parent no encontrado en {data['items']}"
+    # El leader debe ser el sub-niche PYMEs (con 5 signals)
+    assert fintech["leader_niche"]["signals"] == 5
+    # Debe haber al menos 1 underexplored niche
+    assert len(fintech["underexplored_niches"]) >= 1
+    # Y uno de ellos debe ser sobre adultos mayores
+    under_topics = [n["topic"] for n in fintech["underexplored_niches"]]
+    assert any("adultos mayores" in t for t in under_topics)
+
+
+def test_niche_excludes_small_parents(client, auth):
+    """Un parent con < min_parent_size signals no es 'gigante', no se reporta."""
+    # Solo 2 signals en algún parent random
+    _add_signal_with_topic("Pequeño A", "edtech k12 chile")
+    _add_signal_with_topic("Pequeño B", "edtech universitario chile")
+    r = client.get(
+        "/api/v1/niche-opportunities?min_parent_size=5",
+        headers=auth,
+    )
+    data = r.json()
+    # Ningún edtech debería aparecer porque parent_size < 5
+    edtech = next(
+        (it for it in data["items"] if "edtech" in it["parent_market"]),
+        None,
+    )
+    assert edtech is None
+
+
+def test_niche_excludes_giants_without_underexplored(client, auth):
+    """Un gigante con todos sus sub-niches grandes (>max_niche_size) no se
+    reporta como oportunidad."""
+    for i in range(4):
+        _add_signal_with_topic(
+            f"Logistics A #{i}",
+            suggested_topic="logistics urbana mexico",
+        )
+    for i in range(4):
+        _add_signal_with_topic(
+            f"Logistics B #{i}",
+            suggested_topic="logistics rural mexico",
+        )
+    r = client.get(
+        "/api/v1/niche-opportunities?min_parent_size=3&max_niche_size=2",
+        headers=auth,
+    )
+    data = r.json()
+    logistics = next(
+        (it for it in data["items"] if "logistics" in it["parent_market"]),
+        None,
+    )
+    # No debe aparecer: ambos sub-niches tienen 4 signals, ninguno <=2
+    assert logistics is None
+
+
+def test_niche_rejects_invalid_args(client, auth):
+    assert client.get("/api/v1/niche-opportunities?min_parent_size=1", headers=auth).status_code == 422
+    assert client.get("/api/v1/niche-opportunities?max_niche_size=0", headers=auth).status_code == 422
+    assert client.get("/api/v1/niche-opportunities?top_parents=0", headers=auth).status_code == 422
+
+
+def test_niche_requires_auth(client):
+    assert client.get("/api/v1/niche-opportunities").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# M4.12 — SEC EDGAR source kind (Phase 1: fetcher)
+# ---------------------------------------------------------------------------
+
+
+def test_sec_edgar_kind_accepted_by_sources_endpoint(client, auth):
+    """Founder del audio: 'información pública financiera... segundo de a bordo'."""
+    r = client.post(
+        "/api/v1/sources",
+        headers=auth,
+        json={"kind": "sec_edgar", "target": "320193", "name": "Apple Inc (CIK 320193)"},
+    )
+    assert r.status_code in (200, 201), r.text
+
+
+def test_sec_edgar_fetcher_rejects_non_numeric_cik():
+    """El CIK debe ser numérico. AAPL no se acepta en Phase 1."""
+    from orchestrator.core.source_fetcher import fetch_sec_edgar
+    # ticker en vez de CIK → debería retornar []
+    items = fetch_sec_edgar("AAPL")
+    assert items == []
+    items = fetch_sec_edgar("")
+    assert items == []
+    items = fetch_sec_edgar("not-a-cik")
+    assert items == []
+
+
+def test_sec_edgar_filter_works_in_signals_endpoint(client, auth):
+    """El filtro ?kind=sec_edgar acepta el nuevo kind sin error."""
+    r = client.get("/api/v1/signals?kind=sec_edgar", headers=auth)
+    assert r.status_code == 200
+
+
+def test_sec_edgar_delete_by_source_kind(client, auth):
+    """delete-by-type acepta source_kind=sec_edgar."""
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth,
+        json={"source_kind": "sec_edgar"},
+    )
+    assert r.status_code == 200
+
+
 def test_check_platform_detects_youtube_url(client, auth):
     r = client.post(
         "/api/v1/sources/check-platform",

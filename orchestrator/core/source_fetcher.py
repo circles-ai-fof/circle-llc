@@ -635,6 +635,106 @@ def fetch_telegram(channel: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[Fe
 
 
 # ---------------------------------------------------------------------------
+# SEC EDGAR — M4.12 sleeper companies radar (Phase 1: fetcher)
+# ---------------------------------------------------------------------------
+
+
+def fetch_sec_edgar(target: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[FetchedItem]:
+    """M4.12 — Lee las últimas filings de una empresa pública US desde SEC EDGAR.
+
+    Founder del audio: "identificar cuáles son los líderes del mercado y cuál
+    es el segundo de a bordo que en base a información pública financiera ya
+    se vea que está atrás y que tiene potencial de poder crecer".
+
+    Phase 1: source kind fetcher. Cada filing nueva se convierte en una
+    signal. La detección "líder vs second-best" como agente queda para
+    M5.x (requiere SIC code grouping + financial parsing — fuera de scope
+    de M4).
+
+    target: el CIK (Central Index Key) de la empresa. Acepta variantes:
+      - "320193" (Apple)
+      - "0000320193"
+      - "CIK0000320193"
+      - "AAPL" → no soportado en Phase 1 (haría falta ticker→CIK lookup)
+
+    Cumple con SEC EDGAR fair access policy:
+      - User-Agent identificable
+      - Endpoint /submissions/ rate limit 10 req/s (single req aquí, OK)
+    """
+    raw_target = target.strip().upper().replace("CIK", "").lstrip("0")
+    if not raw_target.isdigit():
+        logger.warning("fetch_sec_edgar: target %r no es un CIK numérico", target)
+        return []
+    cik = raw_target.zfill(10)  # SEC requiere 10 dígitos con ceros izq
+
+    # User-Agent obligatorio per SEC EDGAR fair-access policy
+    sec_headers = {
+        "User-Agent": "circles-ai-fof factory-of-factories (circles.fof.ai@gmail.com)",
+        "Accept": "application/json",
+    }
+    url = f"https://data.sec.gov/submissions/CIK{cik}.json"
+    try:
+        # Reusar el HTTP helper pero con headers extra. _http_get no acepta
+        # headers extra, así que hacemos urllib aquí directamente para no
+        # romper el contrato del resto del módulo.
+        import urllib.request
+        req = urllib.request.Request(url, headers=sec_headers)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = resp.read()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("fetch_sec_edgar: HTTP error for CIK %s: %s", cik, exc)
+        return []
+
+    try:
+        import json as _json
+        body = _json.loads(data.decode("utf-8", errors="replace"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("fetch_sec_edgar: JSON parse error for CIK %s: %s", cik, exc)
+        return []
+
+    company_name = body.get("name") or f"CIK {cik}"
+    recent = body.get("filings", {}).get("recent", {})
+    forms = recent.get("form") or []
+    dates = recent.get("filingDate") or []
+    accessions = recent.get("accessionNumber") or []
+    primary_docs = recent.get("primaryDocument") or []
+
+    items: List[FetchedItem] = []
+    for i in range(min(len(forms), max_items)):
+        form = forms[i]
+        date = dates[i] if i < len(dates) else "?"
+        accession = accessions[i] if i < len(accessions) else ""
+        acc_nodash = accession.replace("-", "")
+        primary = primary_docs[i] if i < len(primary_docs) else ""
+        if acc_nodash and primary:
+            filing_url = (
+                f"https://www.sec.gov/Archives/edgar/data/"
+                f"{int(cik)}/{acc_nodash}/{primary}"
+            )
+        else:
+            filing_url = f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}"
+        title = f"{company_name} — {form} filed {date}"
+        summary = (
+            f"Filing pública de {company_name} ({form}) registrada el {date}. "
+            f"Accession {accession}."
+        )
+        items.append(
+            FetchedItem(
+                source_kind="sec_edgar",
+                url=filing_url,
+                title=_truncate(title, 200),
+                summary=_truncate(summary, 400),
+                body=_truncate(
+                    f"{company_name}\n\nForm: {form}\nFiled: {date}\n"
+                    f"Accession: {accession}\nURL: {filing_url}",
+                    MAX_CHARS_PER_SOURCE,
+                ),
+            )
+        )
+    return items
+
+
+# ---------------------------------------------------------------------------
 # GitHub Trending (scrape — no official API)
 # ---------------------------------------------------------------------------
 
@@ -711,6 +811,9 @@ def fetch_by_kind(kind: str, target: str = "", max_items: int = MAX_ITEMS_PER_FE
         return fetch_bluesky(target, max_items)
     if kind == "telegram":
         return fetch_telegram(target, max_items)
+    if kind == "sec_edgar":
+        # M4.12 — SEC EDGAR Phase 1: company filings fetcher
+        return fetch_sec_edgar(target, max_items)
     if kind == "events":
         # M4.13 — Eventos/Ferias radar (inspirado en audio del founder:
         # "en qué ferias, en qué congresos hay que estar"). Por ahora delegamos

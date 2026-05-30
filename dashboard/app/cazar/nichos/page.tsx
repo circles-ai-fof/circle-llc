@@ -1,0 +1,245 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { authFetch } from "@/lib/auth";
+
+/**
+ * M4.15 — Niches sub-explorados dentro de mercados gigantes.
+ *
+ * Inspirado en el audio del founder (29-may): "recoger las migajas de donde
+ * están los gigantes — pero recoger migajas es demasiado grande para nuestra
+ * realidad".
+ *
+ * La página agrupa las señales por "parent market" (primera palabra del
+ * suggested_topic) y para cada gigante:
+ *   - leader_niche: el sub-niche con más señales (donde están todos compitiendo)
+ *   - underexplored_niches: sub-niches con ≤ max_niche_size señales (las migajas)
+ */
+
+type NicheSub = {
+  topic: string;
+  signals: number;
+  sample_themes: string[];
+};
+
+type NicheOpportunity = {
+  parent_market: string;
+  parent_size: number;
+  leader_niche: NicheSub;
+  underexplored_niches: NicheSub[];
+  opportunity_count: number;
+};
+
+export default function NichosPage() {
+  const [items, setItems] = useState<NicheOpportunity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [minParentSize, setMinParentSize] = useState(5);
+  const [maxNicheSize, setMaxNicheSize] = useState(3);
+
+  const refresh = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({
+        min_parent_size: String(minParentSize),
+        max_niche_size: String(maxNicheSize),
+        top_parents: "20",
+      });
+      const r = await authFetch(`/api/v1/niche-opportunities?${params.toString()}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      setItems(d.items);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minParentSize, maxNicheSize]);
+
+  return (
+    <main style={{ padding: "clamp(20px, 4vw, 32px) clamp(16px, 4vw, 40px)", maxWidth: 1200, margin: "0 auto" }}>
+      <header style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 700, color: "#fff", marginBottom: 6 }}>
+          🍞 Migajas de gigantes
+        </h1>
+        <p style={{ color: "#94a3b8", fontSize: 14, lineHeight: 1.6, maxWidth: 760 }}>
+          Sub-niches <strong>sub-explorados</strong> dentro de mercados padre
+          donde ya hay competencia fuerte. Inspirado en el audio del founder:{" "}
+          <em>&quot;recoger las migajas de donde están los gigantes&quot;</em>.
+          Cada gigante de la lista tiene un líder (donde todos compiten) y
+          varias migajas (donde podrías llegar con poca presión competitiva).
+        </p>
+      </header>
+
+      {/* Filtros */}
+      <section style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20, flexWrap: "wrap" }}>
+        <label style={{ color: "#94a3b8", fontSize: 12 }}>
+          Tamaño mínimo del gigante:
+        </label>
+        <input
+          type="number"
+          min={2}
+          max={1000}
+          step={1}
+          value={minParentSize}
+          onChange={(e) => setMinParentSize(parseInt(e.target.value || "5", 10))}
+          style={{
+            width: 70, background: "#0F1525", color: "#cbd5e1",
+            border: "1px solid #1e293b", borderRadius: 6, padding: "4px 8px", fontSize: 12,
+          }}
+        />
+        <label style={{ color: "#94a3b8", fontSize: 12 }}>
+          Max señales por migaja:
+        </label>
+        <input
+          type="number"
+          min={1}
+          max={100}
+          step={1}
+          value={maxNicheSize}
+          onChange={(e) => setMaxNicheSize(parseInt(e.target.value || "3", 10))}
+          style={{
+            width: 70, background: "#0F1525", color: "#cbd5e1",
+            border: "1px solid #1e293b", borderRadius: 6, padding: "4px 8px", fontSize: 12,
+          }}
+        />
+        <button
+          onClick={refresh}
+          style={{
+            padding: "6px 14px", background: "transparent",
+            color: "#00D4FF", border: "1px solid #00D4FF", borderRadius: 6, fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          ↻ Refresh
+        </button>
+        <span style={{ color: "#64748b", fontSize: 11, fontFamily: "monospace", marginLeft: "auto" }}>
+          {items.length} gigantes con migajas
+        </span>
+      </section>
+
+      {error && (
+        <div style={{ color: "#FF4444", padding: 12, marginBottom: 16, background: "rgba(255,68,68,0.06)", borderRadius: 8 }}>
+          {error}
+        </div>
+      )}
+
+      {loading && (
+        <div style={{ color: "#94a3b8", padding: 32, textAlign: "center" }}>Cargando…</div>
+      )}
+
+      {!loading && items.length === 0 && (
+        <div style={{ padding: 32, background: "#0F1525", border: "1px solid #1e293b", borderRadius: 12, textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>🍞</div>
+          <p style={{ color: "#cbd5e1", fontSize: 14, marginBottom: 6 }}>
+            No detectamos gigantes con migajas todavía.
+          </p>
+          <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.6, maxWidth: 460, margin: "0 auto" }}>
+            Necesitamos al menos <strong>{minParentSize} señales</strong> agrupadas en
+            el mismo mercado padre, donde al menos uno de los sub-niches tenga
+            ≤ {maxNicheSize} señales. Ejecuta más scans en{" "}
+            <a href="/cazar/fuentes" style={{ color: "#00D4FF" }}>/cazar/fuentes</a> para acumular volumen.
+          </p>
+        </div>
+      )}
+
+      {!loading && items.length > 0 && (
+        <div style={{ display: "grid", gap: 14 }}>
+          {items.map((g, idx) => (
+            <div
+              key={idx}
+              style={{
+                background: "#0F1525",
+                border: "1px solid #1e293b",
+                borderRadius: 12,
+                padding: 18,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <span style={{ fontSize: 22 }}>🏛️</span>
+                <h2 style={{
+                  color: "#fff", fontSize: 18, fontWeight: 700,
+                  textTransform: "capitalize", margin: 0,
+                }}>
+                  {g.parent_market}
+                </h2>
+                <span style={{
+                  marginLeft: "auto", color: "#94a3b8", fontSize: 11,
+                  fontFamily: "monospace",
+                }}>
+                  {g.parent_size} señales totales · {g.opportunity_count} migajas
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                {/* Leader */}
+                <div style={{
+                  background: "#0B0F1A",
+                  border: "1px solid rgba(255,68,68,0.25)",
+                  borderRadius: 8,
+                  padding: 12,
+                }}>
+                  <div style={{
+                    color: "#FF4444", fontSize: 10, fontWeight: 700,
+                    textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6,
+                  }}>
+                    🥊 Líder del gigante (donde todos compiten)
+                  </div>
+                  <div style={{ color: "#cbd5e1", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                    {g.leader_niche.topic}
+                  </div>
+                  <div style={{ color: "#FF4444", fontSize: 11, fontFamily: "monospace", marginBottom: 8 }}>
+                    {g.leader_niche.signals} señales · alta competencia
+                  </div>
+                  <div style={{ color: "#64748b", fontSize: 11, lineHeight: 1.5 }}>
+                    {g.leader_niche.sample_themes.slice(0, 2).map((t, i) => (
+                      <div key={i} style={{ marginBottom: 2 }}>↳ &quot;{t}&quot;</div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Underexplored */}
+                <div style={{
+                  background: "#0B0F1A",
+                  border: "1px solid rgba(0,229,160,0.3)",
+                  borderRadius: 8,
+                  padding: 12,
+                }}>
+                  <div style={{
+                    color: "#00E5A0", fontSize: 10, fontWeight: 700,
+                    textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6,
+                  }}>
+                    🍞 Migajas sub-exploradas ({g.underexplored_niches.length})
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {g.underexplored_niches.map((n, i) => (
+                      <div key={i}>
+                        <div style={{ color: "#cbd5e1", fontSize: 12, fontWeight: 600 }}>
+                          {n.topic}
+                        </div>
+                        <div style={{ color: "#00E5A0", fontSize: 10, fontFamily: "monospace", marginBottom: 2 }}>
+                          {n.signals} señal{n.signals === 1 ? "" : "es"} · baja competencia
+                        </div>
+                        {n.sample_themes.slice(0, 1).map((t, j) => (
+                          <div key={j} style={{ color: "#64748b", fontSize: 11, fontStyle: "italic" }}>
+                            ↳ &quot;{t}&quot;
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </main>
+  );
+}

@@ -251,7 +251,7 @@ class AuthAttemptsResponse(BaseModel):
 
 
 class SourceCreate(BaseModel):
-    kind: str = Field(pattern="^(url|rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram|events)$")
+    kind: str = Field(pattern="^(url|rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram|events|sec_edgar)$")
     target: str = Field(default="", max_length=500)
     name: str = Field(min_length=1, max_length=120)
 
@@ -471,7 +471,7 @@ class SignalsDeleteByTypeRequest(BaseModel):
     )
     source_kind: Optional[str] = Field(
         default=None,
-        pattern="^(rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram|url|events)$",
+        pattern="^(rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram|url|events|sec_edgar)$",
         description="Filtra por kind de fuente (M4.6b)",
     )
     source_id: Optional[int] = Field(
@@ -519,6 +519,26 @@ class SignalsBulkFeedbackResponse(BaseModel):
     updated: int = Field(description="Cantidad de señales realmente actualizadas")
     feedback_applied: str
     skipped_missing: int = Field(description="IDs que no existen en la base")
+
+
+# M4.15 — Niche-en-gigante detector (heurístico Phase 1)
+class NicheSubItem(BaseModel):
+    topic: str
+    signals: int
+    sample_themes: List[str] = Field(default_factory=list)
+
+
+class NicheOpportunity(BaseModel):
+    parent_market: str
+    parent_size: int
+    leader_niche: NicheSubItem
+    underexplored_niches: List[NicheSubItem]
+    opportunity_count: int
+
+
+class NicheOpportunitiesResponse(BaseModel):
+    total: int
+    items: List[NicheOpportunity]
 
 
 # M4.11 — cross-country trend gaps (first-mover opportunities)
