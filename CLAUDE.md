@@ -82,7 +82,8 @@ circle-llc/
 | M5.6-M5.7 | UI integration: botones "🤖" en /cazar/nichos + bulk sec_edgar en senales | — |
 | M5.8-M5.11 | 4 agentes promovidos experimental → ACTIVE (5 active total, 80 nuevos cases) | ADR-026 |
 | M6.1 | Weekly Digest (HTML + texto + JSON, sin SMTP todavía) + página /digest | — |
-| **M6.2** | **SMTP send + cron weekly + botón Enviar ahora (skip silencioso sin SMTP_*)** | — |
+| M6.2 | SMTP send + cron weekly + botón Enviar ahora (skip silencioso sin SMTP_*) | — |
+| **M6.0** | **MultiAgentConsensus — 13º agente (último del audio del founder cubierto)** | **ADR-027** |
 
 ## Cazador autónomo — 9 source kinds
 

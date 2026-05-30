@@ -35,6 +35,7 @@ gate_decider             ✗           ✗              ✗               ✗   
 | `event_relevance_scorer` | M5.3 → M5.9 | **ACTIVE** | **30/30** ✅ v1.0.0 | Decide go/skip/send_someone_else para una feria/congreso detectado por signals kind=events (M4.13). Único scope: ROI estimado de asistir. POST /api/v1/events/score. |
 | `sleeper_company_detector` | M5.4 → M5.10 | **ACTIVE** | **30/30** ✅ v1.0.0 | Identifica "second-best with momentum" desde un grupo de signals kind=sec_edgar (M4.12). Razona desde cadence de filings, NO desde cifras inventadas. POST /api/v1/sleeper-companies/detect. |
 | `product_arbitrage_evaluator` | M5.5 → M5.11 | **ACTIVE** | **30/30** ✅ v1.0.0 | Evalúa un trending search (signal kind=google_trends, M4.14) como oportunidad de dropshipping: producto físico? margin? recomendación test/skip/deepdive. POST /api/v1/arbitrage/evaluate. |
+| `multi_agent_consensus` | M6.0 | experimental | 10/30 | Sintetiza N perspectives (ya producidas) sobre una decisión high-stakes. Output: agreement_score, consensus_view, dissenting_views, key_tradeoffs, final_recommendation. R11-compliant: NO invoca otros agentes — recibe perspectives y las sintetiza con schema fijo. POST /api/v1/consensus/analyze. |
 
 ## Criterios para desarchivo de agentes en `_deferred/`
 

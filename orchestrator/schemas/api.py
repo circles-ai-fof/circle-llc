@@ -521,6 +521,29 @@ class SignalsBulkFeedbackResponse(BaseModel):
     skipped_missing: int = Field(description="IDs que no existen en la base")
 
 
+# M6.0 — MultiAgentConsensus
+class ConsensusPerspective(BaseModel):
+    source: str = Field(min_length=1, max_length=100)
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class ConsensusRequest(BaseModel):
+    decision_question: str = Field(min_length=1, max_length=500)
+    perspectives: List[ConsensusPerspective] = Field(min_length=1, max_length=10)
+
+
+class ConsensusResponse(BaseModel):
+    agreement_score: float
+    consensus_view: str
+    dissenting_views: List[str]
+    key_tradeoffs: List[str]
+    final_recommendation: str
+    confidence: float
+    reasoning: str
+    cost_usd_estimated: float = 0.0
+    mock_mode: bool = False
+
+
 # M6.1 — Weekly Digest
 class DigestStats(BaseModel):
     signals_total: int

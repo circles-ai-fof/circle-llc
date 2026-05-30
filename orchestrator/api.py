@@ -87,6 +87,7 @@ from .schemas.api import (
     ArbitrageEvalRequest, ArbitrageEvalResponse,
     DigestData,
     DigestSendResponse,
+    ConsensusRequest, ConsensusResponse,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2359,6 +2360,43 @@ def get_digest_text(request: Request, window_days: int = 7):
     data = build_digest_data(window_days=window_days)
     text = render_digest_text(data)
     return PlainTextResponse(content=text, status_code=200)
+
+
+@app.post(
+    "/api/v1/consensus/analyze",
+    response_model=ConsensusResponse,
+    summary="M6.0 — MultiAgentConsensus: sintetiza N perspectives sobre una decisión",
+    tags=["hunter"],
+)
+def analyze_consensus(
+    body: ConsensusRequest, request: Request
+) -> ConsensusResponse:
+    """Toma una pregunta de decisión + lista de perspectives (cada una con
+    source y text) y devuelve un consensus estructurado: agreement_score,
+    consensus_view, dissenting_views, key_tradeoffs, final_recommendation,
+    confidence.
+
+    R11-compliant: el agente NO invoca otros agentes. Recibe perspectives
+    ya producidas y las sintetiza. La decisión de qué agentes invocar antes
+    pertenece al caller (frontend o endpoint orquestador), no al agente.
+
+    Status: M6.0 experimental (10/30 golden cases). Costo ~$0.005-0.015.
+    """
+    _require_user(request)
+    from .agents.multi_agent_consensus import MultiAgentConsensusAgent
+    agent = MultiAgentConsensusAgent(
+        mock_mode=_workflow._mock_mode,
+        client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+    )
+    analysis = agent.analyze(
+        decision_question=body.decision_question,
+        perspectives=[p.model_dump() for p in body.perspectives],
+    )
+    return ConsensusResponse(
+        **analysis.to_dict(),
+        cost_usd_estimated=0.0 if agent._mock_mode else 0.012,
+        mock_mode=agent._mock_mode,
+    )
 
 
 @app.post(

@@ -2683,6 +2683,104 @@ def test_send_digest_email_invalid_port(monkeypatch):
     assert "SMTP_PORT inválido" in msg or "SMTP_PORT" in msg
 
 
+# ---------------------------------------------------------------------------
+# M6.0 — MultiAgentConsensus (experimental, 10/30 golden cases)
+# ---------------------------------------------------------------------------
+
+
+def _cons_call(client, auth, **overrides):
+    base = {
+        "decision_question": "¿Lanzamos en Ecuador o esperamos?",
+        "perspectives": [
+            {"source": "trend_gap_analyzer",
+             "text": "Atacar Ecuador primero, hay validación en USA y MX."},
+            {"source": "founder_gut",
+             "text": "Ecuador tiene timing, pero presupuesto es ajustado."},
+        ],
+    }
+    base.update(overrides)
+    return client.post("/api/v1/consensus/analyze", headers=auth, json=base)
+
+
+def test_consensus_basic_flow(client, auth):
+    """Case #1: dos perspectives con solapamiento textual."""
+    r = _cons_call(client, auth)
+    assert r.status_code == 200
+    data = r.json()
+    assert "agreement_score" in data
+    assert "consensus_view" in data
+    assert "final_recommendation" in data
+
+
+def test_consensus_single_perspective_full_agreement(client, auth):
+    """Case #2: 1 perspective sola → agreement=1.0 trivial."""
+    r = _cons_call(client, auth, perspectives=[
+        {"source": "founder", "text": "Lanzamos en Ecuador."},
+    ])
+    assert r.json()["agreement_score"] == 1.0
+    assert r.json()["dissenting_views"] == []
+
+
+def test_consensus_identical_perspectives_low_diversity(client, auth):
+    """Case #3: perspectives textualmente similares → agreement alto."""
+    r = _cons_call(client, auth, perspectives=[
+        {"source": "agent_a", "text": "Lanzar producto Ecuador validacion mercado"},
+        {"source": "agent_b", "text": "Lanzar producto Ecuador validacion mercado"},
+        {"source": "agent_c", "text": "Lanzar producto Ecuador validacion mercado"},
+    ])
+    assert r.json()["agreement_score"] >= 0.5
+
+
+def test_consensus_contradictory_perspectives_low_agreement(client, auth):
+    """Case #4: perspectives sin palabras comunes → agreement bajo."""
+    r = _cons_call(client, auth, perspectives=[
+        {"source": "agent_a", "text": "Lanzar inmediatamente fintech ecuador pymes"},
+        {"source": "agent_b", "text": "Mejorar producto edtech mexico estudiantes universidad"},
+    ])
+    assert r.json()["agreement_score"] < 0.6
+
+
+def test_consensus_confidence_in_range(client, auth):
+    """Case #5: confidence ∈ [0, 0.85]."""
+    r = _cons_call(client, auth)
+    c = r.json()["confidence"]
+    assert 0.0 <= c <= 0.85
+
+
+def test_consensus_requires_auth(client):
+    """Case #6: auth requerido."""
+    r = client.post("/api/v1/consensus/analyze",
+                    json={"decision_question": "x",
+                          "perspectives": [{"source": "x", "text": "y"}]})
+    assert r.status_code == 401
+
+
+def test_consensus_rejects_empty_perspectives(client, auth):
+    """Case #7: perspectives vacía → 422."""
+    r = _cons_call(client, auth, perspectives=[])
+    assert r.status_code == 422
+
+
+def test_consensus_rejects_too_many_perspectives(client, auth):
+    """Case #8: > 10 perspectives → 422."""
+    many = [{"source": f"agent_{i}", "text": f"perspective {i}"} for i in range(15)]
+    r = _cons_call(client, auth, perspectives=many)
+    assert r.status_code == 422
+
+
+def test_consensus_rejects_empty_question(client, auth):
+    """Case #9: decision_question vacía → 422."""
+    r = _cons_call(client, auth, decision_question="")
+    assert r.status_code == 422
+
+
+def test_consensus_mock_mode_flag(client, auth):
+    """Case #10: mock_mode=True en CI sin API key."""
+    r = _cons_call(client, auth)
+    assert r.json()["mock_mode"] is True
+    assert r.json()["cost_usd_estimated"] == 0.0
+
+
 def test_send_digest_email_empty_recipients(monkeypatch):
     """DIGEST_TO con solo comas vacías → (False, msg)."""
     from orchestrator.core.digest import send_digest_email
