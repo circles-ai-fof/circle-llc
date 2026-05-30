@@ -521,6 +521,50 @@ class SignalsBulkFeedbackResponse(BaseModel):
     skipped_missing: int = Field(description="IDs que no existen en la base")
 
 
+# M6.1 — Weekly Digest
+class DigestStats(BaseModel):
+    signals_total: int
+    signals_this_week: int
+    signals_promoted: int
+    signals_with_up: int
+    sources_active: int
+    runs_total: int
+    runs_pass: int
+    pass_rate_pct: float
+
+
+class DigestGapItem(BaseModel):
+    idea_summary: str
+    validated_in: List[str]
+    missing_in: List[str]
+    opportunity_score: float
+
+
+class DigestNicheItem(BaseModel):
+    parent_market: str
+    parent_size: int
+    leader_topic: str
+    underexplored: List[str]
+    opportunity_count: int
+
+
+class DigestSignalItem(BaseModel):
+    theme: str
+    url: str
+    score: float
+    captured_at: int
+
+
+class DigestData(BaseModel):
+    generated_at: int
+    window_days: int
+    stats: DigestStats
+    top_first_mover_gaps: List[DigestGapItem]
+    top_niches: List[DigestNicheItem]
+    recent_events: List[DigestSignalItem]
+    recent_trends: List[DigestSignalItem]
+
+
 # M5.2 — NicheScout
 class NicheScoutRequest(BaseModel):
     parent_market: str = Field(min_length=1, max_length=100)

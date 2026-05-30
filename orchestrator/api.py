@@ -85,6 +85,7 @@ from .schemas.api import (
     EventScoringRequest, EventScoringResponse,
     SleeperDetectRequest, SleeperDetectResponse,
     ArbitrageEvalRequest, ArbitrageEvalResponse,
+    DigestData,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2243,6 +2244,69 @@ def niche_opportunities(
     )
     items = [NicheOpportunity(**it) for it in items_raw]
     return NicheOpportunitiesResponse(total=len(items), items=items)
+
+
+@app.get(
+    "/api/v1/digest/data",
+    response_model=DigestData,
+    summary="M6.1 — Weekly digest: data JSON estructurada (sin LLM, $0)",
+    tags=["meta"],
+)
+def get_digest_data(request: Request, window_days: int = 7) -> DigestData:
+    """Devuelve la data agregada para el digest semanal.
+
+    Recolecta de signals_store, sources_store, runs_store:
+    - Stats: signals/runs/sources de la semana
+    - Top 3 first-mover gaps (M4.11)
+    - Top 3 nichos sub-explorados (M4.15)
+    - Eventos recientes (kind=events, score >= 0.5)
+    - Trending searches (kind=google_trends, score >= 0.5)
+    """
+    _require_user(request)
+    if window_days < 1 or window_days > 90:
+        raise HTTPException(status_code=422, detail="window_days must be 1-90")
+    from .core.digest import build_digest_data
+    data = build_digest_data(window_days=window_days)
+    return DigestData(**data)
+
+
+@app.get(
+    "/api/v1/digest/preview",
+    summary="M6.1 — Weekly digest: HTML autocontenido (preview en browser)",
+    tags=["meta"],
+)
+def get_digest_preview(request: Request, window_days: int = 7):
+    """Devuelve HTML autocontenido del digest. Se puede abrir directo en el
+    browser (o pegar en cliente de email como Mailgun template).
+
+    Auth requerido (data privada del founder).
+    """
+    _require_user(request)
+    if window_days < 1 or window_days > 90:
+        raise HTTPException(status_code=422, detail="window_days must be 1-90")
+    from .core.digest import build_digest_data, render_digest_html
+    from fastapi.responses import HTMLResponse
+    data = build_digest_data(window_days=window_days)
+    dashboard_url = os.getenv("DASHBOARD_URL", "http://localhost:3001")
+    html = render_digest_html(data, dashboard_url=dashboard_url)
+    return HTMLResponse(content=html, status_code=200)
+
+
+@app.get(
+    "/api/v1/digest/text",
+    summary="M6.1 — Weekly digest: texto plano (para clientes sin HTML)",
+    tags=["meta"],
+)
+def get_digest_text(request: Request, window_days: int = 7):
+    """Devuelve texto plano del digest. Útil para WhatsApp, Telegram, etc."""
+    _require_user(request)
+    if window_days < 1 or window_days > 90:
+        raise HTTPException(status_code=422, detail="window_days must be 1-90")
+    from .core.digest import build_digest_data, render_digest_text
+    from fastapi.responses import PlainTextResponse
+    data = build_digest_data(window_days=window_days)
+    text = render_digest_text(data)
+    return PlainTextResponse(content=text, status_code=200)
 
 
 @app.post(

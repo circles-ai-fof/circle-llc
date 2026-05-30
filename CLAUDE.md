@@ -80,7 +80,8 @@ circle-llc/
 | M5.1 | TrendGapAnalyzer promovido a ACTIVE (30/30 golden cases) — v1.0.0 | ADR-024 |
 | M5.2-M5.5 | 4 agentes experimentales: NicheScout, EventScorer, SleeperDetector, ArbitrageEval (12 agentes totales) | ADR-025 |
 | M5.6-M5.7 | UI integration: botones "🤖" en /cazar/nichos + bulk sec_edgar en senales | — |
-| **M5.8-M5.11** | **4 agentes promovidos experimental → ACTIVE (5 active total, 80 nuevos cases)** | **ADR-026** |
+| M5.8-M5.11 | 4 agentes promovidos experimental → ACTIVE (5 active total, 80 nuevos cases) | ADR-026 |
+| **M6.1** | **Weekly Digest (HTML + texto + JSON, sin SMTP todavía) + página /digest** | — |
 
 ## Cazador autónomo — 9 source kinds
 

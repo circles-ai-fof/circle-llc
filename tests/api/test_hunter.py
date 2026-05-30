@@ -2500,6 +2500,98 @@ def test_arbitrage_test_recommendation_means_product(client, auth):
         assert r.json()["is_physical_product"] is True
 
 
+# ---------------------------------------------------------------------------
+# M6.1 — Weekly Digest
+# ---------------------------------------------------------------------------
+
+
+def test_digest_data_returns_structure_empty_db(client, auth):
+    """Con DB vacío, el digest devuelve estructura completa con stats=0."""
+    r = client.get("/api/v1/digest/data", headers=auth)
+    assert r.status_code == 200
+    data = r.json()
+    assert "stats" in data
+    assert "top_first_mover_gaps" in data
+    assert "top_niches" in data
+    assert "recent_events" in data
+    assert "recent_trends" in data
+    assert data["window_days"] == 7
+    assert data["stats"]["signals_total"] == 0
+
+
+def test_digest_data_window_days_custom(client, auth):
+    r = client.get("/api/v1/digest/data?window_days=30", headers=auth)
+    assert r.status_code == 200
+    assert r.json()["window_days"] == 30
+
+
+def test_digest_data_rejects_invalid_window(client, auth):
+    assert client.get("/api/v1/digest/data?window_days=0", headers=auth).status_code == 422
+    assert client.get("/api/v1/digest/data?window_days=200", headers=auth).status_code == 422
+
+
+def test_digest_data_includes_real_signals(client, auth):
+    """Con signals de varios kinds, el digest los categoriza correctamente."""
+    from orchestrator.core.storage import signals_store
+    signals_store.add(
+        source_id=None, source_kind="events", theme="Web Summit 2026",
+        score=0.7, excerpt="ex", evidence_urls=["https://lu.ma/x"],
+        suggested_topic="event", item_titles=["t"],
+    )
+    signals_store.add(
+        source_id=None, source_kind="google_trends", theme="[US] cargador GaN",
+        score=0.8, excerpt="ex", evidence_urls=["https://trends.google.com/x"],
+        suggested_topic="trend", item_titles=["t"],
+    )
+    r = client.get("/api/v1/digest/data", headers=auth)
+    data = r.json()
+    # Stats: 2 signals esta semana
+    assert data["stats"]["signals_this_week"] >= 2
+    # Recent events: 1
+    assert any("Web Summit" in e["theme"] for e in data["recent_events"])
+    # Recent trends: 1
+    assert any("cargador GaN" in t["theme"] for t in data["recent_trends"])
+
+
+def test_digest_preview_returns_html(client, auth):
+    """Preview devuelve HTML autocontenido con DOCTYPE."""
+    r = client.get("/api/v1/digest/preview", headers=auth)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    body = r.text
+    assert "<!DOCTYPE html>" in body
+    assert "Factory of Factories" in body
+    assert "Resumen Semanal" in body
+
+
+def test_digest_preview_includes_dashboard_link(client, auth):
+    r = client.get("/api/v1/digest/preview", headers=auth)
+    # Default DASHBOARD_URL = http://localhost:3001
+    assert "localhost:3001" in r.text or "circles-ai.ai" in r.text
+
+
+def test_digest_text_returns_plain(client, auth):
+    """Texto plano sin tags HTML."""
+    r = client.get("/api/v1/digest/text", headers=auth)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/plain")
+    body = r.text
+    assert "<html" not in body
+    assert "FACTORY OF FACTORIES" in body
+
+
+def test_digest_data_requires_auth(client):
+    assert client.get("/api/v1/digest/data").status_code == 401
+
+
+def test_digest_preview_requires_auth(client):
+    assert client.get("/api/v1/digest/preview").status_code == 401
+
+
+def test_digest_text_requires_auth(client):
+    assert client.get("/api/v1/digest/text").status_code == 401
+
+
 def test_arbitrage_deepdive_when_product_but_no_prices(client, auth):
     """Case #30: producto físico SIN precios → deepdive (no test)."""
     r = _arb_call(client, auth, trending_query="[US] funda smartphone")
