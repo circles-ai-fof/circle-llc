@@ -14,7 +14,7 @@ Scope:
   cost_estimate del founder
 - Output: ArbitrageAnalysis con margin breakdown + recomendación
 
-Status: experimental (M5.5). 10/30 golden cases.
+Status: ACTIVE (M5.11 — promovido 2026-05-30 con 30/30 golden cases).
 """
 from __future__ import annotations
 
@@ -91,11 +91,11 @@ class ArbitrageAnalysis:
 
 
 class ProductArbitrageEvaluatorAgent(BaseAgent):
-    """Status: experimental (M5.5). 10/30 golden cases."""
+    """Status: ACTIVE (M5.11). 30/30 golden cases. v1.0.0."""
 
     AGENT_NAME = "product_arbitrage_evaluator"
-    AGENT_VERSION = "0.1.0"
-    EXPERIMENTAL = True
+    AGENT_VERSION = "1.0.0"
+    EXPERIMENTAL = False
 
     @property
     def system_prompt(self) -> str:

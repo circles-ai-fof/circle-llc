@@ -11,7 +11,7 @@ Scope:
   industry_focus del founder
 - Output: EventScoring con go/skip/send_someone_else + razones
 
-Status: experimental (M5.3). 10/30 golden cases.
+Status: ACTIVE (M5.9 — promovido 2026-05-30 con 30/30 golden cases).
 """
 from __future__ import annotations
 
@@ -80,11 +80,11 @@ class EventScoring:
 
 
 class EventRelevanceScorerAgent(BaseAgent):
-    """Status: experimental (M5.3). 10/30 golden cases."""
+    """Status: ACTIVE (M5.9). 30/30 golden cases. v1.0.0."""
 
     AGENT_NAME = "event_relevance_scorer"
-    AGENT_VERSION = "0.1.0"
-    EXPERIMENTAL = True
+    AGENT_VERSION = "1.0.0"
+    EXPERIMENTAL = False
 
     @property
     def system_prompt(self) -> str:

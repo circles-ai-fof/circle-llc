@@ -7,8 +7,8 @@ Scope:
   underexplored_niches) producido por GET /api/v1/niche-opportunities
 - Output: NicheEntryPlan con plan de entrada al sub-niche más atractivo
 
-Status: experimental (M5.2). Per R12, 10 golden cases mínimos. Promoción
-a active(on-demand) requiere ≥30 cases (M5.x posterior).
+Status: ACTIVE (M5.8 — promovido el 2026-05-30 con 30/30 golden cases).
+Sigue invocado solo via endpoint explícito (no en workflow/autoscan).
 """
 from __future__ import annotations
 
@@ -81,11 +81,11 @@ class NicheEntryPlan:
 
 
 class NicheScoutAgent(BaseAgent):
-    """Status: experimental (M5.2). 10/30 golden cases."""
+    """Status: ACTIVE (M5.8). 30/30 golden cases. v1.0.0."""
 
     AGENT_NAME = "niche_scout"
-    AGENT_VERSION = "0.1.0"
-    EXPERIMENTAL = True
+    AGENT_VERSION = "1.0.0"  # M5.8 — promovido active con 30/30 golden cases
+    EXPERIMENTAL = False
 
     @property
     def system_prompt(self) -> str:

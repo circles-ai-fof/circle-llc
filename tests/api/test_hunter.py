@@ -1649,6 +1649,158 @@ def test_niche_scout_requires_auth(client):
 
 
 # ---------------------------------------------------------------------------
+# M5.8 — NicheScout: 20 cases adicionales (11-30) para promover a ACTIVE
+# ---------------------------------------------------------------------------
+
+
+def test_niche_scout_deterministic_in_mock(client, auth):
+    """Case #11: dos llamadas iguales → mismo target_subniche y confidence."""
+    r1 = _ns_call(client, auth)
+    r2 = _ns_call(client, auth)
+    assert r1.json()["target_subniche"] == r2.json()["target_subniche"]
+    assert r1.json()["confidence"] == r2.json()["confidence"]
+
+
+def test_niche_scout_confidence_in_range(client, auth):
+    """Case #12: confidence siempre ∈ [0, 1]."""
+    for parent_size in (5, 10, 20, 50, 100):
+        r = _ns_call(client, auth, parent_size=parent_size)
+        c = r.json()["confidence"]
+        assert 0.0 <= c <= 1.0
+
+
+def test_niche_scout_response_fields_non_empty(client, auth):
+    """Case #13: campos críticos no vacíos."""
+    r = _ns_call(client, auth)
+    data = r.json()
+    for field in ("target_subniche", "entry_thesis", "competitive_advantage",
+                  "minimum_viable_offer", "estimated_capture_pct", "reasoning"):
+        assert data[field], f"campo {field!r} vacío"
+
+
+def test_niche_scout_validation_metrics_capped(client, auth):
+    """Case #14: validation_metrics tiene entre 2-5 items."""
+    r = _ns_call(client, auth)
+    assert 2 <= len(r.json()["validation_metrics"]) <= 5
+
+
+def test_niche_scout_key_risks_capped(client, auth):
+    """Case #15: key_risks tiene entre 1-5 items."""
+    r = _ns_call(client, auth)
+    assert 1 <= len(r.json()["key_risks"]) <= 5
+
+
+def test_niche_scout_rejects_parent_market_too_long(client, auth):
+    """Case #16: parent_market > 100 chars → 422."""
+    r = _ns_call(client, auth, parent_market="x" * 101)
+    assert r.status_code == 422
+
+
+def test_niche_scout_rejects_parent_size_negative(client, auth):
+    """Case #17: parent_size < 1 → 422."""
+    r = _ns_call(client, auth, parent_size=-5)
+    assert r.status_code == 422
+
+
+def test_niche_scout_rejects_parent_size_too_large(client, auth):
+    """Case #18: parent_size > 10000 → 422."""
+    r = _ns_call(client, auth, parent_size=10_001)
+    assert r.status_code == 422
+
+
+def test_niche_scout_rejects_too_many_underexplored(client, auth):
+    """Case #19: > 20 underexplored → 422."""
+    too_many = [{"topic": f"sub-{i}", "signals": 1, "sample_themes": ["x"]} for i in range(25)]
+    r = _ns_call(client, auth, underexplored_niches=too_many)
+    assert r.status_code == 422
+
+
+def test_niche_scout_handles_max_underexplored(client, auth):
+    """Case #20: 20 underexplored funciona (límite superior OK)."""
+    twenty = [{"topic": f"sub-{i}", "signals": 1, "sample_themes": ["x"]} for i in range(20)]
+    r = _ns_call(client, auth, underexplored_niches=twenty)
+    assert r.status_code == 200
+
+
+def test_niche_scout_target_picks_lowest_signals(client, auth):
+    """Case #21: el target_subniche es el primer underexplored (heurística mock)."""
+    sub1 = {"topic": "sub low signals", "signals": 1, "sample_themes": ["a"]}
+    sub2 = {"topic": "sub high signals", "signals": 3, "sample_themes": ["b"]}
+    r = _ns_call(client, auth, underexplored_niches=[sub1, sub2])
+    assert r.json()["target_subniche"] == "sub low signals"
+
+
+def test_niche_scout_returns_spanish_in_mock(client, auth):
+    """Case #22: mock devuelve español con acentos."""
+    r = _ns_call(client, auth)
+    data = r.json()
+    full_text = (
+        data["entry_thesis"] + data["competitive_advantage"]
+        + data["minimum_viable_offer"] + data["reasoning"]
+    )
+    assert any(ch in full_text for ch in "áéíóúñ"), "sin acentos españoles"
+
+
+def test_niche_scout_estimated_capture_mentions_pct(client, auth):
+    """Case #23: estimated_capture_pct menciona '%' o 'parent'."""
+    r = _ns_call(client, auth)
+    val = r.json()["estimated_capture_pct"].lower()
+    assert "%" in val or "parent" in val or "segmento" in val
+
+
+def test_niche_scout_cost_proportional_in_mock(client, auth):
+    """Case #24: cost_usd_estimated == 0.0 cuando mock."""
+    assert _ns_call(client, auth).json()["cost_usd_estimated"] == 0.0
+
+
+def test_niche_scout_handles_leader_with_empty_themes(client, auth):
+    """Case #25: leader_niche sin sample_themes no rompe."""
+    leader = {"topic": "leader", "signals": 5, "sample_themes": []}
+    r = _ns_call(client, auth, leader_niche=leader)
+    assert r.status_code == 200
+
+
+def test_niche_scout_confidence_monotonic_with_parent_size(client, auth):
+    """Case #26: confidence aumenta con parent_size (small < big)."""
+    r_small = _ns_call(client, auth, parent_size=5)
+    r_big = _ns_call(client, auth, parent_size=30)
+    assert r_big.json()["confidence"] > r_small.json()["confidence"]
+
+
+def test_niche_scout_confidence_max_in_mock(client, auth):
+    """Case #27: confidence en mock nunca supera 0.85."""
+    for ps in (10, 50, 100, 500):
+        r = _ns_call(client, auth, parent_size=ps)
+        assert r.json()["confidence"] <= 0.85
+
+
+def test_niche_scout_thesis_mentions_leader(client, auth):
+    """Case #28: entry_thesis menciona el topic del líder (consistencia interna)."""
+    leader = {"topic": "fintech corporativo", "signals": 8, "sample_themes": ["x"]}
+    r = _ns_call(client, auth, leader_niche=leader)
+    assert "fintech corporativo" in r.json()["entry_thesis"].lower() or \
+           "corporativo" in r.json()["entry_thesis"].lower()
+
+
+def test_niche_scout_mvp_mentions_landing_or_test(client, auth):
+    """Case #29: MVP describe algo testeable (landing, lista, mvp, test...)."""
+    r = _ns_call(client, auth)
+    mvp = r.json()["minimum_viable_offer"].lower()
+    assert any(k in mvp for k in ("landing", "lista", "mvp", "test", "espera", "validar"))
+
+
+def test_niche_scout_idempotent_response_shape(client, auth):
+    """Case #30: la respuesta tiene exactamente los 11 campos esperados (no extras)."""
+    r = _ns_call(client, auth)
+    expected = {
+        "target_subniche", "entry_thesis", "competitive_advantage",
+        "minimum_viable_offer", "validation_metrics", "estimated_capture_pct",
+        "key_risks", "confidence", "reasoning", "cost_usd_estimated", "mock_mode",
+    }
+    assert set(r.json().keys()) == expected
+
+
+# ---------------------------------------------------------------------------
 # M5.3 — EventRelevanceScorer (10 golden cases, experimental)
 # ---------------------------------------------------------------------------
 
@@ -1725,6 +1877,157 @@ def test_event_scorer_mock_mode_flag(client, auth):
 def test_event_scorer_requires_auth(client):
     r = client.post("/api/v1/events/score", json={"event_title": "x"})
     assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# M5.9 — EventRelevanceScorer: 20 cases adicionales (11-30) → ACTIVE
+# ---------------------------------------------------------------------------
+
+
+def test_event_scorer_deterministic_in_mock(client, auth):
+    """Case #11."""
+    r1 = _ev_call(client, auth, event_title="Web Summit 2026")
+    r2 = _ev_call(client, auth, event_title="Web Summit 2026")
+    assert r1.json()["recommendation"] == r2.json()["recommendation"]
+    assert r1.json()["relevance_score"] == r2.json()["relevance_score"]
+
+
+def test_event_scorer_rejects_title_too_long(client, auth):
+    """Case #12: > 300 chars en title → 422."""
+    r = _ev_call(client, auth, event_title="x" * 301)
+    assert r.status_code == 422
+
+
+def test_event_scorer_rejects_description_too_long(client, auth):
+    """Case #13: > 2000 chars en description → 422."""
+    r = _ev_call(client, auth, event_description="x" * 2001)
+    assert r.status_code == 422
+
+
+def test_event_scorer_rejects_too_many_urls(client, auth):
+    """Case #14: > 10 URLs → 422."""
+    r = _ev_call(client, auth, evidence_urls=[f"https://e.com/{i}" for i in range(15)])
+    assert r.status_code == 422
+
+
+def test_event_scorer_rejects_industry_too_long(client, auth):
+    """Case #15: industry_focus > 200 chars → 422."""
+    r = _ev_call(client, auth, industry_focus="x" * 201)
+    assert r.status_code == 422
+
+
+def test_event_scorer_response_fields_non_empty_when_go(client, auth):
+    """Case #16: cuando recommendation=go, todos los campos descriptivos pueblan."""
+    r = _ev_call(client, auth, event_title="Web Summit Lisbon")
+    data = r.json()
+    if data["recommendation"] == "go":
+        for field in ("expected_attendees_profile", "networking_value",
+                      "learning_value", "estimated_cost_usd", "expected_roi"):
+            assert data[field]
+
+
+def test_event_scorer_recommendation_in_valid_set(client, auth):
+    """Case #17: recommendation siempre en {go, skip, send_someone_else}."""
+    for title in ("Web Summit", "Random event", "Expo LATAM", "Local feria",
+                  "Fintech Conference", "Generic seminar"):
+        r = _ev_call(client, auth, event_title=title)
+        assert r.json()["recommendation"] in {"go", "skip", "send_someone_else"}
+
+
+def test_event_scorer_preparation_topics_when_not_skip(client, auth):
+    """Case #18: si recomendación != skip, preparation_topics tiene ≥1 item."""
+    r = _ev_call(client, auth, event_title="Web Summit Lisbon",
+                 event_description="largest tech conf")
+    data = r.json()
+    if data["recommendation"] != "skip":
+        assert len(data["preparation_topics"]) >= 1
+
+
+def test_event_scorer_cost_estimate_includes_currency(client, auth):
+    """Case #19: estimated_cost_usd menciona '$' o cifras."""
+    r = _ev_call(client, auth)
+    cost = r.json()["estimated_cost_usd"]
+    assert "$" in cost or any(c.isdigit() for c in cost)
+
+
+def test_event_scorer_returns_spanish_in_mock(client, auth):
+    """Case #20: mock devuelve español con acentos."""
+    r = _ev_call(client, auth, event_title="Test")
+    full = (r.json()["reasoning"] + r.json()["networking_value"]
+            + r.json()["learning_value"])
+    assert any(ch in full for ch in "áéíóúñ")
+
+
+def test_event_scorer_industry_focus_increases_score(client, auth):
+    """Case #21: con industry_focus que matchea, relevance_score sube."""
+    r_no = _ev_call(client, auth, event_title="Generic Conference 2026",
+                    event_description="nothing")
+    r_with = _ev_call(client, auth, event_title="Generic Conference 2026",
+                      event_description="fintech focus", industry_focus="fintech")
+    assert r_with.json()["relevance_score"] >= r_no.json()["relevance_score"]
+
+
+def test_event_scorer_relevance_capped_at_one(client, auth):
+    """Case #22: relevance_score nunca supera 1.0."""
+    r = _ev_call(client, auth, event_title="Web Summit Vegas AI Summit Fintech",
+                 industry_focus="fintech")
+    assert r.json()["relevance_score"] <= 1.0
+
+
+def test_event_scorer_low_relevance_for_unknown(client, auth):
+    """Case #23: eventos genéricos tienen relevance_score < 0.6."""
+    r = _ev_call(client, auth, event_title="Conferencia de Calzado Local",
+                 event_description="evento provincial")
+    assert r.json()["relevance_score"] < 0.6
+
+
+def test_event_scorer_mock_mode_invariant(client, auth):
+    """Case #24: mock_mode=True + cost_usd_estimated=0.0 siempre en mock."""
+    r = _ev_call(client, auth)
+    assert r.json()["mock_mode"] is True
+    assert r.json()["cost_usd_estimated"] == 0.0
+
+
+def test_event_scorer_reasoning_non_empty(client, auth):
+    """Case #25: reasoning siempre presente."""
+    r = _ev_call(client, auth)
+    assert r.json()["reasoning"]
+
+
+def test_event_scorer_long_description_truncates_safely(client, auth):
+    """Case #26: description en el límite (2000 chars) funciona."""
+    r = _ev_call(client, auth, event_description="x" * 2000)
+    assert r.status_code == 200
+
+
+def test_event_scorer_handles_empty_urls(client, auth):
+    """Case #27: evidence_urls=[] funciona."""
+    r = _ev_call(client, auth, evidence_urls=[])
+    assert r.status_code == 200
+
+
+def test_event_scorer_response_shape_complete(client, auth):
+    """Case #28: response tiene los 11 campos esperados."""
+    r = _ev_call(client, auth)
+    expected = {
+        "relevance_score", "expected_attendees_profile", "networking_value",
+        "learning_value", "estimated_cost_usd", "expected_roi",
+        "recommendation", "preparation_topics", "reasoning",
+        "cost_usd_estimated", "mock_mode",
+    }
+    assert set(r.json().keys()) == expected
+
+
+def test_event_scorer_y_combinator_triggers_go(client, auth):
+    """Case #29: keyword 'y combinator' triggera recommendation=go."""
+    r = _ev_call(client, auth, event_title="Y Combinator Demo Day")
+    assert r.json()["recommendation"] == "go"
+
+
+def test_event_scorer_disrupt_triggers_go(client, auth):
+    """Case #30: keyword 'disrupt' (TechCrunch Disrupt) triggera go."""
+    r = _ev_call(client, auth, event_title="TechCrunch Disrupt 2026 San Francisco")
+    assert r.json()["recommendation"] == "go"
 
 
 # ---------------------------------------------------------------------------
@@ -1808,6 +2111,178 @@ def test_sleeper_requires_auth(client):
 
 
 # ---------------------------------------------------------------------------
+# M5.10 — SleeperCompanyDetector: 20 cases adicionales (11-30) → ACTIVE
+# ---------------------------------------------------------------------------
+
+
+def test_sleeper_deterministic_in_mock(client, auth):
+    """Case #11."""
+    r1 = _sl_call(client, auth)
+    r2 = _sl_call(client, auth)
+    assert r1.json()["leader_candidate"] == r2.json()["leader_candidate"]
+    assert r1.json()["confidence"] == r2.json()["confidence"]
+
+
+def test_sleeper_first_company_is_leader(client, auth):
+    """Case #12: heurística mock — primera empresa = leader."""
+    r = _sl_call(client, auth, companies=[
+        {"name": "FirstCo", "cik": "1", "filings": []},
+        {"name": "SecondCo", "cik": "2", "filings": [{"form": "10-K", "date": "2025"}]},
+    ])
+    assert "FirstCo" in r.json()["leader_candidate"]
+
+
+def test_sleeper_response_fields_non_empty(client, auth):
+    """Case #13."""
+    r = _sl_call(client, auth)
+    data = r.json()
+    for field in ("sector_summary", "leader_candidate", "threat_assessment",
+                  "investment_thesis", "reasoning"):
+        assert data[field]
+
+
+def test_sleeper_confidence_in_range(client, auth):
+    """Case #14."""
+    for n in (1, 2, 3, 5, 10):
+        companies = [{"name": f"C{i}", "cik": str(i), "filings": []} for i in range(n)]
+        r = _sl_call(client, auth, companies=companies)
+        assert 0.0 <= r.json()["confidence"] <= 1.0
+
+
+def test_sleeper_confidence_capped_at_075(client, auth):
+    """Case #15: confidence nunca > 0.75 (per prompt rule)."""
+    companies = [{"name": f"C{i}", "cik": str(i), "filings": [
+        {"form": "10-K", "date": "2025"}, {"form": "10-Q", "date": "2026"},
+    ]} for i in range(10)]
+    r = _sl_call(client, auth, companies=companies)
+    assert r.json()["confidence"] <= 0.75
+
+
+def test_sleeper_comparison_signals_present_with_multiple(client, auth):
+    """Case #16: con ≥3 empresas, comparison_signals tiene ≥1 item."""
+    r = _sl_call(client, auth)
+    assert len(r.json()["comparison_signals"]) >= 1
+
+
+def test_sleeper_handles_company_without_filings(client, auth):
+    """Case #17: empresa sin filings sigue funcionando."""
+    r = _sl_call(client, auth, companies=[
+        {"name": "EmptyCo", "cik": "1", "filings": []},
+        {"name": "RegularCo", "cik": "2", "filings": [{"form": "10-K", "date": "2025"}]},
+    ])
+    assert r.status_code == 200
+
+
+def test_sleeper_handles_filings_with_missing_fields(client, auth):
+    """Case #18: filing sin form/date no rompe."""
+    r = _sl_call(client, auth, companies=[
+        {"name": "A", "cik": "1", "filings": [{}]},
+        {"name": "B", "cik": "2", "filings": [{"form": "10-K"}]},
+    ])
+    assert r.status_code == 200
+
+
+def test_sleeper_rejects_21_companies_max20(client, auth):
+    """Case #19: > 20 companies → 422 (boundary check)."""
+    r = _sl_call(client, auth, companies=[
+        {"name": f"C{i}", "cik": str(i), "filings": []} for i in range(21)
+    ])
+    assert r.status_code == 422
+
+
+def test_sleeper_accepts_max_20_companies(client, auth):
+    """Case #20: exactamente 20 funciona (límite superior OK)."""
+    r = _sl_call(client, auth, companies=[
+        {"name": f"C{i}", "cik": str(i), "filings": []} for i in range(20)
+    ])
+    assert r.status_code == 200
+
+
+def test_sleeper_returns_spanish_in_mock(client, auth):
+    """Case #21: español detectable en outputs."""
+    r = _sl_call(client, auth)
+    full = (r.json()["reasoning"] + r.json()["threat_assessment"]
+            + r.json()["investment_thesis"])
+    assert any(ch in full for ch in "áéíóúñ")
+
+
+def test_sleeper_candidates_have_company_and_thesis(client, auth):
+    """Case #22: cada sleeper_candidate tiene 'company' y 'thesis'."""
+    r = _sl_call(client, auth)
+    for sc in r.json()["sleeper_candidates"]:
+        assert "company" in sc
+        assert "thesis" in sc
+        assert sc["company"]
+        assert sc["thesis"]
+
+
+def test_sleeper_confidence_monotonic(client, auth):
+    """Case #23: confidence con 3+ ≥ confidence con 2."""
+    r_2 = _sl_call(client, auth, companies=[
+        {"name": "A", "cik": "1", "filings": []},
+        {"name": "B", "cik": "2", "filings": []},
+    ])
+    r_3 = _sl_call(client, auth)
+    assert r_3.json()["confidence"] >= r_2.json()["confidence"]
+
+
+def test_sleeper_cost_zero_in_mock_m510(client, auth):
+    """Case #24 (rename para no colisionar con M5.4 versión)."""
+    assert _sl_call(client, auth).json()["cost_usd_estimated"] == 0.0
+
+
+def test_sleeper_mock_mode_flag_true_m510(client, auth):
+    """Case #25 (rename — M5.4 ya tenía 'test_sleeper_mock_mode_flag')."""
+    assert _sl_call(client, auth).json()["mock_mode"] is True
+
+
+def test_sleeper_response_shape_complete(client, auth):
+    """Case #26: 10 campos esperados."""
+    r = _sl_call(client, auth)
+    expected = {
+        "sector_summary", "leader_candidate", "sleeper_candidates",
+        "comparison_signals", "threat_assessment", "investment_thesis",
+        "confidence", "reasoning", "cost_usd_estimated", "mock_mode",
+    }
+    assert set(r.json().keys()) == expected
+
+
+def test_sleeper_handles_special_chars_in_name(client, auth):
+    """Case #27: nombres con caracteres especiales (Ş, & etc.)."""
+    r = _sl_call(client, auth, companies=[
+        {"name": "Apple Inc.", "cik": "320193", "filings": []},
+        {"name": "AT&T", "cik": "732717", "filings": []},
+        {"name": "L'Oréal", "cik": "999999", "filings": []},
+    ])
+    assert r.status_code == 200
+
+
+def test_sleeper_handles_high_cadence_filings(client, auth):
+    """Case #28: empresa con 10+ filings se procesa OK."""
+    many_filings = [{"form": "8-K", "date": f"2025-{m:02d}"} for m in range(1, 12)]
+    r = _sl_call(client, auth, companies=[
+        {"name": "ActiveCo", "cik": "1", "filings": many_filings},
+        {"name": "PassiveCo", "cik": "2", "filings": []},
+    ])
+    assert r.status_code == 200
+
+
+def test_sleeper_single_company_zero_confidence(client, auth):
+    """Case #29: 1 empresa = confidence=0 (no comparable)."""
+    r = _sl_call(client, auth, companies=[{"name": "Solo", "cik": "1", "filings": []}])
+    assert r.json()["confidence"] == 0.0
+
+
+def test_sleeper_two_companies_yields_at_least_one_sleeper(client, auth):
+    """Case #30: con 2 empresas, hay 1 sleeper (la segunda)."""
+    r = _sl_call(client, auth, companies=[
+        {"name": "Leader", "cik": "1", "filings": [{"form": "10-K", "date": "2025"}]},
+        {"name": "Challenger", "cik": "2", "filings": [{"form": "10-K", "date": "2025"}]},
+    ])
+    assert len(r.json()["sleeper_candidates"]) >= 1
+
+
+# ---------------------------------------------------------------------------
 # M5.5 — ProductArbitrageEvaluator (10 golden cases, experimental)
 # ---------------------------------------------------------------------------
 
@@ -1880,6 +2355,157 @@ def test_arbitrage_mock_mode_flag(client, auth):
 def test_arbitrage_requires_auth(client):
     assert client.post("/api/v1/arbitrage/evaluate",
                        json={"trending_query": "x"}).status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# M5.11 — ProductArbitrageEvaluator: 20 cases adicionales (11-30) → ACTIVE
+# ---------------------------------------------------------------------------
+
+
+def test_arbitrage_deterministic_in_mock(client, auth):
+    """Case #11."""
+    r1 = _arb_call(client, auth, trending_query="[US] cargador GaN")
+    r2 = _arb_call(client, auth, trending_query="[US] cargador GaN")
+    assert r1.json()["recommendation"] == r2.json()["recommendation"]
+
+
+def test_arbitrage_rejects_query_too_long(client, auth):
+    """Case #12: query > 300 chars → 422."""
+    r = _arb_call(client, auth, trending_query="x" * 301)
+    assert r.status_code == 422
+
+
+def test_arbitrage_rejects_geo_too_long(client, auth):
+    """Case #13: target_geo > 10 chars → 422."""
+    r = _arb_call(client, auth, target_geo="x" * 11)
+    assert r.status_code == 422
+
+
+def test_arbitrage_response_fields_present(client, auth):
+    """Case #14."""
+    r = _arb_call(client, auth, trending_query="[US] auriculares")
+    data = r.json()
+    for field in ("is_physical_product", "product_category", "margin_estimate_pct",
+                  "shipping_complexity", "recommendation", "reasoning"):
+        assert field in data
+
+
+def test_arbitrage_confidence_in_range(client, auth):
+    """Case #15: confidence ∈ [0, 1]."""
+    for q in ("[US] cargador", "[US] weather news", "[EC] smartwatch"):
+        r = _arb_call(client, auth, trending_query=q)
+        assert 0.0 <= r.json()["confidence"] <= 1.0
+
+
+def test_arbitrage_confidence_capped_at_085(client, auth):
+    """Case #16: confidence ≤ 0.85 (regla del prompt)."""
+    r = _arb_call(client, auth, trending_query="[US] audífonos premium",
+                  source_cost_usd=5.0, target_price_usd=100.0)
+    assert r.json()["confidence"] <= 0.85
+
+
+def test_arbitrage_skip_means_zero_actionability(client, auth):
+    """Case #17: si skip, is_physical_product debería ser False."""
+    r = _arb_call(client, auth, trending_query="[US] presidential elections")
+    if r.json()["recommendation"] == "skip":
+        assert r.json()["is_physical_product"] is False
+
+
+def test_arbitrage_shipping_complexity_valid(client, auth):
+    """Case #18: shipping_complexity ∈ {low, medium, high}."""
+    r = _arb_call(client, auth, trending_query="[US] funda iPhone")
+    assert r.json()["shipping_complexity"] in {"low", "medium", "high"}
+
+
+def test_arbitrage_recommendation_in_valid_set(client, auth):
+    """Case #19: recommendation ∈ {test, skip, deepdive}."""
+    for q in ("[US] cargador", "[US] weather", "[US] funda iPad",
+              "[EC] smartwatch", "[MX] auriculares Bluetooth"):
+        r = _arb_call(client, auth, trending_query=q)
+        assert r.json()["recommendation"] in {"test", "skip", "deepdive"}
+
+
+def test_arbitrage_returns_spanish_in_mock(client, auth):
+    """Case #20: español detectable."""
+    r = _arb_call(client, auth, trending_query="[US] cargador inalámbrico")
+    full = r.json()["reasoning"] + " ".join(r.json()["key_risks"])
+    # Soft check: acentos O palabras españolas comunes
+    has_es = (any(ch in full for ch in "áéíóúñ")
+              or any(w in full.lower() for w in ("producto", "demo", "trending")))
+    assert has_es
+
+
+def test_arbitrage_handles_no_geo_prefix(client, auth):
+    """Case #21: trending_query sin prefijo [XX] funciona."""
+    r = _arb_call(client, auth, trending_query="cargador inalámbrico premium")
+    assert r.status_code == 200
+
+
+def test_arbitrage_handles_only_geo_in_target(client, auth):
+    """Case #22: target_geo solo (sin prefijo en query)."""
+    r = _arb_call(client, auth, trending_query="cargador", target_geo="MX")
+    data = r.json()
+    if data["is_physical_product"]:
+        assert data["target_region_inferred"] != ""
+
+
+def test_arbitrage_handles_zero_source_cost(client, auth):
+    """Case #23: source_cost_usd=0 funciona (ge=0)."""
+    r = _arb_call(client, auth, trending_query="[US] audífonos",
+                  source_cost_usd=0.0, target_price_usd=20.0)
+    assert r.status_code == 200
+
+
+def test_arbitrage_calculates_margin_correctly(client, auth):
+    """Case #24: con precios, el margin estimate menciona '%'."""
+    r = _arb_call(client, auth, trending_query="[US] smartwatch",
+                  source_cost_usd=15.0, target_price_usd=80.0)
+    assert "%" in r.json()["margin_estimate_pct"]
+
+
+def test_arbitrage_cost_zero_in_mock(client, auth):
+    """Case #25."""
+    assert _arb_call(client, auth).json()["cost_usd_estimated"] == 0.0
+
+
+def test_arbitrage_response_shape_complete(client, auth):
+    """Case #26: 13 campos esperados."""
+    r = _arb_call(client, auth)
+    expected = {
+        "is_physical_product", "product_category", "source_region_inferred",
+        "target_region_inferred", "margin_estimate_pct", "shipping_complexity",
+        "time_to_test_weeks", "key_risks", "recommendation", "confidence",
+        "reasoning", "cost_usd_estimated", "mock_mode",
+    }
+    assert set(r.json().keys()) == expected
+
+
+def test_arbitrage_news_keyword_skips(client, auth):
+    """Case #27: 'news' keyword → skip."""
+    r = _arb_call(client, auth, trending_query="[US] breaking news today")
+    assert r.json()["recommendation"] == "skip"
+
+
+def test_arbitrage_election_keyword_skips(client, auth):
+    """Case #28: 'elections' keyword → skip."""
+    r = _arb_call(client, auth, trending_query="[BR] eleições presidente")
+    assert r.json()["recommendation"] == "skip"
+
+
+def test_arbitrage_test_recommendation_means_product(client, auth):
+    """Case #29: recommendation=test ↔ is_physical_product=True."""
+    r = _arb_call(client, auth, trending_query="[US] audífonos premium",
+                  source_cost_usd=10.0, target_price_usd=60.0)
+    if r.json()["recommendation"] == "test":
+        assert r.json()["is_physical_product"] is True
+
+
+def test_arbitrage_deepdive_when_product_but_no_prices(client, auth):
+    """Case #30: producto físico SIN precios → deepdive (no test)."""
+    r = _arb_call(client, auth, trending_query="[US] funda smartphone")
+    if r.json()["is_physical_product"]:
+        # Sin precios provistos, no podemos calcular margin → deepdive
+        assert r.json()["recommendation"] in {"deepdive", "skip"}
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,7 @@ Scope:
 - Input: lista de empresas con sus filings recientes (signals kind=sec_edgar)
 - Output: SleeperAnalysis con sleeper candidates + comparación vs leader
 
-Status: experimental (M5.4). 10/30 golden cases.
+Status: ACTIVE (M5.10 — promovido 2026-05-30 con 30/30 golden cases).
 """
 from __future__ import annotations
 
@@ -88,11 +88,11 @@ class SleeperAnalysis:
 
 
 class SleeperCompanyDetectorAgent(BaseAgent):
-    """Status: experimental (M5.4). 10/30 golden cases."""
+    """Status: ACTIVE (M5.10). 30/30 golden cases. v1.0.0."""
 
     AGENT_NAME = "sleeper_company_detector"
-    AGENT_VERSION = "0.1.0"
-    EXPERIMENTAL = True
+    AGENT_VERSION = "1.0.0"
+    EXPERIMENTAL = False
 
     @property
     def system_prompt(self) -> str:

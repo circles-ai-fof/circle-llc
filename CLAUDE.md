@@ -78,7 +78,9 @@ circle-llc/
 | M4.15 | Niche-en-gigante detector Phase 1 (heurístico) | ADR-022 |
 | M5.0 | TrendGapAnalyzer — primer agente experimental (8º agente) | ADR-023 |
 | M5.1 | TrendGapAnalyzer promovido a ACTIVE (30/30 golden cases) — v1.0.0 | ADR-024 |
-| **M5.2-M5.5** | **4 agentes experimentales: NicheScout, EventScorer, SleeperDetector, ArbitrageEval (12 agentes totales)** | **ADR-025** |
+| M5.2-M5.5 | 4 agentes experimentales: NicheScout, EventScorer, SleeperDetector, ArbitrageEval (12 agentes totales) | ADR-025 |
+| M5.6-M5.7 | UI integration: botones "🤖" en /cazar/nichos + bulk sec_edgar en senales | — |
+| **M5.8-M5.11** | **4 agentes promovidos experimental → ACTIVE (5 active total, 80 nuevos cases)** | **ADR-026** |
 
 ## Cazador autónomo — 9 source kinds
 
