@@ -73,6 +73,9 @@ from .schemas.api import (
     SignalsBulkDeleteByIdsResponse,
     RunsListResponse,
     RunListItem,
+    TrendGapsResponse,
+    TrendGapItem,
+    CountryValidation,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2189,6 +2192,52 @@ def signals_bulk_delete_by_ids(
     from .core.storage import signals_store
     deleted = signals_store.delete_by_ids(body.signal_ids)
     return SignalsBulkDeleteByIdsResponse(deleted=deleted)
+
+
+@app.get(
+    "/api/v1/trend-gaps",
+    response_model=TrendGapsResponse,
+    summary="M4.11 — Cross-country first-mover opportunities (ideas validadas en país X y ausentes en Y)",
+    tags=["hunter"],
+)
+def trend_gaps(
+    request: Request,
+    min_validation_signals: int = 2,
+    min_validation_feedback: int = 1,
+    countries: str = "",
+) -> TrendGapsResponse:
+    """Founder del audio: 'si llegas first-mover ahí, eventualmente tienes
+    posibilidades de poderla reventar'.
+
+    Detecta clusters de ideas que ya están validadas en ≥1 país (por feedback
+    o score alto) y mapea los países objetivo donde NO existe ningún signal.
+
+    Args:
+        min_validation_signals: mínimo de signals del mismo país para
+            considerar "presente". Default 2.
+        min_validation_feedback: mínimo de 👍 en ese país para considerar
+            "validado por el founder". Default 1.
+        countries: lista CSV de países a evaluar como huecos. Vacío usa
+            default LATAM + USA + España.
+    """
+    _require_user(request)
+    from .core.storage import signals_store
+    if min_validation_signals < 1 or min_validation_signals > 50:
+        raise HTTPException(status_code=422, detail="min_validation_signals must be 1-50")
+    if min_validation_feedback < 0 or min_validation_feedback > 50:
+        raise HTTPException(status_code=422, detail="min_validation_feedback must be 0-50")
+    target_countries = None
+    if countries.strip():
+        target_countries = [c.strip() for c in countries.split(",") if c.strip()]
+        if len(target_countries) > 30:
+            raise HTTPException(status_code=422, detail="max 30 countries")
+    gaps = signals_store.cross_country_gaps(
+        min_validation_signals=min_validation_signals,
+        min_validation_feedback=min_validation_feedback,
+        target_countries=target_countries,
+    )
+    items = [TrendGapItem(**g) for g in gaps]
+    return TrendGapsResponse(total=len(items), items=items)
 
 
 @app.get(

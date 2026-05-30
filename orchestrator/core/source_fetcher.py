@@ -711,6 +711,15 @@ def fetch_by_kind(kind: str, target: str = "", max_items: int = MAX_ITEMS_PER_FE
         return fetch_bluesky(target, max_items)
     if kind == "telegram":
         return fetch_telegram(target, max_items)
+    if kind == "events":
+        # M4.13 — Eventos/Ferias radar (inspirado en audio del founder:
+        # "en qué ferias, en qué congresos hay que estar"). Por ahora delegamos
+        # en fetch_rss porque la mayoría de sitios de eventos (Eventbrite,
+        # Lu.ma, conferencias verticales) exponen RSS estándar. La distinción
+        # es semántica: el founder añade un feed RSS de eventos y nuestro
+        # clasificador de content_type detecta "course_tutorial"/"video_podcast"
+        # según el contenido. En M4.14+ podemos especializar con Eventbrite API.
+        return fetch_rss(target, max_items)
     logger.warning("fetch_by_kind: unknown kind %r", kind)
     return []
 

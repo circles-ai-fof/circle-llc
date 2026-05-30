@@ -251,7 +251,7 @@ class AuthAttemptsResponse(BaseModel):
 
 
 class SourceCreate(BaseModel):
-    kind: str = Field(pattern="^(url|rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram)$")
+    kind: str = Field(pattern="^(url|rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram|events)$")
     target: str = Field(default="", max_length=500)
     name: str = Field(min_length=1, max_length=120)
 
@@ -471,7 +471,7 @@ class SignalsDeleteByTypeRequest(BaseModel):
     )
     source_kind: Optional[str] = Field(
         default=None,
-        pattern="^(rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram|url)$",
+        pattern="^(rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram|url|events)$",
         description="Filtra por kind de fuente (M4.6b)",
     )
     source_id: Optional[int] = Field(
@@ -519,6 +519,28 @@ class SignalsBulkFeedbackResponse(BaseModel):
     updated: int = Field(description="Cantidad de señales realmente actualizadas")
     feedback_applied: str
     skipped_missing: int = Field(description="IDs que no existen en la base")
+
+
+# M4.11 — cross-country trend gaps (first-mover opportunities)
+class CountryValidation(BaseModel):
+    country: str
+    signals: int
+    ups: int
+    downs: int
+    sample_themes: List[str] = Field(default_factory=list)
+
+
+class TrendGapItem(BaseModel):
+    idea_summary: str
+    cluster_size: int
+    validated_in: List[CountryValidation]
+    missing_in: List[str]
+    opportunity_score: float
+
+
+class TrendGapsResponse(BaseModel):
+    total: int
+    items: List[TrendGapItem]
 
 
 # M4.7 — distribución de señales por content_type

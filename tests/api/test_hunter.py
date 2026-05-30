@@ -816,6 +816,198 @@ def test_list_runs_requires_auth(client):
     assert r.status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# M4.11 — Cross-country trend gap detector (first-mover opportunities)
+# ---------------------------------------------------------------------------
+
+
+def _add_signal_with_country(
+    theme: str, country: str, *, score: float = 0.7, feedback: str | None = None,
+    suggested_topic: str | None = None, idea_summary: str = "",
+) -> int:
+    """Helper: añade signal y le inyecta analysis con country_focus.
+
+    Usa el setter público signals_store.set_analysis() para funcionar
+    en modo SQLite y en modo in-memory (pytest sin DATABASE_PATH).
+    """
+    from orchestrator.core.storage import signals_store
+    sid = signals_store.add(
+        source_id=None, source_kind="rss", theme=theme,
+        score=score, excerpt="ex",
+        evidence_urls=[f"https://example.com/{theme[:30].replace(' ', '-').lower()}"],
+        suggested_topic=suggested_topic or theme.lower()[:50],
+        item_titles=[theme],
+    )
+    analysis = {
+        "idea_summary": idea_summary or theme,
+        "country_focus": country,
+        "market_size_estimate": "—",
+        "icp_probable": "—",
+        "competitors": [],
+        "differentiator": "—",
+        "risks": [],
+        "recommendation": "wait_for_more_data",
+        "reasoning": "test",
+    }
+    signals_store.set_analysis(sid, analysis)
+    if feedback:
+        signals_store.set_feedback(sid, feedback)
+    return sid
+
+
+def test_trend_gaps_detects_validated_in_x_missing_in_y(client, auth):
+    """Founder del audio: 'si llegas first-mover ahí, posibilidades de poderla
+    reventar'. La idea está validada en USA (2 signals, 1 con 👍) y NO existe
+    ningún signal de la misma idea en Ecuador → Ecuador es first-mover gap."""
+    # 2 signals USA del mismo cluster (suggested_topic = "fintech pymes saas")
+    _add_signal_with_country(
+        "Fintech PYMEs SaaS USA #1", country="Estados Unidos",
+        feedback="up", suggested_topic="fintech pymes saas m411",
+    )
+    _add_signal_with_country(
+        "Fintech PYMEs SaaS USA #2", country="Estados Unidos",
+        suggested_topic="fintech pymes saas m411",
+    )
+    # 1 signal aislado de algo distinto en BR
+    _add_signal_with_country(
+        "Unrelated edtech BR", country="Brasil",
+        suggested_topic="edtech aislada m411",
+    )
+    r = client.get(
+        "/api/v1/trend-gaps?min_validation_signals=2&min_validation_feedback=1",
+        headers=auth,
+    )
+    assert r.status_code == 200
+    data = r.json()
+    # Buscar el cluster de fintech
+    fintech = next(
+        (it for it in data["items"] if "fintech pymes saas" in it["idea_summary"].lower()),
+        None,
+    )
+    assert fintech is not None, f"fintech cluster no encontrado en {data['items']}"
+    # USA debe estar en validated_in
+    val_countries = {v["country"] for v in fintech["validated_in"]}
+    assert "Estados Unidos" in val_countries
+    # Ecuador debe estar en missing_in (default LATAM)
+    assert "Ecuador" in fintech["missing_in"]
+    # opportunity_score > 0
+    assert fintech["opportunity_score"] > 0
+
+
+def test_trend_gaps_excludes_already_present_countries(client, auth):
+    """Si una idea YA tiene signals en Ecuador, Ecuador no aparece como gap."""
+    _add_signal_with_country(
+        "Saas RH gap test #1", country="Estados Unidos",
+        feedback="up", suggested_topic="saas rh m411b",
+    )
+    _add_signal_with_country(
+        "Saas RH gap test #2", country="Estados Unidos",
+        suggested_topic="saas rh m411b",
+    )
+    # Ya existe uno en Ecuador → no debe aparecer como gap
+    _add_signal_with_country(
+        "Saas RH gap test EC", country="Ecuador",
+        suggested_topic="saas rh m411b",
+    )
+    r = client.get(
+        "/api/v1/trend-gaps?min_validation_signals=2&min_validation_feedback=1",
+        headers=auth,
+    )
+    data = r.json()
+    saas = next(
+        (it for it in data["items"] if "saas rh m411b" in it["idea_summary"].lower()),
+        None,
+    )
+    if saas is not None:  # podría no aparecer si todos los target están cubiertos
+        assert "Ecuador" not in saas["missing_in"]
+
+
+def test_trend_gaps_requires_validation_min_signals(client, auth):
+    """Una sola signal del mismo país NO valida — necesita ≥ min_validation_signals."""
+    _add_signal_with_country(
+        "Solo 1 signal m411c", country="México",
+        feedback="up", suggested_topic="solo 1 signal m411c",
+    )
+    r = client.get(
+        "/api/v1/trend-gaps?min_validation_signals=2&min_validation_feedback=1",
+        headers=auth,
+    )
+    data = r.json()
+    # Ese cluster NO debe aparecer (solo tiene 1 signal en MX)
+    assert not any("solo 1 signal m411c" in it["idea_summary"].lower() for it in data["items"])
+
+
+def test_trend_gaps_accepts_custom_countries(client, auth):
+    """countries=Ecuador,Colombia restringe a esos 2 países."""
+    _add_signal_with_country(
+        "Custom countries test #1", country="Estados Unidos",
+        feedback="up", suggested_topic="custom countries m411d",
+    )
+    _add_signal_with_country(
+        "Custom countries test #2", country="Estados Unidos",
+        suggested_topic="custom countries m411d",
+    )
+    r = client.get(
+        "/api/v1/trend-gaps?countries=Ecuador,Colombia&min_validation_signals=2&min_validation_feedback=1",
+        headers=auth,
+    )
+    data = r.json()
+    # El idea_summary del response viene de analysis.idea_summary que el helper
+    # rellena con el theme ("Custom countries test #1"). Buscamos por esa pista.
+    target = next(
+        (it for it in data["items"] if "custom countries test" in it["idea_summary"].lower()),
+        None,
+    )
+    assert target is not None
+    # missing_in solo puede tener Ecuador y/o Colombia (porque countries=EC,CO)
+    assert set(target["missing_in"]) <= {"Ecuador", "Colombia"}
+
+
+def test_trend_gaps_rejects_invalid_args(client, auth):
+    assert client.get("/api/v1/trend-gaps?min_validation_signals=0", headers=auth).status_code == 422
+    assert client.get("/api/v1/trend-gaps?min_validation_signals=100", headers=auth).status_code == 422
+    assert client.get("/api/v1/trend-gaps?min_validation_feedback=-1", headers=auth).status_code == 422
+    # >30 países
+    countries = ",".join(["X"] * 35)
+    assert client.get(f"/api/v1/trend-gaps?countries={countries}", headers=auth).status_code == 422
+
+
+def test_trend_gaps_requires_auth(client):
+    r = client.get("/api/v1/trend-gaps")
+    assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# M4.13 — Eventos / Ferias como nuevo source kind
+# ---------------------------------------------------------------------------
+
+
+def test_events_kind_accepted_by_sources_endpoint(client, auth):
+    """Founder del audio: 'en qué ferias, en qué congresos hay que estar'."""
+    r = client.post(
+        "/api/v1/sources",
+        headers=auth,
+        json={"kind": "events", "target": "https://lu.ma/feed.xml", "name": "Lu.ma feed"},
+    )
+    assert r.status_code in (200, 201), r.text
+
+
+def test_events_kind_filter_works_in_signals_endpoint(client, auth):
+    """El filtro ?kind=events del listing acepta el nuevo kind."""
+    r = client.get("/api/v1/signals?kind=events", headers=auth)
+    assert r.status_code == 200
+
+
+def test_events_kind_delete_by_source_kind(client, auth):
+    """delete-by-type acepta source_kind=events (pattern includes it)."""
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth,
+        json={"source_kind": "events"},
+    )
+    assert r.status_code == 200  # passes even if no signals exist yet
+
+
 def test_check_platform_detects_youtube_url(client, auth):
     r = client.post(
         "/api/v1/sources/check-platform",

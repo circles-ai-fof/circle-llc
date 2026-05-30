@@ -45,12 +45,12 @@ circle-llc/
 
 | | |
 |---|---|
-| Tests verdes | **489** |
-| Commits locales | 64 (15 pendientes de push — falta PAT) |
-| Commits en GitHub | 49 |
-| ADRs | **20** |
+| Tests verdes | **529** |
+| Commits locales | en sync con GitHub (todos firmados Circle LLC <circles.fof.ai@gmail.com>) |
+| Commits en GitHub | 79 |
+| ADRs | **22** |
 | Reglas R01-R29 | 29 |
-| Endpoints API | 37 (+POST /autonomy alias, +POST /signals/{id}/translate) |
+| Endpoints API | 43 (+/trend-gaps, +/runs, +/signals/bulk-feedback, +/signals/bulk-delete-by-ids, +/signals/stats-by-type, +events source kind) |
 | Páginas dashboard | 11 |
 | circles-ai.ai live | ✅ |
 | /f/techpulse-latam live | ✅ |
@@ -66,8 +66,13 @@ circle-llc/
 | M4.2 | Filtro `_is_corporate_description` (Asiservy ya no pasa como idea) | — |
 | M4.3 | Clasificación automática de content_type con badge visual | — |
 | M4.4 | Detección de idioma + traducción ES on-demand (Haiku) | ADR-020 |
-| M4.5 | CORS permite PUT/DELETE + filtro `?content_type=` en señales | — |
-| M4.5b | POST alias de /autonomy (funciona sin reiniciar backend) | — |
+| M4.5 → M4.6b | CORS + filtros + bulk-delete por tipo/fuente | ADR-021 |
+| M4.7 | Distribución de señales por content_type (barra de badges) | — |
+| M4.8 | Filtros persistentes en localStorage | — |
+| M4.9 | Multi-select + bulk feedback / bulk delete por IDs | — |
+| M4.10 | Overview ejecutivo con datos reales (replace mockData) | — |
+| M4.11 | Cross-country trend gap detector (first-mover gaps) | ADR-022 |
+| M4.13 | Eventos / Ferias como nuevo source kind | ADR-022 |
 
 ## Cazador autónomo — 9 source kinds
 

@@ -1302,6 +1302,171 @@ class SignalsStore:
             keep_feedback=keep_feedback,
         )
 
+    def cross_country_gaps(
+        self,
+        min_validation_signals: int = 2,
+        min_validation_feedback: int = 1,
+        target_countries: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """M4.11 — Detector de huecos geográficos para first-mover advantage.
+
+        Founder del audio: "Si algo se está desarrollando en un país porque
+        se cumplió A,B,C y en otro sabes que inevitablemente va a pasar… si
+        llegas first-mover ahí, eventualmente tienes posibilidades de
+        poderla reventar."
+
+        Algoritmo:
+        1. Agrupa signals por embedding cluster (usa preferences.recluster
+           si está computado, o un hash-bucket fallback como heurística).
+        2. Por cada cluster, extrae los `country_focus` de cada signal
+           (idea_analyzer ya los rellena desde M3.11).
+        3. Detecta clusters que están "validados" en ≥1 país: tienen al
+           menos `min_validation_signals` signals con feedback up O score
+           >= 0.7, todos del mismo país.
+        4. Para cada cluster validado, lista los países objetivo
+           (`target_countries`) donde NO existe ningún signal — son los
+           "huecos" first-mover.
+
+        Args:
+            min_validation_signals: cuántas signals del mismo país hacen
+                "validation". Default 2.
+            min_validation_feedback: cuántas de esas signals deben tener
+                feedback="up" para considerar realmente validado por el
+                founder. Default 1 (al menos UN 👍 explícito).
+            target_countries: lista de países a evaluar como "huecos". Si
+                None, usa el default LATAM_DEFAULTS.
+
+        Returns:
+            Lista de dicts {
+                idea_summary: str,
+                cluster_size: int,
+                validated_in: [{country, signals, ups, downs, sample_themes}],
+                missing_in: [country, ...],
+                opportunity_score: float (0-1, más alto = más oportunidad),
+            }
+        """
+        _ensure_init()
+        LATAM_DEFAULTS = [
+            "Ecuador", "México", "Colombia", "Perú", "Chile",
+            "Argentina", "Brasil", "Uruguay", "Costa Rica", "Panamá",
+            "España", "Estados Unidos",
+        ]
+        target = target_countries or LATAM_DEFAULTS
+        # Normalizar para matching case-insensitive
+        target_norm = {c.lower(): c for c in target}
+
+        rows = self.list(limit=10_000, min_score=0.0)
+
+        # Indexar por (suggested_topic, theme_prefix) como cluster heurístico
+        # cheap (sin tener que cargar embeddings). En M5 esto se reemplaza
+        # con clustering vectorial real.
+        from collections import defaultdict
+        clusters: Dict[str, List[Dict]] = defaultdict(list)
+        for r in rows:
+            # cluster key: primero suggested_topic (que es la idea cleaneada),
+            # si está vacío, primeros 40 chars del theme
+            topic = (r.get("suggested_topic") or r.get("theme") or "").lower().strip()
+            key = topic[:60]  # tolera variaciones cortas
+            if not key:
+                continue
+            clusters[key].append(r)
+
+        results: List[Dict] = []
+        for cluster_key, signals in clusters.items():
+            if len(signals) < 2:
+                continue  # un solo signal no hace cluster
+
+            # Extraer country por signal del analysis_json
+            by_country: Dict[str, Dict] = defaultdict(lambda: {
+                "signals": 0, "ups": 0, "downs": 0,
+                "themes": [], "best_score": 0.0,
+            })
+            for s in signals:
+                analysis = s.get("analysis") or {}
+                country = (analysis.get("country_focus") or "").strip()
+                if not country:
+                    continue
+                # Normalizar abreviaciones comunes
+                norm = country.lower()
+                if "ec" == norm or "ecuad" in norm:
+                    country = "Ecuador"
+                elif "mx" == norm or "méxico" in norm or "mexico" in norm:
+                    country = "México"
+                elif "co" == norm or "colombia" in norm:
+                    country = "Colombia"
+                elif "us" == norm or "usa" == norm or "united" in norm or "estados unidos" in norm:
+                    country = "Estados Unidos"
+                elif "latam" in norm:
+                    # señales pan-LATAM no cuentan como validación específica
+                    continue
+                bucket = by_country[country]
+                bucket["signals"] += 1
+                bucket["best_score"] = max(bucket["best_score"], float(s.get("score") or 0))
+                if s.get("feedback") == "up":
+                    bucket["ups"] += 1
+                if s.get("feedback") == "down":
+                    bucket["downs"] += 1
+                if len(bucket["themes"]) < 3:
+                    bucket["themes"].append(s.get("theme") or "")
+
+            # ¿Hay al menos un país validado?
+            validated: List[Dict] = []
+            for country, b in by_country.items():
+                meets_count = b["signals"] >= min_validation_signals
+                meets_feedback = b["ups"] >= min_validation_feedback
+                # Alternativa: si hay muchos signals con score alto sin
+                # feedback explícito, también considerar validado
+                meets_score = b["signals"] >= min_validation_signals and b["best_score"] >= 0.7
+                if meets_count and (meets_feedback or meets_score):
+                    validated.append({
+                        "country": country,
+                        "signals": b["signals"],
+                        "ups": b["ups"],
+                        "downs": b["downs"],
+                        "sample_themes": b["themes"],
+                    })
+
+            if not validated:
+                continue
+
+            # ¿Cuáles target_countries NO tienen ningún signal de este cluster?
+            present_countries_norm = {c.lower() for c in by_country.keys()}
+            missing = [
+                display
+                for norm, display in target_norm.items()
+                if norm not in present_countries_norm
+            ]
+            if not missing:
+                continue  # cluster ya cubierto en todos los target → no es gap
+
+            # Sample theme para el resumen (primer signal del cluster)
+            sample = signals[0]
+            idea_summary = (
+                (sample.get("analysis") or {}).get("idea_summary")
+                or sample.get("suggested_topic")
+                or sample.get("theme")
+                or "(sin resumen)"
+            )
+
+            # opportunity_score: combina #países validados, fuerza del feedback,
+            # y cantidad de huecos. Normalizado a [0, 1].
+            n_val = len(validated)
+            total_ups = sum(v["ups"] for v in validated)
+            n_missing = len(missing)
+            score = min(1.0, (n_val * 0.3 + total_ups * 0.2 + n_missing * 0.05))
+
+            results.append({
+                "idea_summary": idea_summary[:200],
+                "cluster_size": len(signals),
+                "validated_in": validated,
+                "missing_in": missing,
+                "opportunity_score": round(score, 3),
+            })
+
+        # Ordenar por opportunity_score desc
+        results.sort(key=lambda r: r["opportunity_score"], reverse=True)
+        return results
+
     def delete_by_ids(self, signal_ids: List[int]) -> int:
         """M4.9 — Borrado por lista explícita de IDs. No respeta promoted/
         feedback porque el founder está seleccionando manualmente — confiamos

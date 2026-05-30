@@ -23,9 +23,10 @@ const KIND_LABELS: Record<string, string> = {
   youtube: "YouTube canal",
   bluesky: "Bluesky (búsqueda)",
   telegram: "Telegram canal público",
+  events: "Eventos / Ferias / Congresos (M4.13)",
 };
 
-const KIND_NEEDS_TARGET = new Set(["url", "rss", "reddit", "youtube", "bluesky", "telegram"]);
+const KIND_NEEDS_TARGET = new Set(["url", "rss", "reddit", "youtube", "bluesky", "telegram", "events"]);
 
 const KIND_PLACEHOLDERS: Record<string, string> = {
   url: "https://artículo.com/post",
@@ -34,6 +35,7 @@ const KIND_PLACEHOLDERS: Record<string, string> = {
   youtube: "@MrBeast  o  /channel/UCxxxxx",
   bluesky: 'fintech LATAM  o  from:handle.bsky.social',
   telegram: "channelhandle (sin @ ni t.me/)",
+  events: "https://lu.ma/feed.xml  o  https://eventbrite.com/rss/...",
 };
 
 export default function FuentesPage() {
