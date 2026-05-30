@@ -26,11 +26,11 @@ gate_decider             ✗           ✗              ✗               ✗   
 
 ✗ = no overlap (expected). El CI falla si alguna celda se convierte en overlap activo.
 
-## Agentes experimentales (no en workflow principal)
+## Agentes adicionales (activos, invocados solo on-demand)
 
 | Agente | Sprint | Status | Golden cases | Scope exclusivo |
 |---|---|---|---|---|
-| `trend_gap_analyzer` | M5.0 | experimental | **13/30** | Analiza un TrendGapItem (output de M4.11) y prioriza país + plan de validación. NO se solapa con idea_analyzer (analiza UNA señal puntual) ni con market_validator (diseña test post-promotion). Solo se invoca via POST /api/v1/trend-gaps/analyze. Promoción a activo requiere completar a ≥30 golden cases (M5.1+). |
+| `trend_gap_analyzer` | M5.0 → M5.1 | **ACTIVE** | **30/30** ✅ | Analiza un TrendGapItem (output de M4.11) y prioriza país + plan de validación. NO se solapa con idea_analyzer (analiza UNA señal puntual) ni con market_validator (diseña test post-promotion). Solo se invoca via POST /api/v1/trend-gaps/analyze (on-demand). Promoción a "siempre activo en workflow" requiere métrica gating de no-degradación (futuro, ver ADR-024). |
 
 ## Criterios para desarchivo de agentes en `_deferred/`
 

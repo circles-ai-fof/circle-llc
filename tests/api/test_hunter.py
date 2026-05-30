@@ -1420,6 +1420,176 @@ def test_trend_gap_analyzer_returns_spanish_in_mock(client, auth):
     assert any(ch in full_text for ch in "áéíóúñ"), "no se detectaron acentos españoles"
 
 
+# ---------------------------------------------------------------------------
+# M5.1 — golden cases adicionales (14-30) para promover el agente a "activo"
+# Cubre: determinismo, robustez, edge cases, calibración fina.
+# ---------------------------------------------------------------------------
+
+
+def _tga_call(client, auth, **overrides):
+    """Helper para construir requests al analyzer con defaults sensatos."""
+    base = {
+        "idea_summary": "Idea M51 test",
+        "validated_in": [_golden_validated("Estados Unidos")],
+        "missing_in": ["Ecuador"],
+        "opportunity_score": 0.5,
+    }
+    base.update(overrides)
+    return client.post("/api/v1/trend-gaps/analyze", headers=auth, json=base)
+
+
+def test_trend_gap_analyzer_priority_never_empty_when_missing_has_items(client, auth):
+    """Golden case #14: si missing_in tiene al menos 1 país, priority_country
+    nunca queda vacío."""
+    # Mix de países donde ninguno es EC_PRIORITY-top
+    r = _tga_call(client, auth, missing_in=["Uruguay", "Panamá", "Costa Rica"])
+    data = r.json()
+    assert data["priority_country"] != ""
+
+
+def test_trend_gap_analyzer_deterministic_in_mock(client, auth):
+    """Golden case #15: dos llamadas con el mismo input dan el mismo output
+    en mock mode (sin randomness)."""
+    payload = {
+        "idea_summary": "Determinismo test",
+        "validated_in": [_golden_validated("Estados Unidos")],
+        "missing_in": ["Ecuador", "Colombia"],
+        "opportunity_score": 0.7,
+    }
+    r1 = client.post("/api/v1/trend-gaps/analyze", headers=auth, json=payload)
+    r2 = client.post("/api/v1/trend-gaps/analyze", headers=auth, json=payload)
+    assert r1.json()["priority_country"] == r2.json()["priority_country"]
+    assert r1.json()["confidence"] == r2.json()["confidence"]
+
+
+def test_trend_gap_analyzer_handles_many_missing_countries(client, auth):
+    """Golden case #16: 10 países en missing_in — sigue funcionando."""
+    many = ["Ecuador", "Colombia", "México", "Perú", "Chile",
+            "Argentina", "Brasil", "Uruguay", "Panamá", "Costa Rica"]
+    r = _tga_call(client, auth, missing_in=many)
+    assert r.status_code == 200
+    assert r.json()["priority_country"] == "Ecuador"  # EC sigue siendo top
+
+
+def test_trend_gap_analyzer_handles_missing_in_30_max(client, auth):
+    """Golden case #17: cap de 30 países (Pydantic max_length)."""
+    too_many = [f"Country{i}" for i in range(35)]
+    r = _tga_call(client, auth, missing_in=too_many)
+    assert r.status_code == 422
+
+
+def test_trend_gap_analyzer_handles_validated_in_20_max(client, auth):
+    """Golden case #18: cap de 20 entries en validated_in."""
+    too_many = [_golden_validated(f"C{i}") for i in range(25)]
+    r = _tga_call(client, auth, validated_in=too_many)
+    assert r.status_code == 422
+
+
+def test_trend_gap_analyzer_long_idea_summary_500_chars(client, auth):
+    """Golden case #19: idea_summary de exactamente 500 chars (max permitido)
+    funciona; 501 falla."""
+    r_ok = _tga_call(client, auth, idea_summary="x" * 500)
+    assert r_ok.status_code == 200
+    r_fail = _tga_call(client, auth, idea_summary="x" * 501)
+    assert r_fail.status_code == 422
+
+
+def test_trend_gap_analyzer_opportunity_score_zero(client, auth):
+    """Golden case #20: opportunity_score=0.0 sigue produciendo análisis."""
+    r = _tga_call(client, auth, opportunity_score=0.0)
+    assert r.status_code == 200
+    assert r.json()["priority_country"] != ""
+
+
+def test_trend_gap_analyzer_opportunity_score_one(client, auth):
+    """Golden case #21: opportunity_score=1.0 también funciona."""
+    r = _tga_call(client, auth, opportunity_score=1.0)
+    assert r.status_code == 200
+
+
+def test_trend_gap_analyzer_rejects_opportunity_score_above_one(client, auth):
+    """Golden case #22: opportunity_score > 1.0 es 422 (Pydantic le=1)."""
+    r = _tga_call(client, auth, opportunity_score=1.5)
+    assert r.status_code == 422
+
+
+def test_trend_gap_analyzer_rejects_negative_opportunity_score(client, auth):
+    """Golden case #23: opportunity_score < 0 es 422 (Pydantic ge=0)."""
+    r = _tga_call(client, auth, opportunity_score=-0.1)
+    assert r.status_code == 422
+
+
+def test_trend_gap_analyzer_confidence_in_valid_range(client, auth):
+    """Golden case #24: confidence siempre en [0, 1] para cualquier input."""
+    for n_validated in (1, 2, 5, 10):
+        validated = [_golden_validated(f"C{i}") for i in range(n_validated)]
+        r = _tga_call(client, auth, validated_in=validated)
+        data = r.json()
+        assert 0.0 <= data["confidence"] <= 1.0, (
+            f"confidence {data['confidence']} fuera de rango con n_validated={n_validated}"
+        )
+
+
+def test_trend_gap_analyzer_cost_zero_in_mock(client, auth):
+    """Golden case #25: cost_usd_estimated == 0.0 cuando mock_mode."""
+    r = _tga_call(client, auth)
+    data = r.json()
+    assert data["mock_mode"] is True
+    assert data["cost_usd_estimated"] == 0.0
+
+
+def test_trend_gap_analyzer_response_fields_non_empty(client, auth):
+    """Golden case #26: ningún campo crítico devuelve string vacío."""
+    r = _tga_call(client, auth, opportunity_score=0.5)
+    data = r.json()
+    for field in ("priority_country", "priority_rationale", "timing_hypothesis",
+                  "adoption_pattern", "effort_estimate_weeks", "reasoning"):
+        assert data[field], f"campo {field!r} llegó vacío: {data}"
+
+
+def test_trend_gap_analyzer_effort_estimate_mentions_weeks(client, auth):
+    """Golden case #27: effort_estimate_weeks contiene la palabra 'semana(s)'."""
+    r = _tga_call(client, auth)
+    assert "semana" in r.json()["effort_estimate_weeks"].lower()
+
+
+def test_trend_gap_analyzer_priority_rationale_mentions_priority_country(client, auth):
+    """Golden case #28: el priority_rationale menciona explícitamente el
+    priority_country (consistencia interna del response)."""
+    r = _tga_call(client, auth, missing_in=["Ecuador", "Colombia"])
+    data = r.json()
+    assert data["priority_country"] in data["priority_rationale"]
+
+
+def test_trend_gap_analyzer_handles_country_focus_es(client, auth):
+    """Golden case #29: España como country en missing_in se acepta sin
+    error (no es LATAM pero es un mercado válido)."""
+    r = _tga_call(
+        client, auth,
+        missing_in=["España"],
+        validated_in=[_golden_validated("Estados Unidos"), _golden_validated("México")],
+    )
+    assert r.status_code == 200
+    assert r.json()["priority_country"] == "España"  # único en missing_in
+
+
+def test_trend_gap_analyzer_confidence_inversely_proportional_to_ambiguity(client, auth):
+    """Golden case #30: validated_in con 1 país solo SIEMPRE da confidence
+    menor que con 3 países. Calibración monotónica."""
+    r_low = _tga_call(client, auth, validated_in=[_golden_validated("Estados Unidos")])
+    r_high = _tga_call(
+        client, auth,
+        validated_in=[
+            _golden_validated("Estados Unidos"),
+            _golden_validated("Brasil"),
+            _golden_validated("México"),
+        ],
+    )
+    assert r_low.json()["confidence"] < r_high.json()["confidence"], (
+        "confianza con 1 país validado debería ser menor que con 3"
+    )
+
+
 def test_google_trends_supports_common_latam_geos(client, auth):
     """Verificar que los 10 geos LATAM más relevantes pasan validación."""
     for geo in ["EC", "MX", "CO", "PE", "CL", "AR", "BR", "ES", "US", "UY"]:

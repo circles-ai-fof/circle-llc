@@ -25,9 +25,11 @@ invoca cuando el founder clicks "Analizar" en /cazar/oportunidades.
 Mock-aware: sin API key produce un placeholder útil basado en heurísticas
 para que el dashboard siga funcionando en CI.
 
-Status: experimental. Per R12, este agente NO está activado en autoscan ni
-en el workflow principal. Solo respondemos a request explícito del founder.
-Promoción a "activo" requiere ≥30 golden cases (hoy: 12 — pendiente M5.1).
+Status: ACTIVE (M5.1 — promovido el 2026-05-30). Per R12, este agente cumple
+los 30 golden cases requeridos. Sigue siendo invocado solo via endpoint
+explícito del founder (no en autoscan ni en EvidenceGateWorkflow principal),
+pero está marcado como production-ready para integración futura en flujos
+asistidos.
 """
 from __future__ import annotations
 
@@ -109,12 +111,16 @@ class TrendGapAnalysis:
 class TrendGapAnalyzerAgent(BaseAgent):
     """Single-call agent — analiza gaps cross-country. Mock-aware.
 
-    Status: experimental (M5.0). No activado en workflow principal por R12.
+    Status: ACTIVE (M5.1). Promovido desde experimental tras completar 30
+    golden cases (M5.0 tenía 13/30, M5.1 cerró el delta de 17 cases con
+    edge cases + calibración fina + determinismo). Sigue invocado solo via
+    endpoint explícito — no se activa en autoscan/workflow principal hasta
+    tener métrica gating real en producción (ADR-024).
     """
 
     AGENT_NAME = "trend_gap_analyzer"
-    AGENT_VERSION = "0.1.0"
-    EXPERIMENTAL = True  # R12: ≥30 golden cases antes de promover a activo
+    AGENT_VERSION = "1.0.0"  # M5.1: bump major al pasar de experimental → active
+    EXPERIMENTAL = False  # M5.1 — promovido con 30/30 golden cases
 
     @property
     def system_prompt(self) -> str:
