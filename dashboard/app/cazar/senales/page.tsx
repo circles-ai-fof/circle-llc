@@ -51,6 +51,33 @@ type SignalAnalysis = {
   reasoning: string;
 };
 
+// M5.6 — shape común de respuestas de agentes M5.x (campos opcionales según kind)
+type AgentAnalysis = {
+  _kind: string;  // tag local para saber qué agente respondió
+  mock_mode: boolean;
+  cost_usd_estimated: number;
+  confidence?: number;
+  reasoning?: string;
+  // M5.3 — event scorer
+  relevance_score?: number;
+  expected_attendees_profile?: string;
+  networking_value?: string;
+  learning_value?: string;
+  estimated_cost_usd?: string;
+  expected_roi?: string;
+  recommendation?: string;
+  preparation_topics?: string[];
+  // M5.5 — arbitrage eval
+  is_physical_product?: boolean;
+  product_category?: string;
+  source_region_inferred?: string;
+  target_region_inferred?: string;
+  margin_estimate_pct?: string;
+  shipping_complexity?: string;
+  time_to_test_weeks?: string;
+  key_risks?: string[];
+};
+
 type Signal = {
   id: number;
   source_id: number | null;
@@ -147,6 +174,50 @@ export default function SenalesPage() {
   // M4.9 — multi-select para bulk feedback / bulk delete
   const [selectedSignals, setSelectedSignals] = useState<Set<number>>(new Set());
   const [bulkActioning, setBulkActioning] = useState<boolean>(false);
+  // M5.6 — análisis kind-specific (event_scorer, arbitrage_eval)
+  const [agentAnalyzing, setAgentAnalyzing] = useState<number | null>(null);
+  const [agentResults, setAgentResults] = useState<Record<number, AgentAnalysis>>({});
+
+  // Llama al agente apropiado según el source_kind de la señal
+  const analyzeWithAgent = async (signalId: number, s: Signal) => {
+    if (agentAnalyzing !== null) return;
+    setAgentAnalyzing(signalId);
+    try {
+      let url = "";
+      let body: Record<string, unknown> = {};
+      if (s.source_kind === "events") {
+        url = "/api/v1/events/score";
+        body = {
+          event_title: s.theme,
+          event_description: s.excerpt,
+          evidence_urls: s.evidence_urls,
+          industry_focus: "",
+        };
+      } else if (s.source_kind === "google_trends") {
+        url = "/api/v1/arbitrage/evaluate";
+        // Extraer geo del prefijo [XX] del theme si existe
+        const geoMatch = s.theme.match(/^\[([A-Z]{2,3})\]/);
+        body = {
+          trending_query: s.theme,
+          target_geo: geoMatch ? geoMatch[1] : "",
+        };
+      } else {
+        throw new Error(`source_kind=${s.source_kind} no soportado por este botón`);
+      }
+      const r = await authFetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      setAgentResults((prev) => ({ ...prev, [signalId]: { ...data, _kind: s.source_kind } }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAgentAnalyzing(null);
+    }
+  };
 
   // M4.8 — Persistir filtros activos al cambiar cualquiera. Esto se llama
   // mucho (cada keypress en search debounceado a ~350ms, etc.) pero el
@@ -1297,6 +1368,9 @@ export default function SenalesPage() {
             onToggleExpand={() => toggleExpanded(s.id)}
             onFeedback={(fb) => setFeedback(s.id, fb)}
             onPromote={() => promote(s.id)}
+            isAgentAnalyzing={agentAnalyzing === s.id}
+            agentResult={agentResults[s.id]}
+            onAgentAnalyze={() => analyzeWithAgent(s.id, s)}
           />
         ))}
       </div>
@@ -1407,6 +1481,9 @@ function SignalCard({
   onToggleExpand,
   onFeedback,
   onPromote,
+  isAgentAnalyzing,
+  agentResult,
+  onAgentAnalyze,
 }: {
   signal: Signal;
   isAnalyzing: boolean;
@@ -1421,6 +1498,9 @@ function SignalCard({
   onToggleExpand: () => void;
   onFeedback: (fb: "up" | "down" | "clear") => void;
   onPromote: () => void;
+  isAgentAnalyzing: boolean;
+  agentResult: AgentAnalysis | undefined;
+  onAgentAnalyze: () => void;
 }) {
   const scoreColor =
     signal.score >= 0.8 ? "#00E5A0" : signal.score >= 0.6 ? "#FFB800" : "#94a3b8";
@@ -1803,6 +1883,37 @@ function SignalCard({
                   : "▼ Ver análisis"
                 : "🤖 Analizar"}
           </button>
+          {/* M5.6 — Botón contextual de agente experimental según source_kind */}
+          {(signal.source_kind === "events" || signal.source_kind === "google_trends") && (
+            <button
+              onClick={onAgentAnalyze}
+              disabled={isAgentAnalyzing}
+              title={
+                signal.source_kind === "events"
+                  ? "EventRelevanceScorer (M5.3 experimental): go/skip/send_someone_else"
+                  : "ProductArbitrageEvaluator (M5.5 experimental): margen + recomendación dropshipping"
+              }
+              style={{
+                marginTop: 4,
+                padding: "6px 12px",
+                background: "transparent",
+                color: isAgentAnalyzing ? "#64748b" : "#A78BFA",
+                border: `1px solid ${isAgentAnalyzing ? "#1e293b" : "#A78BFA"}`,
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: isAgentAnalyzing ? "wait" : "pointer",
+              }}
+            >
+              {isAgentAnalyzing
+                ? "Analizando…"
+                : agentResult
+                  ? "🔄 Re-analizar"
+                  : signal.source_kind === "events"
+                    ? "🎤 ¿Ir al evento?"
+                    : "💰 ¿Arbitraje?"}
+            </button>
+          )}
           {/* M4.4 — translate to Spanish (Haiku, ~$0.0005). Only show when the
               signal is in a foreign language. If already translated, offer a
               toggle to view the original. */}
@@ -1845,6 +1956,124 @@ function SignalCard({
           )}
         </div>
       </div>
+
+      {/* M5.6 — Panel del agente experimental (events o google_trends) */}
+      {agentResult && (
+        <div style={{
+          marginTop: 12,
+          padding: 12,
+          background: "#0B0F1A",
+          border: "1px solid rgba(167,139,250,0.4)",
+          borderRadius: 8,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <span style={{ color: "#A78BFA", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              {agentResult._kind === "events"
+                ? "🎤 EventRelevanceScorer (M5.3)"
+                : "💰 ProductArbitrageEvaluator (M5.5)"}
+            </span>
+            {agentResult.mock_mode && (
+              <span style={{ padding: "1px 6px", background: "rgba(255,184,0,0.1)", color: "#FFB800", borderRadius: 3, fontSize: 9, fontWeight: 600 }}>
+                DEMO
+              </span>
+            )}
+            {agentResult.confidence !== undefined && (
+              <span style={{ marginLeft: "auto", color: "#94a3b8", fontSize: 10, fontFamily: "monospace" }}>
+                confianza {(agentResult.confidence * 100).toFixed(0)}%
+              </span>
+            )}
+          </div>
+
+          {/* EventRelevanceScorer fields */}
+          {agentResult._kind === "events" && (
+            <div style={{ display: "grid", gap: 6, fontSize: 12, lineHeight: 1.5 }}>
+              <div>
+                <span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>📋 RECOMENDACIÓN:</span>
+                <strong style={{
+                  color: agentResult.recommendation === "go" ? "#00E5A0"
+                    : agentResult.recommendation === "send_someone_else" ? "#FFB800" : "#FF4444",
+                  textTransform: "uppercase",
+                }}>
+                  {agentResult.recommendation}
+                </strong>
+                {agentResult.relevance_score !== undefined && (
+                  <span style={{ marginLeft: 8, color: "#94a3b8", fontSize: 11 }}>
+                    relevance {(agentResult.relevance_score * 100).toFixed(0)}%
+                  </span>
+                )}
+              </div>
+              {agentResult.expected_attendees_profile && (
+                <div><span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>👥 ASISTENTES:</span><span style={{ color: "#cbd5e1" }}>{agentResult.expected_attendees_profile}</span></div>
+              )}
+              {agentResult.networking_value && (
+                <div><span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>🤝 NETWORKING:</span><span style={{ color: "#cbd5e1" }}>{agentResult.networking_value}</span></div>
+              )}
+              {agentResult.expected_roi && (
+                <div><span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>📈 ROI ESPERADO:</span><span style={{ color: "#cbd5e1" }}>{agentResult.expected_roi}</span></div>
+              )}
+              {agentResult.estimated_cost_usd && (
+                <div><span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>💵 COSTO IR:</span><span style={{ color: "#cbd5e1" }}>{agentResult.estimated_cost_usd}</span></div>
+              )}
+              {agentResult.preparation_topics && agentResult.preparation_topics.length > 0 && (
+                <div>
+                  <div style={{ color: "#A78BFA", fontWeight: 700, marginBottom: 3 }}>📝 PREPARACIÓN:</div>
+                  <ul style={{ margin: 0, paddingLeft: 18, color: "#cbd5e1" }}>
+                    {agentResult.preparation_topics.map((t, i) => <li key={i}>{t}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ProductArbitrageEvaluator fields */}
+          {agentResult._kind === "google_trends" && (
+            <div style={{ display: "grid", gap: 6, fontSize: 12, lineHeight: 1.5 }}>
+              <div>
+                <span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>📋 RECOMENDACIÓN:</span>
+                <strong style={{
+                  color: agentResult.recommendation === "test" ? "#00E5A0"
+                    : agentResult.recommendation === "deepdive" ? "#FFB800" : "#94a3b8",
+                  textTransform: "uppercase",
+                }}>
+                  {agentResult.recommendation}
+                </strong>
+                <span style={{ marginLeft: 8, color: "#94a3b8", fontSize: 11 }}>
+                  {agentResult.is_physical_product ? "✓ producto físico" : "✗ no es producto físico"}
+                </span>
+              </div>
+              {agentResult.product_category && agentResult.product_category !== "N/A" && (
+                <div><span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>📦 CATEGORÍA:</span><span style={{ color: "#cbd5e1" }}>{agentResult.product_category}</span></div>
+              )}
+              {agentResult.margin_estimate_pct && agentResult.margin_estimate_pct !== "N/A" && (
+                <div><span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>💸 MARGEN ESTIMADO:</span><span style={{ color: "#cbd5e1" }}>{agentResult.margin_estimate_pct}</span></div>
+              )}
+              {agentResult.shipping_complexity && (
+                <div><span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>🚚 LOGÍSTICA:</span><span style={{ color: "#cbd5e1" }}>{agentResult.shipping_complexity}</span></div>
+              )}
+              {agentResult.time_to_test_weeks && agentResult.time_to_test_weeks !== "N/A" && (
+                <div><span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>⏱️ TIME-TO-TEST:</span><span style={{ color: "#cbd5e1" }}>{agentResult.time_to_test_weeks}</span></div>
+              )}
+              {agentResult.key_risks && agentResult.key_risks.length > 0 && (
+                <div>
+                  <div style={{ color: "#A78BFA", fontWeight: 700, marginBottom: 3 }}>⚠️ RIESGOS:</div>
+                  <ul style={{ margin: 0, paddingLeft: 18, color: "#cbd5e1" }}>
+                    {agentResult.key_risks.map((r, i) => <li key={i}>{r}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {agentResult.reasoning && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #1e293b", color: "#94a3b8", fontSize: 11, fontStyle: "italic", lineHeight: 1.4 }}>
+              {agentResult.reasoning}
+            </div>
+          )}
+          <div style={{ marginTop: 6, color: "#64748b", fontSize: 10, fontFamily: "monospace" }}>
+            costo análisis: ${agentResult.cost_usd_estimated.toFixed(4)}
+          </div>
+        </div>
+      )}
 
       {/* Expandable analysis panel — only when analysis exists and is expanded */}
       {hasAnalysis && isExpanded && signal.analysis && (

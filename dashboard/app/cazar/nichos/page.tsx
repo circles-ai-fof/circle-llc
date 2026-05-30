@@ -30,12 +30,54 @@ type NicheOpportunity = {
   opportunity_count: number;
 };
 
+// M5.6 — análisis NicheScout (M5.2 agente experimental)
+type NicheScoutPlan = {
+  target_subniche: string;
+  entry_thesis: string;
+  competitive_advantage: string;
+  minimum_viable_offer: string;
+  validation_metrics: string[];
+  estimated_capture_pct: string;
+  key_risks: string[];
+  confidence: number;
+  reasoning: string;
+  cost_usd_estimated: number;
+  mock_mode: boolean;
+};
+
 export default function NichosPage() {
   const [items, setItems] = useState<NicheOpportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [minParentSize, setMinParentSize] = useState(5);
   const [maxNicheSize, setMaxNicheSize] = useState(3);
+  // M5.6 — NicheScout análisis por card
+  const [analyzing, setAnalyzing] = useState<number | null>(null);
+  const [plansByIdx, setPlansByIdx] = useState<Record<number, NicheScoutPlan>>({});
+
+  const analyzeNiche = async (idx: number, opp: NicheOpportunity) => {
+    if (analyzing !== null) return;
+    setAnalyzing(idx);
+    try {
+      const r = await authFetch("/api/v1/niche-opportunities/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parent_market: opp.parent_market,
+          parent_size: opp.parent_size,
+          leader_niche: opp.leader_niche,
+          underexplored_niches: opp.underexplored_niches,
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data: NicheScoutPlan = await r.json();
+      setPlansByIdx((prev) => ({ ...prev, [idx]: data }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAnalyzing(null);
+    }
+  };
 
   const refresh = async () => {
     setLoading(true);
@@ -175,7 +217,87 @@ export default function NichosPage() {
                 }}>
                   {g.parent_size} señales totales · {g.opportunity_count} migajas
                 </span>
+                <button
+                  onClick={() => analyzeNiche(idx, g)}
+                  disabled={analyzing !== null}
+                  title="NicheScout (M5.2 experimental): plan de entrada al sub-niche más prometedor. ~$0.008"
+                  style={{
+                    padding: "4px 12px",
+                    background: "transparent",
+                    color: analyzing === idx ? "#64748b" : "#A78BFA",
+                    border: `1px solid ${analyzing === idx ? "#1e293b" : "#A78BFA"}`,
+                    borderRadius: 6,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: analyzing === idx ? "wait" : "pointer",
+                  }}
+                >
+                  {analyzing === idx ? "Analizando…" : plansByIdx[idx] ? "🔄 Re-analizar" : "🤖 Analizar con IA"}
+                </button>
               </div>
+
+              {/* M5.6 — Panel NicheScout cuando hay análisis */}
+              {plansByIdx[idx] && (
+                <div style={{
+                  marginBottom: 14,
+                  padding: 12,
+                  background: "#0B0F1A",
+                  border: "1px solid rgba(167,139,250,0.4)",
+                  borderRadius: 8,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <span style={{ color: "#A78BFA", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      🤖 Plan de entrada (NicheScout M5.2)
+                    </span>
+                    {plansByIdx[idx].mock_mode && (
+                      <span style={{ padding: "1px 6px", background: "rgba(255,184,0,0.1)", color: "#FFB800", borderRadius: 3, fontSize: 9, fontWeight: 600 }}>
+                        DEMO
+                      </span>
+                    )}
+                    <span style={{ marginLeft: "auto", color: "#94a3b8", fontSize: 10, fontFamily: "monospace" }}>
+                      confianza {(plansByIdx[idx].confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div style={{ display: "grid", gap: 8, fontSize: 12, lineHeight: 1.5 }}>
+                    <div>
+                      <span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>🎯 SUB-NICHE A ATACAR:</span>
+                      <strong style={{ color: "#fff" }}>{plansByIdx[idx].target_subniche}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>💡 TESIS:</span>
+                      <span style={{ color: "#cbd5e1" }}>{plansByIdx[idx].entry_thesis}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>⚡ DIFERENCIADOR:</span>
+                      <span style={{ color: "#cbd5e1" }}>{plansByIdx[idx].competitive_advantage}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>🚀 MVP:</span>
+                      <span style={{ color: "#cbd5e1" }}>{plansByIdx[idx].minimum_viable_offer}</span>
+                    </div>
+                    {plansByIdx[idx].validation_metrics.length > 0 && (
+                      <div>
+                        <div style={{ color: "#A78BFA", fontWeight: 700, marginBottom: 3 }}>📊 MÉTRICAS DE VALIDACIÓN:</div>
+                        <ul style={{ margin: 0, paddingLeft: 18, color: "#cbd5e1" }}>
+                          {plansByIdx[idx].validation_metrics.map((m, i) => <li key={i}>{m}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {plansByIdx[idx].key_risks.length > 0 && (
+                      <div>
+                        <div style={{ color: "#A78BFA", fontWeight: 700, marginBottom: 3 }}>⚠️ RIESGOS:</div>
+                        <ul style={{ margin: 0, paddingLeft: 18, color: "#cbd5e1" }}>
+                          {plansByIdx[idx].key_risks.map((r, i) => <li key={i}>{r}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 12, color: "#64748b", fontSize: 10, fontFamily: "monospace", paddingTop: 4, borderTop: "1px solid #1e293b" }}>
+                      <span>📈 captura estimada: {plansByIdx[idx].estimated_capture_pct}</span>
+                      <span>💰 costo análisis: ${plansByIdx[idx].cost_usd_estimated.toFixed(4)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 {/* Leader */}
