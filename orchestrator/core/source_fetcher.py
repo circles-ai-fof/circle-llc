@@ -635,6 +635,64 @@ def fetch_telegram(channel: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[Fe
 
 
 # ---------------------------------------------------------------------------
+# Google Trends — M4.14 trending searches por país (RSS oficial, no scraping)
+# ---------------------------------------------------------------------------
+
+
+# Lista validada de geo codes ISO-3166 alpha-2 que Google Trends acepta
+# en su endpoint de daily trending RSS. Mantener corta y curada — añadir
+# más cuando se pidan explícitamente.
+_GOOGLE_TRENDS_VALID_GEOS = {
+    "US", "MX", "EC", "CO", "PE", "CL", "AR", "BR", "UY",
+    "VE", "PA", "CR", "ES", "GB", "DE", "FR", "IT", "JP",
+    "KR", "IN", "AU", "CA",
+}
+
+
+def fetch_google_trends(target: str, max_items: int = MAX_ITEMS_PER_FEED) -> List[FetchedItem]:
+    """M4.14 — Lee las trending searches diarias de Google por país.
+
+    Founder del audio: "analizar cuáles son los productos que más se venden de
+    cierto lugar, en qué regiones... compraste en 86 centavos y lo terminaste
+    vendiendo en 19.99".
+
+    Phase 1: source kind fetcher usando el RSS oficial que Google publica
+    en https://trends.google.com/trending/rss?geo=XX. Esto NO requiere
+    pytrends ni scraping — es un feed RSS estándar que Google mantiene
+    estable desde hace años.
+
+    Limitación: el feed surfaces topics generales (noticias, viral moments,
+    queries), no exclusivamente "productos". El founder usa estas señales
+    como input para identificar tendencias geográficas; el cazador después
+    decide si convertirlas en oportunidad de producto/servicio.
+
+    target: código ISO-3166 alpha-2 del país (US, MX, EC, CO, PE, CL, AR,
+    BR, ES, ...). Validamos contra una lista curada para evitar feeds
+    inválidos que retornen XML vacío.
+    """
+    geo = (target or "").strip().upper()
+    if not geo or geo not in _GOOGLE_TRENDS_VALID_GEOS:
+        logger.warning(
+            "fetch_google_trends: geo %r no soportado. Válidos: %s",
+            geo, sorted(_GOOGLE_TRENDS_VALID_GEOS),
+        )
+        return []
+    # Endpoint oficial documentado en
+    # https://support.google.com/trends/answer/4365538
+    feed_url = f"https://trends.google.com/trending/rss?geo={geo}"
+    # Reutilizar fetch_rss — Google Trends RSS sigue el spec estándar
+    items = fetch_rss(feed_url, max_items=max_items)
+    # Sobrescribir source_kind para que las señales se categoricen como
+    # google_trends en vez de rss (para filtros y stats)
+    for it in items:
+        it.source_kind = "google_trends"
+        # Prefijar el title con el país para que sea legible sin abrir el feed
+        if not it.title.startswith(f"[{geo}]"):
+            it.title = _truncate(f"[{geo}] {it.title}", 200)
+    return items
+
+
+# ---------------------------------------------------------------------------
 # SEC EDGAR — M4.12 sleeper companies radar (Phase 1: fetcher)
 # ---------------------------------------------------------------------------
 
@@ -814,6 +872,9 @@ def fetch_by_kind(kind: str, target: str = "", max_items: int = MAX_ITEMS_PER_FE
     if kind == "sec_edgar":
         # M4.12 — SEC EDGAR Phase 1: company filings fetcher
         return fetch_sec_edgar(target, max_items)
+    if kind == "google_trends":
+        # M4.14 — Google Trends RSS oficial por país
+        return fetch_google_trends(target, max_items)
     if kind == "events":
         # M4.13 — Eventos/Ferias radar (inspirado en audio del founder:
         # "en qué ferias, en qué congresos hay que estar"). Por ahora delegamos

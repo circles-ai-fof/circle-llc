@@ -25,9 +25,10 @@ const KIND_LABELS: Record<string, string> = {
   telegram: "Telegram canal público",
   events: "Eventos / Ferias / Congresos (M4.13)",
   sec_edgar: "SEC EDGAR (filings públicas US) (M4.12)",
+  google_trends: "Google Trends por país (M4.14)",
 };
 
-const KIND_NEEDS_TARGET = new Set(["url", "rss", "reddit", "youtube", "bluesky", "telegram", "events", "sec_edgar"]);
+const KIND_NEEDS_TARGET = new Set(["url", "rss", "reddit", "youtube", "bluesky", "telegram", "events", "sec_edgar", "google_trends"]);
 
 const KIND_PLACEHOLDERS: Record<string, string> = {
   url: "https://artículo.com/post",
@@ -38,6 +39,7 @@ const KIND_PLACEHOLDERS: Record<string, string> = {
   telegram: "channelhandle (sin @ ni t.me/)",
   events: "https://lu.ma/feed.xml  o  https://eventbrite.com/rss/...",
   sec_edgar: "CIK numérico (ej. 320193 = Apple, 789019 = Microsoft)",
+  google_trends: "Código de país ISO-2: US, MX, EC, CO, PE, CL, AR, BR, ES, ...",
 };
 
 export default function FuentesPage() {

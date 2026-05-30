@@ -1156,6 +1156,54 @@ def test_sec_edgar_delete_by_source_kind(client, auth):
     assert r.status_code == 200
 
 
+# ---------------------------------------------------------------------------
+# M4.14 — Google Trends source kind (RSS oficial por país)
+# ---------------------------------------------------------------------------
+
+
+def test_google_trends_kind_accepted_by_sources_endpoint(client, auth):
+    """Founder del audio: 'analizar cuáles productos más se venden por región'."""
+    r = client.post(
+        "/api/v1/sources",
+        headers=auth,
+        json={"kind": "google_trends", "target": "US", "name": "Google Trends US"},
+    )
+    assert r.status_code in (200, 201), r.text
+
+
+def test_google_trends_fetcher_rejects_unsupported_geo():
+    """Solo aceptamos geos validados (ISO-2 alpha) que sabemos que Google sirve."""
+    from orchestrator.core.source_fetcher import fetch_google_trends
+    assert fetch_google_trends("") == []
+    assert fetch_google_trends("XX") == []  # país inexistente
+    assert fetch_google_trends("BANANA") == []  # garbage
+
+
+def test_google_trends_filter_works_in_signals_endpoint(client, auth):
+    r = client.get("/api/v1/signals?kind=google_trends", headers=auth)
+    assert r.status_code == 200
+
+
+def test_google_trends_delete_by_source_kind(client, auth):
+    r = client.post(
+        "/api/v1/signals/delete-by-type",
+        headers=auth,
+        json={"source_kind": "google_trends"},
+    )
+    assert r.status_code == 200
+
+
+def test_google_trends_supports_common_latam_geos(client, auth):
+    """Verificar que los 10 geos LATAM más relevantes pasan validación."""
+    for geo in ["EC", "MX", "CO", "PE", "CL", "AR", "BR", "ES", "US", "UY"]:
+        r = client.post(
+            "/api/v1/sources",
+            headers=auth,
+            json={"kind": "google_trends", "target": geo, "name": f"GT {geo}"},
+        )
+        assert r.status_code in (200, 201), f"falló para geo={geo}: {r.text}"
+
+
 def test_check_platform_detects_youtube_url(client, auth):
     r = client.post(
         "/api/v1/sources/check-platform",
