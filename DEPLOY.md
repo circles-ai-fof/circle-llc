@@ -280,6 +280,33 @@ Backend re-deploya solo al cambiar la env var.
 - Pruebas end-to-end: 15 min
 - **Total: ~1 hora**
 
+### Activar el digest semanal (M6.2)
+
+Si querés que el cron de los lunes envíe el digest semanal por email:
+
+1. **Generar Gmail App Password** (sólo si usás Gmail):
+   - Cuenta `circles.fof.ai@gmail.com` → **Security** → 2-step verification (debe estar ON)
+   - → **App passwords** → Generate → copia los 16 dígitos sin espacios
+
+2. **Añadir env vars al backend deployed** (Railway → Variables):
+   ```
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USER=circles.fof.ai@gmail.com
+   SMTP_PASSWORD=<los 16 digitos del App Password>
+   DIGEST_FROM=Circle LLC <circles.fof.ai@gmail.com>
+   DIGEST_TO=circles.fof.ai@gmail.com,cristian.molina.ia.soporte@gmail.com,jfnunez@asiservy.com
+   ```
+
+3. **Verificar manualmente:** http://localhost:3001/digest → botón "📨 Enviar ahora"
+   - Si responde "Enviado a N destinatarios" → cron funcionará automático
+   - Si responde "SMTP no configurado" → revisar env vars
+
+4. **El cron ya está activo** (`.github/workflows/weekly-digest.yml`).
+   Los lunes 12:00 UTC (~7am ET / 9am Ecuador) llama
+   POST /api/v1/digest/send. Mientras los SMTP_* no estén configurados
+   sale verde con `::warning::` (no spamea fallas).
+
 ### Permisos en el repo
 
 `circles.fof.ai@gmail.com` debería ser el email principal del usuario

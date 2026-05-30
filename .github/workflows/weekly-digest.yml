@@ -1,0 +1,63 @@
+name: Weekly Digest
+# M6.2 — manda el digest semanal cada lunes 12:00 UTC (~7am ET, 9am Ecuador).
+#
+# Required GitHub secrets:
+#   AUTO_SCAN_API_URL  — URL pública del backend (reusamos el del auto-scan)
+#   AUTO_SCAN_TOKEN    — token de sesión válido (mismo reuso; renueva c/7d)
+#
+# El backend deployed ADEMÁS necesita configurados estos env vars para
+# que el send funcione (sino retorna sent=false sin error):
+#   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, DIGEST_FROM, DIGEST_TO
+#
+# Si los SMTP_* env vars no están seteados en Railway/Render, este workflow
+# corre verde con un ::warning:: visible (skip silencioso igual que
+# auto-scan.yml). No spamea emails de failure.
+
+on:
+  schedule:
+    # Lunes 12:00 UTC = 7am ET = 9am Ecuador = 9am Colombia
+    - cron: '0 12 * * 1'
+  workflow_dispatch:  # manual trigger desde la UI de Actions
+
+jobs:
+  send:
+    name: Send weekly digest via SMTP
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: POST /api/v1/digest/send
+        env:
+          API_URL: ${{ secrets.AUTO_SCAN_API_URL }}
+          TOKEN: ${{ secrets.AUTO_SCAN_TOKEN }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$TOKEN" ]; then
+            # Backend no deployed todavía — skip silencioso.
+            echo "::warning::AUTO_SCAN_API_URL/AUTO_SCAN_TOKEN no configurados — skip silencioso. Configurá secrets cuando despliegues backend."
+            exit 0
+          fi
+          set -e
+          RESP=$(curl --silent --show-error --max-time 60 \
+            -w "\nHTTP_CODE:%{http_code}" \
+            -X POST "$API_URL/api/v1/digest/send?window_days=7" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json")
+          BODY=$(echo "$RESP" | sed '$d')
+          CODE=$(echo "$RESP" | tail -n1 | sed 's/HTTP_CODE://')
+          echo "HTTP $CODE"
+          echo "$BODY" | head -c 2000
+          if [ "$CODE" -ge 400 ]; then
+            echo "::error::Digest send failed with HTTP $CODE"
+            exit 1
+          fi
+          # Parsear sent=true/false del JSON. Si sent=false porque SMTP no
+          # configurado, warning pero exit 0 (no es failure operacional).
+          SENT=$(echo "$BODY" | grep -o '"sent":[^,}]*' | head -1 | sed 's/.*://' | tr -d ' ')
+          SMTP_OK=$(echo "$BODY" | grep -o '"smtp_configured":[^,}]*' | head -1 | sed 's/.*://' | tr -d ' ')
+          if [ "$SENT" = "true" ]; then
+            echo "✓ Digest enviado"
+          elif [ "$SMTP_OK" = "false" ]; then
+            echo "::warning::SMTP_* no configurado en backend — digest no enviado pero no es failure"
+          else
+            echo "::error::SMTP configurado pero send falló (ver detail del body)"
+            exit 1
+          fi

@@ -2592,6 +2592,111 @@ def test_digest_text_requires_auth(client):
     assert client.get("/api/v1/digest/text").status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# M6.2 — SMTP send (skip silencioso si no configurado)
+# ---------------------------------------------------------------------------
+
+
+def test_digest_send_returns_smtp_not_configured_when_env_unset(client, auth, monkeypatch):
+    """Sin SMTP_* env vars, retorna sent=False con smtp_configured=False (no
+    es error — patrón skip silencioso para que el cron salga exit 0)."""
+    for k in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
+              "DIGEST_FROM", "DIGEST_TO"):
+        monkeypatch.delenv(k, raising=False)
+    r = client.post("/api/v1/digest/send", headers=auth)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["sent"] is False
+    assert data["smtp_configured"] is False
+    assert "SMTP" in data["detail"]
+
+
+def test_digest_send_requires_auth(client):
+    assert client.post("/api/v1/digest/send").status_code == 401
+
+
+def test_digest_send_rejects_invalid_window(client, auth):
+    assert client.post("/api/v1/digest/send?window_days=0", headers=auth).status_code == 422
+    assert client.post("/api/v1/digest/send?window_days=200", headers=auth).status_code == 422
+
+
+def test_smtp_config_from_env_returns_none_when_partial(monkeypatch):
+    """smtp_config_from_env retorna None si falta cualquier required var."""
+    from orchestrator.core.digest import smtp_config_from_env
+    # Set sólo 3 de los 6 requireds
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setenv("SMTP_PORT", "587")
+    monkeypatch.setenv("SMTP_USER", "test@example.com")
+    for k in ("SMTP_PASSWORD", "DIGEST_FROM", "DIGEST_TO"):
+        monkeypatch.delenv(k, raising=False)
+    assert smtp_config_from_env() is None
+
+
+def test_smtp_config_from_env_returns_dict_when_complete(monkeypatch):
+    from orchestrator.core.digest import smtp_config_from_env
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setenv("SMTP_PORT", "587")
+    monkeypatch.setenv("SMTP_USER", "test@example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "xxxx-xxxx-xxxx-xxxx")
+    monkeypatch.setenv("DIGEST_FROM", "Circle <test@example.com>")
+    monkeypatch.setenv("DIGEST_TO", "a@x.com,b@x.com")
+    cfg = smtp_config_from_env()
+    assert cfg is not None
+    assert cfg["SMTP_HOST"] == "smtp.gmail.com"
+    assert cfg["SMTP_PORT"] == "587"
+    # Defaults aplicados
+    assert cfg["SMTP_USE_TLS"] == "1"
+    assert cfg["SMTP_USE_SSL"] == "0"
+
+
+def test_send_digest_email_returns_false_when_no_config():
+    """send_digest_email(config=None) sin env vars retorna (False, msg)
+    sin raise."""
+    from orchestrator.core.digest import send_digest_email
+    import os as _os
+    # Clean env temporalmente
+    saved = {}
+    for k in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
+              "DIGEST_FROM", "DIGEST_TO"):
+        if k in _os.environ:
+            saved[k] = _os.environ.pop(k)
+    try:
+        ok, msg = send_digest_email("<html/>", "text", subject="test")
+        assert ok is False
+        assert "SMTP no configurado" in msg
+    finally:
+        for k, v in saved.items():
+            _os.environ[k] = v
+
+
+def test_send_digest_email_invalid_port(monkeypatch):
+    """SMTP_PORT no numérico retorna (False, msg) sin raise."""
+    from orchestrator.core.digest import send_digest_email
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setenv("SMTP_PORT", "not-a-number")
+    monkeypatch.setenv("SMTP_USER", "x@x.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "x")
+    monkeypatch.setenv("DIGEST_FROM", "x")
+    monkeypatch.setenv("DIGEST_TO", "x@x.com")
+    ok, msg = send_digest_email("<html/>", "text", subject="test")
+    assert ok is False
+    assert "SMTP_PORT inválido" in msg or "SMTP_PORT" in msg
+
+
+def test_send_digest_email_empty_recipients(monkeypatch):
+    """DIGEST_TO con solo comas vacías → (False, msg)."""
+    from orchestrator.core.digest import send_digest_email
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setenv("SMTP_PORT", "587")
+    monkeypatch.setenv("SMTP_USER", "x@x.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "x")
+    monkeypatch.setenv("DIGEST_FROM", "x")
+    monkeypatch.setenv("DIGEST_TO", " , ,  ")
+    ok, msg = send_digest_email("<html/>", "text", subject="test")
+    assert ok is False
+    assert "DIGEST_TO" in msg
+
+
 def test_arbitrage_deepdive_when_product_but_no_prices(client, auth):
     """Case #30: producto físico SIN precios → deepdive (no test)."""
     r = _arb_call(client, auth, trending_query="[US] funda smartphone")

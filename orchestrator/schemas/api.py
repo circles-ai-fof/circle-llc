@@ -565,6 +565,14 @@ class DigestData(BaseModel):
     recent_trends: List[DigestSignalItem]
 
 
+# M6.2 — Digest send response
+class DigestSendResponse(BaseModel):
+    sent: bool
+    detail: str
+    recipients_count: int = 0
+    smtp_configured: bool
+
+
 # M5.2 — NicheScout
 class NicheScoutRequest(BaseModel):
     parent_market: str = Field(min_length=1, max_length=100)

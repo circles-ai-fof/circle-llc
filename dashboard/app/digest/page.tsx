@@ -24,6 +24,8 @@ export default function DigestPage() {
   const [textVersion, setTextVersion] = useState<string | null>(null);
   const [copiedHtml, setCopiedHtml] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ sent: boolean; detail: string; smtp_configured: boolean; recipients_count: number } | null>(null);
 
   // Construir URL con token Bearer en query (HTMLResponse no soporta auth header
   // dentro del iframe normalmente; usamos sessionToken para auth via API)
@@ -80,6 +82,25 @@ export default function DigestPage() {
       setTextVersion(await r.text());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const sendNow = async () => {
+    if (sending) return;
+    if (!confirm("¿Enviar el digest ahora a los destinatarios configurados en DIGEST_TO? Si SMTP_* no está configurado, el envío fallará suavemente.")) return;
+    setSending(true);
+    setSendResult(null);
+    try {
+      const r = await authFetch(`/api/v1/digest/send?window_days=${windowDays}`, {
+        method: "POST",
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      setSendResult(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSending(false);
     }
   };
 
@@ -143,10 +164,41 @@ export default function DigestPage() {
         >
           📝 Ver versión texto plano
         </button>
+        <button
+          onClick={sendNow}
+          disabled={sending}
+          title="POST /api/v1/digest/send. Si SMTP_* no está configurado en el backend, retorna sin enviar (no es error)."
+          style={{
+            padding: "6px 14px", background: "transparent",
+            color: sending ? "#64748b" : "#00E5A0",
+            border: `1px solid ${sending ? "#1e293b" : "#00E5A0"}`,
+            borderRadius: 6, fontSize: 13, fontWeight: 600,
+            cursor: sending ? "wait" : "pointer",
+          }}
+        >
+          {sending ? "Enviando…" : "📨 Enviar ahora"}
+        </button>
         <span style={{ marginLeft: "auto", color: "#64748b", fontSize: 11 }}>
           {API}/api/v1/digest/preview
         </span>
       </section>
+
+      {sendResult && (
+        <div style={{
+          marginBottom: 16, padding: 12,
+          background: sendResult.sent ? "rgba(0,229,160,0.06)" : "rgba(255,184,0,0.06)",
+          border: `1px solid ${sendResult.sent ? "rgba(0,229,160,0.4)" : "rgba(255,184,0,0.4)"}`,
+          borderRadius: 8, fontSize: 13, color: "#cbd5e1",
+        }}>
+          {sendResult.sent ? (
+            <>✓ <strong style={{ color: "#00E5A0" }}>Enviado</strong> a {sendResult.recipients_count} destinatario{sendResult.recipients_count === 1 ? "" : "s"}. {sendResult.detail}</>
+          ) : !sendResult.smtp_configured ? (
+            <>⚠️ <strong style={{ color: "#FFB800" }}>SMTP no configurado.</strong> Setea <code style={{ background: "#0B0F1A", padding: "1px 4px", borderRadius: 3 }}>SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, DIGEST_FROM, DIGEST_TO</code> en las env vars del backend (Railway/Render) y reintenta.</>
+          ) : (
+            <>✗ <strong style={{ color: "#FF4444" }}>Fallo:</strong> {sendResult.detail}</>
+          )}
+        </div>
+      )}
 
       {error && (
         <div style={{

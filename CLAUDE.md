@@ -81,7 +81,8 @@ circle-llc/
 | M5.2-M5.5 | 4 agentes experimentales: NicheScout, EventScorer, SleeperDetector, ArbitrageEval (12 agentes totales) | ADR-025 |
 | M5.6-M5.7 | UI integration: botones "🤖" en /cazar/nichos + bulk sec_edgar en senales | — |
 | M5.8-M5.11 | 4 agentes promovidos experimental → ACTIVE (5 active total, 80 nuevos cases) | ADR-026 |
-| **M6.1** | **Weekly Digest (HTML + texto + JSON, sin SMTP todavía) + página /digest** | — |
+| M6.1 | Weekly Digest (HTML + texto + JSON, sin SMTP todavía) + página /digest | — |
+| **M6.2** | **SMTP send + cron weekly + botón Enviar ahora (skip silencioso sin SMTP_*)** | — |
 
 ## Cazador autónomo — 9 source kinds
 

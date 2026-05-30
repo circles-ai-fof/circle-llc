@@ -86,6 +86,7 @@ from .schemas.api import (
     SleeperDetectRequest, SleeperDetectResponse,
     ArbitrageEvalRequest, ArbitrageEvalResponse,
     DigestData,
+    DigestSendResponse,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2290,6 +2291,57 @@ def get_digest_preview(request: Request, window_days: int = 7):
     dashboard_url = os.getenv("DASHBOARD_URL", "http://localhost:3001")
     html = render_digest_html(data, dashboard_url=dashboard_url)
     return HTMLResponse(content=html, status_code=200)
+
+
+@app.post(
+    "/api/v1/digest/send",
+    response_model=DigestSendResponse,
+    summary="M6.2 — Envía el digest semanal via SMTP (skip silencioso si no configurado)",
+    tags=["meta"],
+)
+def send_digest(request: Request, window_days: int = 7) -> DigestSendResponse:
+    """Envía el digest a DIGEST_TO via SMTP.
+
+    Si SMTP_* env vars no están configurados, retorna sent=False con
+    smtp_configured=False (no es error — patrón de "skip silencioso" igual
+    que el cron auto-scan de M4.10). El cron weekly de GH Actions consume
+    esto y exit-codea 0 cuando smtp_configured=false.
+
+    Auth requerido. Si querés disparar desde un cron sin login: usa
+    GATE_RUN_SECRET via X-Gate-Secret header (mismo patrón que /gate/run).
+    """
+    _require_user(request)
+    if window_days < 1 or window_days > 90:
+        raise HTTPException(status_code=422, detail="window_days must be 1-90")
+    from .core.digest import (
+        build_digest_data, render_digest_html, render_digest_text,
+        send_digest_email, smtp_config_from_env,
+    )
+    smtp_cfg = smtp_config_from_env()
+    if smtp_cfg is None:
+        return DigestSendResponse(
+            sent=False,
+            detail="SMTP no configurado. Setea SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, DIGEST_FROM, DIGEST_TO en env vars.",
+            recipients_count=0,
+            smtp_configured=False,
+        )
+    data = build_digest_data(window_days=window_days)
+    dashboard_url = os.getenv("DASHBOARD_URL", "http://localhost:3001")
+    html = render_digest_html(data, dashboard_url=dashboard_url)
+    text = render_digest_text(data)
+    subject = os.getenv(
+        "DIGEST_SUBJECT",
+        f"📡 FoF — Resumen Semanal ({time.strftime('%Y-%m-%d', time.gmtime())})",
+    )
+    ok, detail = send_digest_email(html, text, subject=subject, config=smtp_cfg)
+    n_recipients = len([
+        x for x in smtp_cfg["DIGEST_TO"].split(",") if x.strip()
+    ])
+    return DigestSendResponse(
+        sent=ok, detail=detail,
+        recipients_count=n_recipients if ok else 0,
+        smtp_configured=True,
+    )
 
 
 @app.get(

@@ -1,5 +1,5 @@
 """
-M6.1 — Weekly digest builder.
+M6.1 + M6.2 — Weekly digest builder + SMTP send.
 
 Genera un resumen semanal de actividad del cazador + las oportunidades top:
 - Stats: runs, signals capturadas, promovidas, pass rate
@@ -17,8 +17,14 @@ NO usa LLM. Heurística pura sobre datos existentes — costo $0.
 from __future__ import annotations
 
 import html as _html
+import logging
+import os
+import smtplib
 import time
-from typing import Dict, List
+from email.message import EmailMessage
+from typing import Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 def build_digest_data(window_days: int = 7) -> Dict:
@@ -374,3 +380,97 @@ def render_digest_text(data: Dict) -> str:
         f"Circle LLC · {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(data['generated_at']))}",
     ])
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# M6.2 — SMTP send (opt-in via env vars)
+# ---------------------------------------------------------------------------
+
+
+def smtp_config_from_env() -> Optional[Dict[str, str]]:
+    """Lee la config SMTP desde env vars. None si falta cualquier required.
+
+    Required:
+      SMTP_HOST       (ej smtp.gmail.com)
+      SMTP_PORT       (ej 587)
+      SMTP_USER       (cuenta de envío, ej circles.fof.ai@gmail.com)
+      SMTP_PASSWORD   (Gmail: App Password de 16 dígitos; NO la contraseña real)
+      DIGEST_FROM     (ej "Circle LLC <circles.fof.ai@gmail.com>")
+      DIGEST_TO       (lista CSV, ej circles.fof.ai@gmail.com,cristian@...)
+    Optional:
+      SMTP_USE_TLS    "1" para STARTTLS (default 1)
+      SMTP_USE_SSL    "1" para SMTPS (default 0 — 587+STARTTLS es más estándar)
+    """
+    required = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
+                "DIGEST_FROM", "DIGEST_TO")
+    config: Dict[str, str] = {}
+    for k in required:
+        v = os.getenv(k, "").strip()
+        if not v:
+            return None
+        config[k] = v
+    config["SMTP_USE_TLS"] = os.getenv("SMTP_USE_TLS", "1").strip()
+    config["SMTP_USE_SSL"] = os.getenv("SMTP_USE_SSL", "0").strip()
+    return config
+
+
+def send_digest_email(
+    html: str,
+    text: str,
+    subject: str = "📡 FoF — Resumen Semanal",
+    config: Optional[Dict[str, str]] = None,
+) -> Tuple[bool, str]:
+    """Envía el digest via SMTP. Retorna (ok, mensaje).
+
+    Si config=None, lee de env vars. Si tampoco están, retorna (False, msg) sin
+    raise — el caller decide qué hacer (cron: log warning + exit 0; endpoint:
+    HTTP 500 con detalle).
+    """
+    if config is None:
+        config = smtp_config_from_env()
+    if config is None:
+        return (False, "SMTP no configurado (faltan env vars). Ver digest.py docstring.")
+
+    host = config["SMTP_HOST"]
+    try:
+        port = int(config["SMTP_PORT"])
+    except ValueError:
+        return (False, f"SMTP_PORT inválido: {config['SMTP_PORT']!r}")
+    user = config["SMTP_USER"]
+    password = config["SMTP_PASSWORD"]
+    use_tls = config.get("SMTP_USE_TLS", "1") == "1"
+    use_ssl = config.get("SMTP_USE_SSL", "0") == "1"
+
+    recipients = [
+        addr.strip() for addr in config["DIGEST_TO"].split(",") if addr.strip()
+    ]
+    if not recipients:
+        return (False, "DIGEST_TO vacío después de parsear")
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = config["DIGEST_FROM"]
+    msg["To"] = ", ".join(recipients)
+    # Texto plano como body principal, HTML como alternative
+    msg.set_content(text or "(sin contenido)")
+    msg.add_alternative(html or "<p>(sin contenido)</p>", subtype="html")
+
+    try:
+        if use_ssl:
+            with smtplib.SMTP_SSL(host, port, timeout=30) as server:
+                server.login(user, password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port, timeout=30) as server:
+                server.ehlo()
+                if use_tls:
+                    server.starttls()
+                    server.ehlo()
+                server.login(user, password)
+                server.send_message(msg)
+        logger.info("digest: sent to %s via %s:%d", recipients, host, port)
+        return (True, f"Enviado a {len(recipients)} destinatario(s)")
+    except smtplib.SMTPAuthenticationError as exc:
+        return (False, f"SMTP auth failed: {exc.smtp_error.decode('utf-8', 'replace') if exc.smtp_error else str(exc)}")
+    except Exception as exc:  # noqa: BLE001
+        return (False, f"SMTP error: {type(exc).__name__}: {exc}")
