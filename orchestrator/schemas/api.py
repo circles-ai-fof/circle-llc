@@ -521,6 +521,92 @@ class SignalsBulkFeedbackResponse(BaseModel):
     skipped_missing: int = Field(description="IDs que no existen en la base")
 
 
+# M5.2 — NicheScout
+class NicheScoutRequest(BaseModel):
+    parent_market: str = Field(min_length=1, max_length=100)
+    parent_size: int = Field(ge=1, le=10_000)
+    leader_niche: dict
+    underexplored_niches: List[dict] = Field(min_length=1, max_length=20)
+
+
+class NicheScoutResponse(BaseModel):
+    target_subniche: str
+    entry_thesis: str
+    competitive_advantage: str
+    minimum_viable_offer: str
+    validation_metrics: List[str]
+    estimated_capture_pct: str
+    key_risks: List[str]
+    confidence: float
+    reasoning: str
+    cost_usd_estimated: float = 0.0
+    mock_mode: bool = False
+
+
+# M5.3 — EventRelevanceScorer
+class EventScoringRequest(BaseModel):
+    event_title: str = Field(min_length=1, max_length=300)
+    event_description: str = Field(default="", max_length=2000)
+    evidence_urls: List[str] = Field(default_factory=list, max_length=10)
+    industry_focus: str = Field(default="", max_length=200)
+
+
+class EventScoringResponse(BaseModel):
+    relevance_score: float
+    expected_attendees_profile: str
+    networking_value: str
+    learning_value: str
+    estimated_cost_usd: str
+    expected_roi: str
+    recommendation: str  # go | skip | send_someone_else
+    preparation_topics: List[str]
+    reasoning: str
+    cost_usd_estimated: float = 0.0
+    mock_mode: bool = False
+
+
+# M5.4 — SleeperCompanyDetector
+class SleeperDetectRequest(BaseModel):
+    companies: List[dict] = Field(min_length=1, max_length=20)
+
+
+class SleeperDetectResponse(BaseModel):
+    sector_summary: str
+    leader_candidate: str
+    sleeper_candidates: List[dict]
+    comparison_signals: List[str]
+    threat_assessment: str
+    investment_thesis: str
+    confidence: float
+    reasoning: str
+    cost_usd_estimated: float = 0.0
+    mock_mode: bool = False
+
+
+# M5.5 — ProductArbitrageEvaluator
+class ArbitrageEvalRequest(BaseModel):
+    trending_query: str = Field(min_length=1, max_length=300)
+    target_geo: str = Field(default="", max_length=10)
+    source_cost_usd: Optional[float] = Field(default=None, ge=0, le=100_000)
+    target_price_usd: Optional[float] = Field(default=None, ge=0, le=100_000)
+
+
+class ArbitrageEvalResponse(BaseModel):
+    is_physical_product: bool
+    product_category: str
+    source_region_inferred: str
+    target_region_inferred: str
+    margin_estimate_pct: str
+    shipping_complexity: str
+    time_to_test_weeks: str
+    key_risks: List[str]
+    recommendation: str  # test | skip | deepdive
+    confidence: float
+    reasoning: str
+    cost_usd_estimated: float = 0.0
+    mock_mode: bool = False
+
+
 # M5.0 — TrendGapAnalyzer (agente experimental sobre los gaps de M4.11)
 class TrendGapAnalyzeRequest(BaseModel):
     """Body para POST /api/v1/trend-gaps/analyze."""

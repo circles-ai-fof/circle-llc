@@ -1573,6 +1573,320 @@ def test_trend_gap_analyzer_handles_country_focus_es(client, auth):
     assert r.json()["priority_country"] == "España"  # único en missing_in
 
 
+# ---------------------------------------------------------------------------
+# M5.2 — NicheScout (10 golden cases, experimental)
+# ---------------------------------------------------------------------------
+
+
+def _ns_call(client, auth, **overrides):
+    base = {
+        "parent_market": "fintech",
+        "parent_size": 12,
+        "leader_niche": {"topic": "fintech para pymes ecuador", "signals": 5,
+                          "sample_themes": ["sample A", "sample B"]},
+        "underexplored_niches": [
+            {"topic": "fintech para adultos mayores", "signals": 1,
+             "sample_themes": ["sample C"]},
+            {"topic": "fintech para freelancers", "signals": 2,
+             "sample_themes": ["sample D"]},
+        ],
+    }
+    base.update(overrides)
+    return client.post("/api/v1/niche-opportunities/analyze", headers=auth, json=base)
+
+
+def test_niche_scout_returns_first_underexplored(client, auth):
+    r = _ns_call(client, auth)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["target_subniche"] == "fintech para adultos mayores"
+
+
+def test_niche_scout_mock_mode_flag(client, auth):
+    r = _ns_call(client, auth)
+    assert r.json()["mock_mode"] is True
+
+
+def test_niche_scout_confidence_higher_with_big_parent(client, auth):
+    r_small = _ns_call(client, auth, parent_size=5)
+    r_big = _ns_call(client, auth, parent_size=25)
+    assert r_big.json()["confidence"] > r_small.json()["confidence"]
+
+
+def test_niche_scout_rejects_empty_underexplored(client, auth):
+    r = _ns_call(client, auth, underexplored_niches=[])
+    assert r.status_code == 422
+
+
+def test_niche_scout_rejects_empty_parent(client, auth):
+    r = _ns_call(client, auth, parent_market="")
+    assert r.status_code == 422
+
+
+def test_niche_scout_rejects_parent_size_zero(client, auth):
+    r = _ns_call(client, auth, parent_size=0)
+    assert r.status_code == 422
+
+
+def test_niche_scout_validation_metrics_present(client, auth):
+    r = _ns_call(client, auth)
+    assert len(r.json()["validation_metrics"]) >= 2
+
+
+def test_niche_scout_key_risks_present(client, auth):
+    r = _ns_call(client, auth)
+    assert len(r.json()["key_risks"]) >= 1
+
+
+def test_niche_scout_cost_zero_in_mock(client, auth):
+    assert _ns_call(client, auth).json()["cost_usd_estimated"] == 0.0
+
+
+def test_niche_scout_requires_auth(client):
+    assert client.post("/api/v1/niche-opportunities/analyze",
+                       json={"parent_market": "x", "parent_size": 1,
+                             "leader_niche": {}, "underexplored_niches": [{"topic":"x"}]}).status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# M5.3 — EventRelevanceScorer (10 golden cases, experimental)
+# ---------------------------------------------------------------------------
+
+
+def _ev_call(client, auth, **overrides):
+    base = {
+        "event_title": "Web Summit Lisbon 2026",
+        "event_description": "Annual tech conference",
+        "evidence_urls": [],
+        "industry_focus": "",
+    }
+    base.update(overrides)
+    return client.post("/api/v1/events/score", headers=auth, json=base)
+
+
+def test_event_scorer_go_for_known_event(client, auth):
+    r = _ev_call(client, auth, event_title="Web Summit Lisbon 2026",
+                 event_description="largest tech conference")
+    data = r.json()
+    # web summit está en GO_KEYWORDS
+    assert data["recommendation"] == "go"
+    assert data["relevance_score"] >= 0.7
+
+
+def test_event_scorer_send_for_regional(client, auth):
+    r = _ev_call(client, auth, event_title="Expo LATAM Negocios 2026",
+                 event_description="feria regional")
+    data = r.json()
+    assert data["recommendation"] == "send_someone_else"
+
+
+def test_event_scorer_skip_for_unknown(client, auth):
+    r = _ev_call(client, auth, event_title="Conferencia Local de Calzado",
+                 event_description="evento provincial")
+    assert r.json()["recommendation"] == "skip"
+
+
+def test_event_scorer_industry_focus_boost(client, auth):
+    r = _ev_call(client, auth, event_title="Generic Conference 2026",
+                 event_description="fintech focus", industry_focus="fintech")
+    data = r.json()
+    # fintech está en GO_KEYWORDS, debería ser go
+    assert data["recommendation"] in ("go", "send_someone_else")
+
+
+def test_event_scorer_preparation_empty_when_skip(client, auth):
+    r = _ev_call(client, auth, event_title="Random local event",
+                 event_description="nothing relevant")
+    data = r.json()
+    if data["recommendation"] == "skip":
+        assert data["preparation_topics"] == []
+
+
+def test_event_scorer_relevance_score_in_range(client, auth):
+    r = _ev_call(client, auth, event_title="Test")
+    s = r.json()["relevance_score"]
+    assert 0 <= s <= 1
+
+
+def test_event_scorer_rejects_empty_title(client, auth):
+    r = _ev_call(client, auth, event_title="")
+    assert r.status_code == 422
+
+
+def test_event_scorer_estimated_cost_provided(client, auth):
+    r = _ev_call(client, auth, event_title="Web Summit Vegas")
+    assert "$" in r.json()["estimated_cost_usd"]
+
+
+def test_event_scorer_mock_mode_flag(client, auth):
+    assert _ev_call(client, auth).json()["mock_mode"] is True
+
+
+def test_event_scorer_requires_auth(client):
+    r = client.post("/api/v1/events/score", json={"event_title": "x"})
+    assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# M5.4 — SleeperCompanyDetector (10 golden cases, experimental)
+# ---------------------------------------------------------------------------
+
+
+def _sl_call(client, auth, **overrides):
+    base = {
+        "companies": [
+            {"name": "BigCo Inc", "cik": "111", "filings": [{"form": "10-K", "date": "2025-12"}]},
+            {"name": "Challenger LLC", "cik": "222", "filings": [
+                {"form": "10-K", "date": "2025-12"},
+                {"form": "8-K", "date": "2026-02"},
+                {"form": "10-Q", "date": "2026-03"},
+            ]},
+            {"name": "ThirdPlace Co", "cik": "333", "filings": [{"form": "10-K", "date": "2025-12"}]},
+        ],
+    }
+    base.update(overrides)
+    return client.post("/api/v1/sleeper-companies/detect", headers=auth, json=base)
+
+
+def test_sleeper_returns_leader_and_sleepers(client, auth):
+    r = _sl_call(client, auth)
+    data = r.json()
+    assert data["leader_candidate"]
+    assert len(data["sleeper_candidates"]) >= 1
+
+
+def test_sleeper_zero_confidence_with_one_company(client, auth):
+    r = _sl_call(client, auth, companies=[
+        {"name": "Solo", "cik": "1", "filings": []}
+    ])
+    assert r.json()["confidence"] == 0.0
+    assert r.json()["sleeper_candidates"] == []
+
+
+def test_sleeper_confidence_higher_with_3plus_companies(client, auth):
+    r_2 = _sl_call(client, auth, companies=[
+        {"name": "A", "cik": "1", "filings": []},
+        {"name": "B", "cik": "2", "filings": []},
+    ])
+    r_3 = _sl_call(client, auth)
+    assert r_3.json()["confidence"] >= r_2.json()["confidence"]
+
+
+def test_sleeper_rejects_empty_companies(client, auth):
+    r = _sl_call(client, auth, companies=[])
+    assert r.status_code == 422
+
+
+def test_sleeper_rejects_too_many_companies(client, auth):
+    r = _sl_call(client, auth, companies=[
+        {"name": f"Co{i}", "cik": str(i), "filings": []} for i in range(25)
+    ])
+    assert r.status_code == 422
+
+
+def test_sleeper_sector_summary_present(client, auth):
+    r = _sl_call(client, auth)
+    assert r.json()["sector_summary"]
+
+
+def test_sleeper_investment_thesis_present(client, auth):
+    r = _sl_call(client, auth)
+    assert r.json()["investment_thesis"]
+
+
+def test_sleeper_mock_mode_flag(client, auth):
+    assert _sl_call(client, auth).json()["mock_mode"] is True
+
+
+def test_sleeper_cost_zero_in_mock(client, auth):
+    assert _sl_call(client, auth).json()["cost_usd_estimated"] == 0.0
+
+
+def test_sleeper_requires_auth(client):
+    assert client.post("/api/v1/sleeper-companies/detect",
+                       json={"companies": [{"name": "x"}]}).status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# M5.5 — ProductArbitrageEvaluator (10 golden cases, experimental)
+# ---------------------------------------------------------------------------
+
+
+def _arb_call(client, auth, **overrides):
+    base = {
+        "trending_query": "[US] cargador GaN 100W",
+        "target_geo": "US",
+    }
+    base.update(overrides)
+    return client.post("/api/v1/arbitrage/evaluate", headers=auth, json=base)
+
+
+def test_arbitrage_detects_physical_product(client, auth):
+    r = _arb_call(client, auth, trending_query="[US] cargador inalámbrico Apple")
+    data = r.json()
+    assert data["is_physical_product"] is True
+    assert data["recommendation"] in ("test", "deepdive")
+
+
+def test_arbitrage_skips_non_product(client, auth):
+    r = _arb_call(client, auth, trending_query="[US] elecciones 2026")
+    data = r.json()
+    assert data["is_physical_product"] is False
+    assert data["recommendation"] == "skip"
+
+
+def test_arbitrage_skips_news_keywords(client, auth):
+    r = _arb_call(client, auth, trending_query="[US] charlotte weather")
+    assert r.json()["recommendation"] == "skip"
+
+
+def test_arbitrage_calculates_margin_when_prices_provided(client, auth):
+    r = _arb_call(client, auth,
+                  trending_query="[US] auriculares Bluetooth",
+                  source_cost_usd=5.0,
+                  target_price_usd=30.0)
+    data = r.json()
+    assert data["is_physical_product"] is True
+    # Margen aprox: (30-5)/30 - 25% = ~58%
+    assert "%" in data["margin_estimate_pct"]
+
+
+def test_arbitrage_test_recommendation_with_prices(client, auth):
+    r = _arb_call(client, auth,
+                  trending_query="[US] smartwatch",
+                  source_cost_usd=10.0, target_price_usd=80.0)
+    assert r.json()["recommendation"] == "test"
+
+
+def test_arbitrage_deepdive_when_no_prices(client, auth):
+    r = _arb_call(client, auth, trending_query="[US] funda iPhone")
+    assert r.json()["recommendation"] == "deepdive"
+
+
+def test_arbitrage_rejects_negative_cost(client, auth):
+    r = _arb_call(client, auth, source_cost_usd=-1.0)
+    assert r.status_code == 422
+
+
+def test_arbitrage_rejects_huge_price(client, auth):
+    r = _arb_call(client, auth, target_price_usd=200_000.0)
+    assert r.status_code == 422
+
+
+def test_arbitrage_mock_mode_flag(client, auth):
+    assert _arb_call(client, auth).json()["mock_mode"] is True
+
+
+def test_arbitrage_requires_auth(client):
+    assert client.post("/api/v1/arbitrage/evaluate",
+                       json={"trending_query": "x"}).status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# M5.1 — continúa abajo
+# ---------------------------------------------------------------------------
+
+
 def test_trend_gap_analyzer_confidence_inversely_proportional_to_ambiguity(client, auth):
     """Golden case #30: validated_in con 1 país solo SIEMPRE da confidence
     menor que con 3 países. Calibración monotónica."""

@@ -81,6 +81,10 @@ from .schemas.api import (
     NicheSubItem,
     TrendGapAnalyzeRequest,
     TrendGapAnalyzeResponse,
+    NicheScoutRequest, NicheScoutResponse,
+    EventScoringRequest, EventScoringResponse,
+    SleeperDetectRequest, SleeperDetectResponse,
+    ArbitrageEvalRequest, ArbitrageEvalResponse,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2239,6 +2243,133 @@ def niche_opportunities(
     )
     items = [NicheOpportunity(**it) for it in items_raw]
     return NicheOpportunitiesResponse(total=len(items), items=items)
+
+
+@app.post(
+    "/api/v1/niche-opportunities/analyze",
+    response_model=NicheScoutResponse,
+    summary="M5.2 — NicheScout: plan de entrada al sub-niche (experimental)",
+    tags=["hunter"],
+)
+def analyze_niche_opportunity(
+    body: NicheScoutRequest, request: Request
+) -> NicheScoutResponse:
+    """Toma una NicheOpportunity de M4.15 y devuelve un plan de entrada
+    al sub-niche más prometedor.
+
+    Status: M5.2 experimental (10/30 golden cases). Costo ~$0.005-0.01.
+    """
+    _require_user(request)
+    from .agents.niche_scout import NicheScoutAgent
+    agent = NicheScoutAgent(
+        mock_mode=_workflow._mock_mode,
+        client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+    )
+    analysis = agent.analyze(
+        parent_market=body.parent_market,
+        parent_size=body.parent_size,
+        leader_niche=body.leader_niche,
+        underexplored_niches=body.underexplored_niches,
+    )
+    return NicheScoutResponse(
+        **analysis.to_dict(),
+        cost_usd_estimated=0.0 if agent._mock_mode else 0.008,
+        mock_mode=agent._mock_mode,
+    )
+
+
+@app.post(
+    "/api/v1/events/score",
+    response_model=EventScoringResponse,
+    summary="M5.3 — EventRelevanceScorer: ¿ir o no? (experimental)",
+    tags=["hunter"],
+)
+def score_event(
+    body: EventScoringRequest, request: Request
+) -> EventScoringResponse:
+    """Toma un evento/feria/congreso y decide go/skip/send_someone_else
+    + recomendaciones de preparación.
+
+    Status: M5.3 experimental (10/30 golden cases). Costo ~$0.003.
+    """
+    _require_user(request)
+    from .agents.event_relevance_scorer import EventRelevanceScorerAgent
+    agent = EventRelevanceScorerAgent(
+        mock_mode=_workflow._mock_mode,
+        client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+    )
+    analysis = agent.analyze(
+        event_title=body.event_title,
+        event_description=body.event_description,
+        evidence_urls=body.evidence_urls,
+        industry_focus=body.industry_focus,
+    )
+    return EventScoringResponse(
+        **analysis.to_dict(),
+        cost_usd_estimated=0.0 if agent._mock_mode else 0.003,
+        mock_mode=agent._mock_mode,
+    )
+
+
+@app.post(
+    "/api/v1/sleeper-companies/detect",
+    response_model=SleeperDetectResponse,
+    summary="M5.4 — SleeperCompanyDetector: detecta #2 con momentum (experimental)",
+    tags=["hunter"],
+)
+def detect_sleeper_companies(
+    body: SleeperDetectRequest, request: Request
+) -> SleeperDetectResponse:
+    """Toma una lista de empresas públicas (signals kind=sec_edgar) y
+    detecta sleeper candidates — empresas no-líder con cadence alta de filings.
+
+    Status: M5.4 experimental (10/30 golden cases). Costo ~$0.01.
+    """
+    _require_user(request)
+    from .agents.sleeper_company_detector import SleeperCompanyDetectorAgent
+    agent = SleeperCompanyDetectorAgent(
+        mock_mode=_workflow._mock_mode,
+        client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+    )
+    analysis = agent.analyze(companies=body.companies)
+    return SleeperDetectResponse(
+        **analysis.to_dict(),
+        cost_usd_estimated=0.0 if agent._mock_mode else 0.010,
+        mock_mode=agent._mock_mode,
+    )
+
+
+@app.post(
+    "/api/v1/arbitrage/evaluate",
+    response_model=ArbitrageEvalResponse,
+    summary="M5.5 — ProductArbitrageEvaluator: ¿esto se puede dropshipping? (experimental)",
+    tags=["hunter"],
+)
+def evaluate_arbitrage(
+    body: ArbitrageEvalRequest, request: Request
+) -> ArbitrageEvalResponse:
+    """Toma un trending search (kind=google_trends) y evalúa si es producto
+    arbitrabable + margin estimate + recomendación test/skip/deepdive.
+
+    Status: M5.5 experimental (10/30 golden cases). Costo ~$0.003.
+    """
+    _require_user(request)
+    from .agents.product_arbitrage_evaluator import ProductArbitrageEvaluatorAgent
+    agent = ProductArbitrageEvaluatorAgent(
+        mock_mode=_workflow._mock_mode,
+        client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+    )
+    analysis = agent.analyze(
+        trending_query=body.trending_query,
+        target_geo=body.target_geo,
+        source_cost_usd=body.source_cost_usd,
+        target_price_usd=body.target_price_usd,
+    )
+    return ArbitrageEvalResponse(
+        **analysis.to_dict(),
+        cost_usd_estimated=0.0 if agent._mock_mode else 0.003,
+        mock_mode=agent._mock_mode,
+    )
 
 
 @app.post(

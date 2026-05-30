@@ -77,7 +77,8 @@ circle-llc/
 | M4.14 | Google Trends RSS por país (22 países LATAM+EU+US) | ADR-022 |
 | M4.15 | Niche-en-gigante detector Phase 1 (heurístico) | ADR-022 |
 | M5.0 | TrendGapAnalyzer — primer agente experimental (8º agente) | ADR-023 |
-| **M5.1** | **TrendGapAnalyzer promovido a ACTIVE (30/30 golden cases) — v1.0.0** | **ADR-024** |
+| M5.1 | TrendGapAnalyzer promovido a ACTIVE (30/30 golden cases) — v1.0.0 | ADR-024 |
+| **M5.2-M5.5** | **4 agentes experimentales: NicheScout, EventScorer, SleeperDetector, ArbitrageEval (12 agentes totales)** | **ADR-025** |
 
 ## Cazador autónomo — 9 source kinds
 
