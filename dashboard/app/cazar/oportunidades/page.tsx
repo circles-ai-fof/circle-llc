@@ -36,6 +36,19 @@ type TrendGapItem = {
   opportunity_score: number;
 };
 
+// M6.0 — MultiAgentConsensus
+type ConsensusResult = {
+  agreement_score: number;
+  consensus_view: string;
+  dissenting_views: string[];
+  key_tradeoffs: string[];
+  final_recommendation: string;
+  confidence: number;
+  reasoning: string;
+  cost_usd_estimated: number;
+  mock_mode: boolean;
+};
+
 // M5.0 — TrendGapAnalyzer (agente experimental)
 type TrendGapAnalysis = {
   priority_country: string;
@@ -66,6 +79,60 @@ export default function OportunidadesPage() {
   // M5.0 — análisis con LLM agent experimental
   const [analyzing, setAnalyzing] = useState<number | null>(null);
   const [analysisByIdx, setAnalysisByIdx] = useState<Record<number, TrendGapAnalysis>>({});
+  // M6.0c — MultiAgentConsensus integration
+  const [showConsensusForm, setShowConsensusForm] = useState(false);
+  const [founderGut, setFounderGut] = useState("");
+  const [synthesizing, setSynthesizing] = useState(false);
+  const [consensus, setConsensus] = useState<ConsensusResult | null>(null);
+
+  // M6.0c — Sintetiza la opinión del agente + gut feeling del founder
+  const synthesize = async (item: TrendGapItem) => {
+    if (synthesizing) return;
+    if (!analysisByIdx[0]) {
+      alert("Primero ejecutá 'Analizar con IA' para tener una perspective del agente.");
+      return;
+    }
+    if (!founderGut.trim()) {
+      alert("Escribí tu gut feeling primero (segunda perspective).");
+      return;
+    }
+    setSynthesizing(true);
+    setConsensus(null);
+    try {
+      const agentAnalysis = analysisByIdx[0];
+      const perspectives = [
+        {
+          source: "trend_gap_analyzer",
+          text: (
+            `Atacar ${agentAnalysis.priority_country} primero. ` +
+            `${agentAnalysis.priority_rationale} ` +
+            `Timing: ${agentAnalysis.timing_hypothesis}. ` +
+            `Patrón: ${agentAnalysis.adoption_pattern}. ` +
+            `Confianza ${Math.round(agentAnalysis.confidence * 100)}%.`
+          ).slice(0, 1900),
+        },
+        {
+          source: "founder_gut",
+          text: founderGut.slice(0, 1900),
+        },
+      ];
+      const r = await authFetch("/api/v1/consensus/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision_question: `¿Atacamos ${item.idea_summary.slice(0, 100)} en ${item.missing_in[0] || "el gap"}?`,
+          perspectives,
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data: ConsensusResult = await r.json();
+      setConsensus(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSynthesizing(false);
+    }
+  };
 
   const analyze = async (idx: number, item: TrendGapItem) => {
     if (analyzing !== null) return;
@@ -444,6 +511,152 @@ export default function OportunidadesPage() {
                       <span>⏳ esfuerzo: {analysisByIdx[0].effort_estimate_weeks}</span>
                       <span>💰 costo análisis: ${analysisByIdx[0].cost_usd_estimated.toFixed(4)}</span>
                     </div>
+                  </div>
+
+                  {/* M6.0c — Botón para sintetizar agente + gut feeling */}
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #1e293b" }}>
+                    {!showConsensusForm && !consensus && (
+                      <button
+                        onClick={() => setShowConsensusForm(true)}
+                        title="MultiAgentConsensus (M6.0): combiná esta opinión del agente con tu gut feeling y sintetizá un consenso accionable. ~$0.012"
+                        style={{
+                          padding: "8px 16px",
+                          background: "transparent",
+                          color: "#FFB800",
+                          border: "1px solid #FFB800",
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        🧠 Sintetizar con tu gut feeling
+                      </button>
+                    )}
+                    {showConsensusForm && !consensus && (
+                      <div>
+                        <div style={{ color: "#FFB800", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+                          🧠 Tu opinión (segunda perspective)
+                        </div>
+                        <textarea
+                          value={founderGut}
+                          onChange={(e) => setFounderGut(e.target.value)}
+                          placeholder="Escribí tu gut feeling sobre esta oportunidad. Ej: 'Timing parece bueno, pero el budget de marketing es ajustado. Prefiero validar con 2 entrevistas antes.'"
+                          rows={4}
+                          maxLength={1900}
+                          style={{
+                            width: "100%",
+                            padding: "8px 10px",
+                            background: "#0B0F1A",
+                            color: "#cbd5e1",
+                            border: "1px solid #1e293b",
+                            borderRadius: 6,
+                            fontSize: 12,
+                            fontFamily: "inherit",
+                            resize: "vertical",
+                          }}
+                        />
+                        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                          <button
+                            onClick={() => synthesize(items[0])}
+                            disabled={synthesizing || !founderGut.trim()}
+                            style={{
+                              padding: "6px 14px",
+                              background: synthesizing ? "transparent" : "#FFB800",
+                              color: synthesizing ? "#64748b" : "#0B0F1A",
+                              border: "1px solid #FFB800",
+                              borderRadius: 6,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: synthesizing || !founderGut.trim() ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {synthesizing ? "Sintetizando…" : "🧠 Generar consenso"}
+                          </button>
+                          <button
+                            onClick={() => { setShowConsensusForm(false); setFounderGut(""); }}
+                            style={{
+                              padding: "6px 14px",
+                              background: "transparent",
+                              color: "#94a3b8",
+                              border: "1px solid #1e293b",
+                              borderRadius: 6,
+                              fontSize: 12,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Cancelar
+                          </button>
+                          <span style={{ marginLeft: "auto", color: "#64748b", fontSize: 10, fontFamily: "monospace" }}>
+                            {founderGut.length}/1900
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {consensus && (
+                      <div style={{
+                        padding: 12,
+                        background: "#0B0F1A",
+                        border: "1px solid rgba(255,184,0,0.4)",
+                        borderRadius: 8,
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <span style={{ color: "#FFB800", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                            🧠 Consenso (M6.0 MultiAgentConsensus)
+                          </span>
+                          {consensus.mock_mode && (
+                            <span style={{ padding: "1px 6px", background: "rgba(255,184,0,0.1)", color: "#FFB800", borderRadius: 3, fontSize: 9, fontWeight: 600 }}>
+                              DEMO
+                            </span>
+                          )}
+                          <span style={{ marginLeft: "auto", color: "#94a3b8", fontSize: 10, fontFamily: "monospace" }}>
+                            agreement {(consensus.agreement_score * 100).toFixed(0)}% · conf {(consensus.confidence * 100).toFixed(0)}%
+                          </span>
+                          <button
+                            onClick={() => { setConsensus(null); setShowConsensusForm(false); setFounderGut(""); }}
+                            style={{
+                              padding: "2px 8px", background: "transparent",
+                              color: "#64748b", border: "1px solid #1e293b",
+                              borderRadius: 4, fontSize: 10, cursor: "pointer",
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div style={{ display: "grid", gap: 8, fontSize: 12, lineHeight: 1.5 }}>
+                          <div>
+                            <span style={{ color: "#FFB800", fontWeight: 700, marginRight: 6 }}>🎯 RECOMENDACIÓN FINAL:</span>
+                            <strong style={{ color: "#fff" }}>{consensus.final_recommendation}</strong>
+                          </div>
+                          <div>
+                            <span style={{ color: "#FFB800", fontWeight: 700, marginRight: 6 }}>📋 CONSENSO:</span>
+                            <span style={{ color: "#cbd5e1" }}>{consensus.consensus_view}</span>
+                          </div>
+                          {consensus.dissenting_views.length > 0 && (
+                            <div>
+                              <div style={{ color: "#FFB800", fontWeight: 700, marginBottom: 3 }}>⚖️ DISENSOS:</div>
+                              <ul style={{ margin: 0, paddingLeft: 18, color: "#cbd5e1" }}>
+                                {consensus.dissenting_views.map((d, i) => <li key={i}>{d}</li>)}
+                              </ul>
+                            </div>
+                          )}
+                          {consensus.key_tradeoffs.length > 0 && (
+                            <div>
+                              <div style={{ color: "#FFB800", fontWeight: 700, marginBottom: 3 }}>⚖️ TRADEOFFS:</div>
+                              <ul style={{ margin: 0, paddingLeft: 18, color: "#cbd5e1" }}>
+                                {consensus.key_tradeoffs.map((t, i) => <li key={i}>{t}</li>)}
+                              </ul>
+                            </div>
+                          )}
+                          <div style={{ marginTop: 4, paddingTop: 6, borderTop: "1px solid #1e293b", color: "#94a3b8", fontSize: 11, fontStyle: "italic" }}>
+                            {consensus.reasoning}
+                          </div>
+                          <div style={{ color: "#64748b", fontSize: 10, fontFamily: "monospace" }}>
+                            costo: ${consensus.cost_usd_estimated.toFixed(4)}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

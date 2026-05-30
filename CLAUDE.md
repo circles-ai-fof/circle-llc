@@ -83,7 +83,8 @@ circle-llc/
 | M5.8-M5.11 | 4 agentes promovidos experimental → ACTIVE (5 active total, 80 nuevos cases) | ADR-026 |
 | M6.1 | Weekly Digest (HTML + texto + JSON, sin SMTP todavía) + página /digest | — |
 | M6.2 | SMTP send + cron weekly + botón Enviar ahora (skip silencioso sin SMTP_*) | — |
-| **M6.0** | **MultiAgentConsensus — 13º agente (último del audio del founder cubierto)** | **ADR-027** |
+| M6.0 | MultiAgentConsensus — 13º agente (último del audio del founder cubierto) | ADR-027 |
+| **M6.0b+c** | **Consensus promovido a ACTIVE v1.0.0 (30/30) + UI integration en /cazar/oportunidades** | — |
 
 ## Cazador autónomo — 9 source kinds
 

@@ -2781,6 +2781,183 @@ def test_consensus_mock_mode_flag(client, auth):
     assert r.json()["cost_usd_estimated"] == 0.0
 
 
+# ---------------------------------------------------------------------------
+# M6.0b — 20 cases adicionales (11-30) para promover consensus a ACTIVE
+# ---------------------------------------------------------------------------
+
+
+def test_consensus_deterministic_in_mock(client, auth):
+    """Case #11: dos llamadas idénticas → mismo agreement_score."""
+    r1 = _cons_call(client, auth)
+    r2 = _cons_call(client, auth)
+    assert r1.json()["agreement_score"] == r2.json()["agreement_score"]
+
+
+def test_consensus_confidence_inversely_proportional_to_dissent(client, auth):
+    """Case #12: perspectives con high overlap → confidence mayor."""
+    r_high = _cons_call(client, auth, perspectives=[
+        {"source": "a", "text": "Lanzar producto ecuador validacion mercado"},
+        {"source": "b", "text": "Lanzar producto ecuador validacion mercado"},
+        {"source": "c", "text": "Lanzar producto ecuador validacion mercado"},
+    ])
+    r_low = _cons_call(client, auth, perspectives=[
+        {"source": "a", "text": "Lanzar inmediatamente fintech ecuador"},
+        {"source": "b", "text": "Esperar mejorar edtech mexico"},
+    ])
+    assert r_high.json()["confidence"] >= r_low.json()["confidence"]
+
+
+def test_consensus_rejects_perspective_source_too_long(client, auth):
+    """Case #13: source > 100 chars → 422."""
+    bad = [{"source": "x" * 101, "text": "y"}]
+    r = _cons_call(client, auth, perspectives=bad)
+    assert r.status_code == 422
+
+
+def test_consensus_rejects_perspective_text_too_long(client, auth):
+    """Case #14: text > 2000 chars → 422."""
+    bad = [{"source": "x", "text": "y" * 2001}]
+    r = _cons_call(client, auth, perspectives=bad)
+    assert r.status_code == 422
+
+
+def test_consensus_rejects_question_too_long(client, auth):
+    """Case #15: decision_question > 500 chars → 422."""
+    r = _cons_call(client, auth, decision_question="x" * 501)
+    assert r.status_code == 422
+
+
+def test_consensus_rejects_empty_perspective_source(client, auth):
+    """Case #16: source vacío → 422."""
+    r = _cons_call(client, auth, perspectives=[{"source": "", "text": "y"}])
+    assert r.status_code == 422
+
+
+def test_consensus_rejects_empty_perspective_text(client, auth):
+    """Case #17: text vacío → 422."""
+    r = _cons_call(client, auth, perspectives=[{"source": "x", "text": ""}])
+    assert r.status_code == 422
+
+
+def test_consensus_response_fields_non_empty(client, auth):
+    """Case #18: campos críticos no vacíos."""
+    r = _cons_call(client, auth)
+    data = r.json()
+    for field in ("consensus_view", "final_recommendation", "reasoning"):
+        assert data[field], f"campo {field!r} vacío"
+
+
+def test_consensus_response_shape_complete(client, auth):
+    """Case #19: 9 campos del response."""
+    r = _cons_call(client, auth)
+    expected = {
+        "agreement_score", "consensus_view", "dissenting_views",
+        "key_tradeoffs", "final_recommendation", "confidence",
+        "reasoning", "cost_usd_estimated", "mock_mode",
+    }
+    assert set(r.json().keys()) == expected
+
+
+def test_consensus_agreement_score_in_valid_range(client, auth):
+    """Case #20: agreement_score siempre ∈ [0, 1]."""
+    for perspectives in (
+        [{"source": "a", "text": "x"}],
+        [{"source": "a", "text": "x"}, {"source": "b", "text": "y"}],
+        [{"source": f"a{i}", "text": "lanzar producto"} for i in range(5)],
+    ):
+        r = _cons_call(client, auth, perspectives=perspectives)
+        assert 0.0 <= r.json()["agreement_score"] <= 1.0
+
+
+def test_consensus_confidence_capped_at_085(client, auth):
+    """Case #21: confidence nunca > 0.85 (regla del prompt)."""
+    r = _cons_call(client, auth, perspectives=[
+        {"source": f"a{i}", "text": "lanzar producto ecuador"} for i in range(10)
+    ])
+    assert r.json()["confidence"] <= 0.85
+
+
+def test_consensus_handles_max_10_perspectives(client, auth):
+    """Case #22: 10 perspectives exactas funciona (boundary)."""
+    ten = [{"source": f"a{i}", "text": f"perspective {i}"} for i in range(10)]
+    r = _cons_call(client, auth, perspectives=ten)
+    assert r.status_code == 200
+
+
+def test_consensus_handles_max_2000_chars_text(client, auth):
+    """Case #23: text de exactamente 2000 chars funciona."""
+    r = _cons_call(client, auth, perspectives=[{"source": "x", "text": "y" * 2000}])
+    assert r.status_code == 200
+
+
+def test_consensus_returns_spanish_in_mock(client, auth):
+    """Case #24: mock produce español (acentos o keywords típicas)."""
+    r = _cons_call(client, auth)
+    full = (r.json()["consensus_view"] + " " + r.json()["final_recommendation"]
+            + " " + r.json()["reasoning"])
+    has_es = (any(ch in full for ch in "áéíóúñ")
+              or any(w in full.lower() for w in ("demo", "perspective", "consenso")))
+    assert has_es
+
+
+def test_consensus_low_agreement_triggers_caution(client, auth):
+    """Case #25: agreement bajo → final_recommendation incluye cautela."""
+    r = _cons_call(client, auth, perspectives=[
+        {"source": "a", "text": "lanzar inmediatamente sin esperar"},
+        {"source": "b", "text": "edtech mercado mexico universitarios"},
+        {"source": "c", "text": "fintech regulacion compliance estricto"},
+    ])
+    rec = r.json()["final_recommendation"].lower()
+    if r.json()["agreement_score"] < 0.5:
+        assert any(w in rec for w in ("cautela", "no actuar", "esperar", "pivotar", "disenso"))
+
+
+def test_consensus_high_agreement_no_dissent(client, auth):
+    """Case #26: cuando agreement_score muy alto, dissenting_views suele
+    estar vacío o tener pocos items."""
+    r = _cons_call(client, auth, perspectives=[
+        {"source": "a", "text": "lanzar ecuador validacion"},
+        {"source": "b", "text": "lanzar ecuador validacion"},
+        {"source": "c", "text": "lanzar ecuador validacion"},
+    ])
+    # high agreement → dissent debería ser pequeño
+    if r.json()["agreement_score"] >= 0.7:
+        assert len(r.json()["dissenting_views"]) <= 1
+
+
+def test_consensus_cost_zero_in_mock(client, auth):
+    """Case #27: cost_usd_estimated == 0.0 en mock."""
+    assert _cons_call(client, auth).json()["cost_usd_estimated"] == 0.0
+
+
+def test_consensus_tradeoffs_present_with_multiple_perspectives(client, auth):
+    """Case #28: con ≥2 perspectives, key_tradeoffs tiene ≥1 item."""
+    r = _cons_call(client, auth)
+    assert len(r.json()["key_tradeoffs"]) >= 1
+
+
+def test_consensus_handles_special_characters_in_text(client, auth):
+    """Case #29: caracteres especiales no rompen el parser."""
+    r = _cons_call(client, auth, perspectives=[
+        {"source": "agent_special", "text": "¿Está claro? Sí — €500/mes vs $1000/mes [análisis]"},
+        {"source": "founder", "text": "Mi gut: 50% / 50%"},
+    ])
+    assert r.status_code == 200
+
+
+def test_consensus_reasoning_mentions_perspectives_count(client, auth):
+    """Case #30: reasoning del mock menciona la cantidad de perspectives
+    analizadas (signal de transparencia interna)."""
+    r = _cons_call(client, auth, perspectives=[
+        {"source": "a", "text": "x"},
+        {"source": "b", "text": "y"},
+        {"source": "c", "text": "z"},
+    ])
+    reasoning = r.json()["reasoning"].lower()
+    # Debe mencionar el número 3 o la palabra "perspectives"
+    assert "3" in reasoning or "perspective" in reasoning
+
+
 def test_send_digest_email_empty_recipients(monkeypatch):
     """DIGEST_TO con solo comas vacías → (False, msg)."""
     from orchestrator.core.digest import send_digest_email

@@ -17,8 +17,8 @@ otros agentes. Recibe perspectives ya producidas y las sintetiza con
 schema FIJO. La decisión de QUÉ agentes invocar antes pertenece al
 endpoint/caller, no al agente.
 
-Status: experimental (M6.0). 10 golden cases mínimo para shipear; promoción
-a active(on-demand) requiere 30 cases (M6.0b cuando aplique).
+Status: ACTIVE (M6.0b — promovido 2026-05-30 con 30/30 golden cases).
+Sigue invocado solo via endpoint explícito (no en workflow/autoscan).
 """
 from __future__ import annotations
 
@@ -101,11 +101,11 @@ class ConsensusAnalysis:
 
 
 class MultiAgentConsensusAgent(BaseAgent):
-    """Status: experimental (M6.0). 10/30 golden cases. NO governor."""
+    """Status: ACTIVE (M6.0b). 30/30 golden cases. v1.0.0. NO governor."""
 
     AGENT_NAME = "multi_agent_consensus"
-    AGENT_VERSION = "0.1.0"
-    EXPERIMENTAL = True
+    AGENT_VERSION = "1.0.0"  # M6.0b — promovido active con 30/30 golden cases
+    EXPERIMENTAL = False
 
     @property
     def system_prompt(self) -> str:
