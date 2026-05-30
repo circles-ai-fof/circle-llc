@@ -36,6 +36,21 @@ type TrendGapItem = {
   opportunity_score: number;
 };
 
+// M5.0 — TrendGapAnalyzer (agente experimental)
+type TrendGapAnalysis = {
+  priority_country: string;
+  priority_rationale: string;
+  timing_hypothesis: string;
+  adoption_pattern: string;
+  go_to_market: string[];
+  risks_per_country: Record<string, string>;
+  effort_estimate_weeks: string;
+  confidence: number;
+  reasoning: string;
+  cost_usd_estimated: number;
+  mock_mode: boolean;
+};
+
 const DEFAULT_COUNTRIES = [
   "Ecuador", "México", "Colombia", "Perú", "Chile",
   "Argentina", "Brasil", "Estados Unidos", "España",
@@ -48,6 +63,33 @@ export default function OportunidadesPage() {
   const [minSignals, setMinSignals] = useState(2);
   const [minFeedback, setMinFeedback] = useState(1);
   const [countries] = useState<string[]>(DEFAULT_COUNTRIES);
+  // M5.0 — análisis con LLM agent experimental
+  const [analyzing, setAnalyzing] = useState<number | null>(null);
+  const [analysisByIdx, setAnalysisByIdx] = useState<Record<number, TrendGapAnalysis>>({});
+
+  const analyze = async (idx: number, item: TrendGapItem) => {
+    if (analyzing !== null) return;
+    setAnalyzing(idx);
+    try {
+      const r = await authFetch("/api/v1/trend-gaps/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idea_summary: item.idea_summary,
+          validated_in: item.validated_in,
+          missing_in: item.missing_in,
+          opportunity_score: item.opportunity_score,
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data: TrendGapAnalysis = await r.json();
+      setAnalysisByIdx((prev) => ({ ...prev, [idx]: data }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAnalyzing(null);
+    }
+  };
 
   const refresh = async () => {
     setLoading(true);
@@ -252,9 +294,29 @@ export default function OportunidadesPage() {
           {/* Detalle de la oportunidad top */}
           {items[0] && (
             <div style={{ background: "#0F1525", border: "1px solid rgba(0,212,255,0.3)", borderRadius: 12, padding: 18 }}>
-              <h2 style={{ color: "#00D4FF", fontSize: 14, fontWeight: 700, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                🏆 Top oportunidad
-              </h2>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <h2 style={{ color: "#00D4FF", fontSize: 14, fontWeight: 700, margin: 0, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  🏆 Top oportunidad
+                </h2>
+                <button
+                  onClick={() => analyze(0, items[0])}
+                  disabled={analyzing !== null}
+                  title="Analiza esta oportunidad con el agente experimental TrendGapAnalyzer (M5.0). Prioriza país + plan de validación. ~$0.008."
+                  style={{
+                    marginLeft: "auto",
+                    padding: "4px 12px",
+                    background: "transparent",
+                    color: analyzing === 0 ? "#64748b" : "#A78BFA",
+                    border: `1px solid ${analyzing === 0 ? "#1e293b" : "#A78BFA"}`,
+                    borderRadius: 6,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: analyzing === 0 ? "wait" : "pointer",
+                  }}
+                >
+                  {analyzing === 0 ? "Analizando…" : analysisByIdx[0] ? "🔄 Re-analizar" : "🤖 Analizar con IA"}
+                </button>
+              </div>
               <div style={{ color: "#fff", fontSize: 15, fontWeight: 600, marginBottom: 10 }}>
                 {items[0].idea_summary}
               </div>
@@ -290,6 +352,101 @@ export default function OportunidadesPage() {
                   </div>
                 </div>
               </div>
+
+              {/* M5.0 — Panel con el análisis del agente TrendGapAnalyzer */}
+              {analysisByIdx[0] && (
+                <div style={{
+                  marginTop: 18,
+                  padding: 14,
+                  background: "#0B0F1A",
+                  border: "1px solid rgba(167,139,250,0.4)",
+                  borderRadius: 8,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <span style={{
+                      color: "#A78BFA", fontSize: 11, fontWeight: 700,
+                      textTransform: "uppercase", letterSpacing: 0.5,
+                    }}>
+                      🤖 Análisis del agente (M5.0 experimental)
+                    </span>
+                    {analysisByIdx[0].mock_mode && (
+                      <span style={{
+                        padding: "1px 6px", background: "rgba(255,184,0,0.1)",
+                        color: "#FFB800", borderRadius: 3, fontSize: 10, fontWeight: 600,
+                      }}>
+                        DEMO
+                      </span>
+                    )}
+                    <span style={{
+                      marginLeft: "auto", color: "#94a3b8", fontSize: 11,
+                      fontFamily: "monospace",
+                    }}>
+                      confianza {(analysisByIdx[0].confidence * 100).toFixed(0)}%
+                    </span>
+                  </div>
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div>
+                      <span style={{ color: "#A78BFA", fontSize: 11, fontWeight: 700, marginRight: 6 }}>
+                        🎯 ATACAR PRIMERO:
+                      </span>
+                      <strong style={{ color: "#fff", fontSize: 14 }}>
+                        {analysisByIdx[0].priority_country}
+                      </strong>
+                      <div style={{ color: "#cbd5e1", fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
+                        {analysisByIdx[0].priority_rationale}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span style={{ color: "#A78BFA", fontSize: 11, fontWeight: 700, marginRight: 6 }}>
+                        ⏱️ TIMING:
+                      </span>
+                      <span style={{ color: "#cbd5e1", fontSize: 12 }}>
+                        {analysisByIdx[0].timing_hypothesis}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span style={{ color: "#A78BFA", fontSize: 11, fontWeight: 700, marginRight: 6 }}>
+                        📈 PATRÓN DE ADOPCIÓN:
+                      </span>
+                      <span style={{ color: "#cbd5e1", fontSize: 12 }}>
+                        {analysisByIdx[0].adoption_pattern}
+                      </span>
+                    </div>
+
+                    <div>
+                      <div style={{ color: "#A78BFA", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
+                        🚀 GO-TO-MARKET (validá primero esto):
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18, color: "#cbd5e1", fontSize: 12, lineHeight: 1.7 }}>
+                        {analysisByIdx[0].go_to_market.map((g, i) => (
+                          <li key={i}>{g}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {Object.keys(analysisByIdx[0].risks_per_country).length > 0 && (
+                      <div>
+                        <div style={{ color: "#A78BFA", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
+                          ⚠️ RIESGOS POR PAÍS:
+                        </div>
+                        {Object.entries(analysisByIdx[0].risks_per_country).map(([c, r]) => (
+                          <div key={c} style={{ color: "#cbd5e1", fontSize: 12, marginBottom: 3 }}>
+                            <strong>{c}:</strong> {r}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 12, color: "#64748b", fontSize: 11, fontFamily: "monospace", paddingTop: 4, borderTop: "1px solid #1e293b" }}>
+                      <span>⏳ esfuerzo: {analysisByIdx[0].effort_estimate_weeks}</span>
+                      <span>💰 costo análisis: ${analysisByIdx[0].cost_usd_estimated.toFixed(4)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>

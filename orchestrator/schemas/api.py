@@ -521,6 +521,32 @@ class SignalsBulkFeedbackResponse(BaseModel):
     skipped_missing: int = Field(description="IDs que no existen en la base")
 
 
+# M5.0 — TrendGapAnalyzer (agente experimental sobre los gaps de M4.11)
+class TrendGapAnalyzeRequest(BaseModel):
+    """Body para POST /api/v1/trend-gaps/analyze."""
+    idea_summary: str = Field(min_length=1, max_length=500)
+    validated_in: List[dict] = Field(
+        min_length=1, max_length=20,
+        description="Lista de {country, signals, ups, sample_themes} del TrendGapItem",
+    )
+    missing_in: List[str] = Field(min_length=1, max_length=30)
+    opportunity_score: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class TrendGapAnalyzeResponse(BaseModel):
+    priority_country: str
+    priority_rationale: str
+    timing_hypothesis: str
+    adoption_pattern: str
+    go_to_market: List[str]
+    risks_per_country: dict
+    effort_estimate_weeks: str
+    confidence: float
+    reasoning: str
+    cost_usd_estimated: float = 0.0
+    mock_mode: bool = False
+
+
 # M4.15 — Niche-en-gigante detector (heurístico Phase 1)
 class NicheSubItem(BaseModel):
     topic: str

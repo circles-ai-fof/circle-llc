@@ -79,6 +79,8 @@ from .schemas.api import (
     NicheOpportunitiesResponse,
     NicheOpportunity,
     NicheSubItem,
+    TrendGapAnalyzeRequest,
+    TrendGapAnalyzeResponse,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2237,6 +2239,50 @@ def niche_opportunities(
     )
     items = [NicheOpportunity(**it) for it in items_raw]
     return NicheOpportunitiesResponse(total=len(items), items=items)
+
+
+@app.post(
+    "/api/v1/trend-gaps/analyze",
+    response_model=TrendGapAnalyzeResponse,
+    summary="M5.0 — Analizar un gap cross-country con razonamiento LLM (experimental)",
+    tags=["hunter"],
+)
+def analyze_trend_gap(
+    body: TrendGapAnalyzeRequest, request: Request
+) -> TrendGapAnalyzeResponse:
+    """Toma un TrendGapItem (resultado de /api/v1/trend-gaps) y devuelve un
+    análisis profundo: qué país atacar primero, timing hypothesis, patrón
+    de adopción, go-to-market, riesgos por país.
+
+    Status: M5.0 experimental (R12 — solo 12/30 golden cases todavía).
+    Costo: ~$0.005-0.01 por análisis (Haiku/Sonnet single call). En mock
+    mode produce un placeholder en español útil para CI/dev.
+    """
+    _require_user(request)
+    from .agents.trend_gap_analyzer import TrendGapAnalyzerAgent
+    agent = TrendGapAnalyzerAgent(
+        mock_mode=_workflow._mock_mode,
+        client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+    )
+    analysis = agent.analyze(
+        idea_summary=body.idea_summary,
+        validated_in=body.validated_in,
+        missing_in=body.missing_in,
+        opportunity_score=body.opportunity_score,
+    )
+    return TrendGapAnalyzeResponse(
+        priority_country=analysis.priority_country,
+        priority_rationale=analysis.priority_rationale,
+        timing_hypothesis=analysis.timing_hypothesis,
+        adoption_pattern=analysis.adoption_pattern,
+        go_to_market=analysis.go_to_market,
+        risks_per_country=analysis.risks_per_country,
+        effort_estimate_weeks=analysis.effort_estimate_weeks,
+        confidence=analysis.confidence,
+        reasoning=analysis.reasoning,
+        cost_usd_estimated=0.0 if agent._mock_mode else 0.008,
+        mock_mode=agent._mock_mode,
+    )
 
 
 @app.get(

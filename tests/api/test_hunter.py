@@ -1193,6 +1193,233 @@ def test_google_trends_delete_by_source_kind(client, auth):
     assert r.status_code == 200
 
 
+# ---------------------------------------------------------------------------
+# M5.0 — TrendGapAnalyzer (agente experimental, 12 golden cases parciales)
+# Per R12: ≥30 golden cases para promover a "activo". Hoy: 12 (mock_mode).
+# Pendiente para M5.1: completar a 30 cases incluyendo casos con LLM live.
+# ---------------------------------------------------------------------------
+
+
+def _golden_validated(country: str, signals: int = 3, ups: int = 1) -> dict:
+    """Helper: construye un dict de validated_in para golden cases."""
+    return {
+        "country": country,
+        "signals": signals,
+        "ups": ups,
+        "downs": 0,
+        "sample_themes": [f"sample {country} A", f"sample {country} B"],
+    }
+
+
+def test_trend_gap_analyzer_priority_country_ec_preferred(client, auth):
+    """Golden case #1: Ecuador en missing_in es priorizado (founder es EC)."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze", headers=auth,
+        json={
+            "idea_summary": "Fintech SaaS para PYMEs",
+            "validated_in": [_golden_validated("Estados Unidos")],
+            "missing_in": ["Argentina", "Ecuador", "Chile"],
+            "opportunity_score": 0.7,
+        },
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["priority_country"] == "Ecuador"
+    assert data["mock_mode"] is True
+    assert "Ecuador" in data["priority_rationale"]
+
+
+def test_trend_gap_analyzer_priority_country_co_when_no_ec(client, auth):
+    """Golden case #2: Colombia es el segundo en EC_PRIORITY si no hay EC."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze", headers=auth,
+        json={
+            "idea_summary": "Edtech adultos mayores",
+            "validated_in": [_golden_validated("Estados Unidos")],
+            "missing_in": ["Argentina", "Colombia", "Chile"],
+            "opportunity_score": 0.6,
+        },
+    )
+    data = r.json()
+    assert data["priority_country"] == "Colombia"
+
+
+def test_trend_gap_analyzer_priority_fallback_first_missing(client, auth):
+    """Golden case #3: ninguno de EC_PRIORITY presente → primer missing."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze", headers=auth,
+        json={
+            "idea_summary": "Logistics urbana",
+            "validated_in": [_golden_validated("Estados Unidos")],
+            "missing_in": ["Brasil", "Uruguay", "Panamá"],
+            "opportunity_score": 0.5,
+        },
+    )
+    data = r.json()
+    assert data["priority_country"] == "Brasil"
+
+
+def test_trend_gap_analyzer_confidence_low_with_1_validated(client, auth):
+    """Golden case #4: 1 país validado → confidence ≤ 0.6 (poco patrón)."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze", headers=auth,
+        json={
+            "idea_summary": "Healthtech remoto",
+            "validated_in": [_golden_validated("Estados Unidos")],
+            "missing_in": ["Ecuador", "Colombia"],
+            "opportunity_score": 0.4,
+        },
+    )
+    data = r.json()
+    assert data["confidence"] <= 0.6
+
+
+def test_trend_gap_analyzer_confidence_medium_with_2_validated(client, auth):
+    """Golden case #5: 2 países validados → confidence ~ 0.6-0.7."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze", headers=auth,
+        json={
+            "idea_summary": "Insurtech PYMEs",
+            "validated_in": [
+                _golden_validated("Estados Unidos"),
+                _golden_validated("España"),
+            ],
+            "missing_in": ["Ecuador"],
+            "opportunity_score": 0.65,
+        },
+    )
+    data = r.json()
+    assert 0.55 <= data["confidence"] <= 0.75
+
+
+def test_trend_gap_analyzer_confidence_high_with_3plus_validated(client, auth):
+    """Golden case #6: 3+ países validados → confidence ~ 0.75-0.85."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze", headers=auth,
+        json={
+            "idea_summary": "Marketplace freelancers",
+            "validated_in": [
+                _golden_validated("Estados Unidos"),
+                _golden_validated("Brasil"),
+                _golden_validated("México"),
+            ],
+            "missing_in": ["Ecuador", "Perú"],
+            "opportunity_score": 0.85,
+        },
+    )
+    data = r.json()
+    assert data["confidence"] >= 0.7
+    assert data["confidence"] < 0.9  # nunca pasamos de 0.9 (regla del prompt)
+
+
+def test_trend_gap_analyzer_go_to_market_has_3_items(client, auth):
+    """Golden case #7: go_to_market debe tener 2-3 hipótesis."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze", headers=auth,
+        json={
+            "idea_summary": "Proptech alquileres",
+            "validated_in": [_golden_validated("Estados Unidos")],
+            "missing_in": ["Ecuador"],
+            "opportunity_score": 0.6,
+        },
+    )
+    data = r.json()
+    assert 2 <= len(data["go_to_market"]) <= 5
+
+
+def test_trend_gap_analyzer_risks_per_country_includes_priority(client, auth):
+    """Golden case #8: risks_per_country contiene al menos el priority_country."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze", headers=auth,
+        json={
+            "idea_summary": "Cleantech residuos",
+            "validated_in": [_golden_validated("Estados Unidos")],
+            "missing_in": ["Ecuador", "México"],
+            "opportunity_score": 0.5,
+        },
+    )
+    data = r.json()
+    assert data["priority_country"] in data["risks_per_country"]
+
+
+def test_trend_gap_analyzer_empty_missing_returns_zero_confidence(client, auth):
+    """Golden case #9: si missing_in está vacío, retorna 422 (Pydantic
+    valida min_length=1)."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze", headers=auth,
+        json={
+            "idea_summary": "Test",
+            "validated_in": [_golden_validated("USA")],
+            "missing_in": [],
+            "opportunity_score": 0.5,
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_trend_gap_analyzer_empty_validated_returns_422(client, auth):
+    """Golden case #10: validated_in vacío rechazado por Pydantic min_length=1."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze", headers=auth,
+        json={
+            "idea_summary": "Test",
+            "validated_in": [],
+            "missing_in": ["Ecuador"],
+            "opportunity_score": 0.5,
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_trend_gap_analyzer_rejects_empty_idea_summary(client, auth):
+    """Golden case #11: idea_summary requiere min_length=1."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze", headers=auth,
+        json={
+            "idea_summary": "",
+            "validated_in": [_golden_validated("USA")],
+            "missing_in": ["Ecuador"],
+            "opportunity_score": 0.5,
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_trend_gap_analyzer_requires_auth(client):
+    """Golden case #12: requiere Bearer token."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze",
+        json={
+            "idea_summary": "x",
+            "validated_in": [_golden_validated("USA")],
+            "missing_in": ["Ecuador"],
+        },
+    )
+    assert r.status_code == 401
+
+
+def test_trend_gap_analyzer_returns_spanish_in_mock(client, auth):
+    """Golden case #13 (bonus): mock devuelve español neutro."""
+    r = client.post(
+        "/api/v1/trend-gaps/analyze", headers=auth,
+        json={
+            "idea_summary": "Test",
+            "validated_in": [_golden_validated("USA")],
+            "missing_in": ["Ecuador"],
+            "opportunity_score": 0.6,
+        },
+    )
+    data = r.json()
+    # Confirmamos que es mock y tiene caracteres españoles
+    assert data["mock_mode"] is True
+    full_text = (
+        data["priority_rationale"] + data["timing_hypothesis"]
+        + data["adoption_pattern"] + " ".join(data["go_to_market"])
+        + data["reasoning"]
+    )
+    assert any(ch in full_text for ch in "áéíóúñ"), "no se detectaron acentos españoles"
+
+
 def test_google_trends_supports_common_latam_geos(client, auth):
     """Verificar que los 10 geos LATAM más relevantes pasan validación."""
     for geo in ["EC", "MX", "CO", "PE", "CL", "AR", "BR", "ES", "US", "UY"]:

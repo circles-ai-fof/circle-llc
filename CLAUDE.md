@@ -72,7 +72,11 @@ circle-llc/
 | M4.9 | Multi-select + bulk feedback / bulk delete por IDs | — |
 | M4.10 | Overview ejecutivo con datos reales (replace mockData) | — |
 | M4.11 | Cross-country trend gap detector (first-mover gaps) | ADR-022 |
+| M4.12 | SEC EDGAR fetcher Phase 1 (filings públicas US) | ADR-022 |
 | M4.13 | Eventos / Ferias como nuevo source kind | ADR-022 |
+| M4.14 | Google Trends RSS por país (22 países LATAM+EU+US) | ADR-022 |
+| M4.15 | Niche-en-gigante detector Phase 1 (heurístico) | ADR-022 |
+| **M5.0** | **TrendGapAnalyzer — primer agente experimental (8º agente)** | **ADR-023** |
 
 ## Cazador autónomo — 9 source kinds
 
