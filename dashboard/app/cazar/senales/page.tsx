@@ -51,6 +51,20 @@ type SignalAnalysis = {
   reasoning: string;
 };
 
+// M5.7 — SleeperCompanyDetector response (M5.4 agente)
+type SleeperResult = {
+  sector_summary: string;
+  leader_candidate: string;
+  sleeper_candidates: Array<{ company: string; thesis: string }>;
+  comparison_signals: string[];
+  threat_assessment: string;
+  investment_thesis: string;
+  confidence: number;
+  reasoning: string;
+  cost_usd_estimated: number;
+  mock_mode: boolean;
+};
+
 // M5.6 — shape común de respuestas de agentes M5.x (campos opcionales según kind)
 type AgentAnalysis = {
   _kind: string;  // tag local para saber qué agente respondió
@@ -177,6 +191,75 @@ export default function SenalesPage() {
   // M5.6 — análisis kind-specific (event_scorer, arbitrage_eval)
   const [agentAnalyzing, setAgentAnalyzing] = useState<number | null>(null);
   const [agentResults, setAgentResults] = useState<Record<number, AgentAnalysis>>({});
+  // M5.7 — SleeperCompanyDetector (multi-select sec_edgar)
+  const [sleeperAnalyzing, setSleeperAnalyzing] = useState<boolean>(false);
+  const [sleeperResult, setSleeperResult] = useState<SleeperResult | null>(null);
+
+  // Parsea un signal de sec_edgar en {name, cik, filing}
+  const parseSecEdgar = (s: Signal): { name: string; cik: string; filing: { form: string; date: string } } | null => {
+    // theme shape: "{company_name} — {form} filed {date}"
+    const m = s.theme.match(/^(.+?)\s*—\s*(\S+)\s+filed\s+(\S+)/);
+    if (!m) return null;
+    const [, name, form, date] = m;
+    // CIK from URL: ".../data/{int_cik}/{accession}/..."
+    let cik = "";
+    if (s.evidence_urls.length > 0) {
+      const urlMatch = s.evidence_urls[0].match(/\/data\/(\d+)\//);
+      if (urlMatch) cik = urlMatch[1];
+    }
+    return { name: name.trim(), cik, filing: { form, date } };
+  };
+
+  // Agrupa selected signals por compañía (CIK o nombre) y arma el payload
+  const buildCompaniesPayload = (signalIds: Set<number>): Array<{ name: string; cik: string; filings: Array<{ form: string; date: string }> }> => {
+    const grouped: Record<string, { name: string; cik: string; filings: Array<{ form: string; date: string }> }> = {};
+    for (const s of signals) {
+      if (!signalIds.has(s.id)) continue;
+      if (s.source_kind !== "sec_edgar") continue;
+      const parsed = parseSecEdgar(s);
+      if (!parsed) continue;
+      const key = parsed.cik || parsed.name;
+      if (!grouped[key]) {
+        grouped[key] = { name: parsed.name, cik: parsed.cik, filings: [] };
+      }
+      grouped[key].filings.push(parsed.filing);
+    }
+    return Object.values(grouped);
+  };
+
+  // Llama al endpoint sleeper-companies/detect con las selected signals
+  const detectSleepers = async () => {
+    if (sleeperAnalyzing) return;
+    const companies = buildCompaniesPayload(selectedSignals);
+    if (companies.length < 1) {
+      alert("No pude extraer compañías de las señales seleccionadas. Asegúrate de seleccionar señales de tipo SEC EDGAR.");
+      return;
+    }
+    setSleeperAnalyzing(true);
+    try {
+      const r = await authFetch("/api/v1/sleeper-companies/detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companies }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data: SleeperResult = await r.json();
+      setSleeperResult(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSleeperAnalyzing(false);
+    }
+  };
+
+  // ¿Todos los seleccionados son sec_edgar? (gate del botón en la sticky toolbar)
+  const allSelectedAreSecEdgar = (() => {
+    if (selectedSignals.size < 2) return false;
+    for (const s of signals) {
+      if (selectedSignals.has(s.id) && s.source_kind !== "sec_edgar") return false;
+    }
+    return true;
+  })();
 
   // Llama al agente apropiado según el source_kind de la señal
   const analyzeWithAgent = async (signalId: number, s: Signal) => {
@@ -1302,6 +1385,23 @@ export default function SenalesPage() {
           >
             {bulkActioning ? "Procesando…" : "🗑️ Borrar seleccionadas"}
           </button>
+          {/* M5.7 — Botón contextual: solo si todos los seleccionados son sec_edgar */}
+          {allSelectedAreSecEdgar && (
+            <button
+              onClick={detectSleepers}
+              disabled={sleeperAnalyzing}
+              title="SleeperCompanyDetector (M5.4 experimental): analiza el grupo de empresas y detecta sleepers — second-best con momentum. ~$0.010"
+              style={{
+                padding: "6px 12px", background: "transparent",
+                color: sleeperAnalyzing ? "#64748b" : "#A78BFA",
+                border: `1px solid ${sleeperAnalyzing ? "#1e293b" : "#A78BFA"}`,
+                borderRadius: 6, fontSize: 12, fontWeight: 600,
+                cursor: sleeperAnalyzing ? "wait" : "pointer",
+              }}
+            >
+              {sleeperAnalyzing ? "Analizando…" : `🏛️ Detectar sleepers (${selectedSignals.size})`}
+            </button>
+          )}
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             {selectedSignals.size < visibleSignals.length && (
               <button
@@ -1325,6 +1425,79 @@ export default function SenalesPage() {
             >
               Deseleccionar
             </button>
+          </div>
+        </section>
+      )}
+
+      {/* M5.7 — Panel de resultado de SleeperCompanyDetector */}
+      {sleeperResult && (
+        <section
+          style={{
+            marginBottom: 14,
+            padding: 14,
+            background: "#0F1525",
+            border: "1px solid rgba(167,139,250,0.5)",
+            borderRadius: 12,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ color: "#A78BFA", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              🏛️ SleeperCompanyDetector (M5.4 experimental)
+            </span>
+            {sleeperResult.mock_mode && (
+              <span style={{ padding: "1px 6px", background: "rgba(255,184,0,0.1)", color: "#FFB800", borderRadius: 3, fontSize: 9, fontWeight: 600 }}>
+                DEMO
+              </span>
+            )}
+            <span style={{ marginLeft: "auto", color: "#94a3b8", fontSize: 11, fontFamily: "monospace" }}>
+              confianza {(sleeperResult.confidence * 100).toFixed(0)}%
+            </span>
+            <button
+              onClick={() => setSleeperResult(null)}
+              title="Cerrar el panel"
+              style={{
+                padding: "2px 8px", background: "transparent",
+                color: "#64748b", border: "1px solid #1e293b",
+                borderRadius: 4, fontSize: 11, cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+          <div style={{ display: "grid", gap: 8, fontSize: 12, lineHeight: 1.5 }}>
+            <div><span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>🏢 SECTOR:</span><span style={{ color: "#cbd5e1" }}>{sleeperResult.sector_summary}</span></div>
+            <div><span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>👑 LÍDER:</span><strong style={{ color: "#FFB800" }}>{sleeperResult.leader_candidate}</strong></div>
+            {sleeperResult.sleeper_candidates.length > 0 && (
+              <div>
+                <div style={{ color: "#A78BFA", fontWeight: 700, marginBottom: 4 }}>🥈 SLEEPERS:</div>
+                {sleeperResult.sleeper_candidates.map((sc, i) => (
+                  <div key={i} style={{ marginBottom: 4, color: "#cbd5e1" }}>
+                    <strong style={{ color: "#00E5A0" }}>{sc.company}</strong>
+                    <div style={{ marginLeft: 12, color: "#94a3b8", fontStyle: "italic", marginTop: 2 }}>
+                      ↳ {sc.thesis}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {sleeperResult.comparison_signals.length > 0 && (
+              <div>
+                <div style={{ color: "#A78BFA", fontWeight: 700, marginBottom: 3 }}>📊 SEÑALES DE COMPARACIÓN:</div>
+                <ul style={{ margin: 0, paddingLeft: 18, color: "#cbd5e1" }}>
+                  {sleeperResult.comparison_signals.map((cs, i) => <li key={i}>{cs}</li>)}
+                </ul>
+              </div>
+            )}
+            <div><span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>⚔️ AMENAZA:</span><span style={{ color: "#cbd5e1" }}>{sleeperResult.threat_assessment}</span></div>
+            <div><span style={{ color: "#A78BFA", fontWeight: 700, marginRight: 6 }}>💰 TESIS DE INVERSIÓN:</span><span style={{ color: "#cbd5e1" }}>{sleeperResult.investment_thesis}</span></div>
+            {sleeperResult.reasoning && (
+              <div style={{ marginTop: 4, paddingTop: 6, borderTop: "1px solid #1e293b", color: "#94a3b8", fontSize: 11, fontStyle: "italic" }}>
+                {sleeperResult.reasoning}
+              </div>
+            )}
+            <div style={{ color: "#64748b", fontSize: 10, fontFamily: "monospace" }}>
+              costo análisis: ${sleeperResult.cost_usd_estimated.toFixed(4)}
+            </div>
           </div>
         </section>
       )}
