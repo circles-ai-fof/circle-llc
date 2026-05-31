@@ -5,7 +5,7 @@ import { authFetch } from "@/lib/auth";
 
 /**
  * M7.0 — Cleanup pass: esta página ahora consume el endpoint real
- * /api/v1/admin/status en vez del legacy mockAgents.
+ * /api/v1/admin/status (mockData.ts eliminado en M7.8).
  *
  * Muestra los 13 agentes con su status + version + sprint origen.
  */

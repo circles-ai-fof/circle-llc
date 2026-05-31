@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import VerdictBadge from "./VerdictBadge";
-import type { Verdict } from "@/lib/mockData";
+import type { Verdict } from "@/types/run";
 
 interface RunResult {
   run_id: string;

@@ -1,4 +1,4 @@
-import type { Verdict } from "@/lib/mockData";
+import type { Verdict } from "@/types/run";
 
 interface VerdictBadgeProps {
   verdict: Verdict;

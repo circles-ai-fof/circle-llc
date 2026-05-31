@@ -7,7 +7,7 @@ import VerdictBadge from "@/components/VerdictBadge";
 import RunForm from "@/components/RunForm";
 
 /**
- * M4.10 — Overview ejecutivo con datos REALES del API (antes usaba mockData).
+ * M4.10 — Overview ejecutivo con datos REALES del API.
  *
  * Pega los endpoints:
  *  - GET /api/v1/stats               (KPI cards)
@@ -15,8 +15,7 @@ import RunForm from "@/components/RunForm";
  *  - GET /api/v1/signals/stats-by-type (mini distribución por tipo)
  *
  * Si el API falla, mostramos un banner amigable y un fallback de "0 runs".
- * NO usamos mockData en producción — esa carpeta queda como referencia
- * histórica para tests/storybook.
+ * Todos los datos vienen del backend. mockData.ts eliminado en M7.8.
  */
 
 type Stats = {

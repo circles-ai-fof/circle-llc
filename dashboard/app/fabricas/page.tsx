@@ -7,7 +7,7 @@ import VerdictBadge from "@/components/VerdictBadge";
 
 /**
  * M7.0 — Cleanup pass: esta página ahora consume el endpoint real
- * /api/v1/runs en vez del legacy mockRuns.
+ * /api/v1/runs (mockData.ts eliminado en M7.8).
  */
 
 type RunItem = {

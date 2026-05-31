@@ -1,4 +1,4 @@
-import type { Run } from "@/lib/mockData";
+import type { Run } from "@/types/run";
 import VerdictBadge from "./VerdictBadge";
 
 interface RunsTableProps {
