@@ -132,6 +132,19 @@ curl -X POST http://localhost:8002/api/v1/sources/scan \
 El script es **idempotente** — re-ejecutarlo no duplica fuentes. Soporta
 `--dry-run` para preview sin tocar nada.
 
+Adicionalmente, para poblar `/fabricas` y la home con runs ejecutados:
+
+```bash
+# Ejecuta 3 runs reales del workflow (cuesta ~$0.18 en LLM si live mode)
+BEARER_TOKEN=$TOKEN python scripts/seed-example-runs.py
+
+# O preview de los topics sin ejecutar
+python scripts/seed-example-runs.py --dry-run --count 5
+```
+
+Cada run produce un `pass`/`kill`/`iterate` verdict con el `EvidenceGateWorkflow`
+(7 agentes) y queda persistido para mostrar en el dashboard.
+
 ## Arquitectura
 
 ```
