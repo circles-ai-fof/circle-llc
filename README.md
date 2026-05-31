@@ -193,6 +193,8 @@ Filosofía Reganti (AI Builder's Handbook 2026):
 | `orchestrator/rulebook.md` | Las 29 reglas del rulebook con su rationale |
 | `orchestrator/agents/SCOPES.md` | Scope exclusivo de cada agente (anti-overlap) |
 | `orchestrator/decisions/ADR-XXX.md` | 27 ADRs documentando cada decisión grande |
+| `docs/architecture.md` | Diagrama del sistema completo con flujos del Cazador y EvidenceGateWorkflow |
+| `docs/openapi.json` | Spec OpenAPI 3.1.0 (63 endpoints, 112 schemas) auto-regenerable con `make openapi` |
 
 ## Roadmap
 
@@ -227,6 +229,9 @@ Closed-beta — el `ALLOWED_EMAILS` del `.env` controla quién puede loguear al 
 1. Add the email to `ALLOWED_EMAILS` (CSV) en el `.env` del backend deployed
 2. Reiniciar backend para recargar la config
 3. Compartir [https://dashboard.circles-ai.ai/login](https://dashboard.circles-ai.ai/login)
+
+Para colaborar con código: ver **[CONTRIBUTING.md](CONTRIBUTING.md)** —
+incluye el patrón paso a paso para añadir agentes y source kinds nuevos.
 
 ## Licencia
 
