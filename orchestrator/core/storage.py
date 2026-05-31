@@ -151,6 +151,24 @@ CREATE TABLE IF NOT EXISTS autonomy (
     updated_at   INTEGER NOT NULL
 );
 INSERT OR IGNORE INTO autonomy(id, level, updated_at) VALUES(1, 'manual', strftime('%s','now'));
+
+-- M7.10 / Performance — indexes para queries hot path sobre columnas que
+-- existen en la CREATE TABLE original. Los indexes sobre columnas añadidas
+-- por _migrate() (content_type, language, feedback) se crean dentro del
+-- propio _migrate() después de la ALTER TABLE.
+CREATE INDEX IF NOT EXISTS idx_signals_created_at ON signals(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_signals_score ON signals(score DESC);
+CREATE INDEX IF NOT EXISTS idx_signals_source_kind ON signals(source_kind);
+CREATE INDEX IF NOT EXISTS idx_signals_source_id ON signals(source_id);
+CREATE INDEX IF NOT EXISTS idx_signals_promoted ON signals(promoted_run_id);
+
+CREATE INDEX IF NOT EXISTS idx_gate_runs_created ON gate_runs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_gate_runs_review ON gate_runs(needs_human_review, has_override);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_sources_active ON sources(active, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_leads_slug_ts ON leads(slug, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_links_log_status ON links_log(status, created_at DESC);
 """
 
 # Singleton path; resolved at first import after env load
@@ -243,6 +261,32 @@ def _migrate(conn: sqlite3.Connection) -> None:
             logger.info("storage: migrated signals.item_titles_json column")
         except sqlite3.OperationalError as e:
             logger.warning("storage: migration item_titles_json failed: %s", e)
+
+    # M7.10 — Indexes para columnas añadidas por migration. Si las columnas
+    # existen en este punto (las ALTER TABLE arriba ya pasaron), creamos el
+    # index. Idempotente vía IF NOT EXISTS.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
+    for col_name, idx_name in [
+        ("content_type", "idx_signals_content_type"),
+        ("language", "idx_signals_language"),
+        ("feedback", "idx_signals_feedback"),
+        ("trend_score", "idx_signals_trend_created"),
+    ]:
+        if col_name not in cols:
+            continue
+        try:
+            if col_name == "trend_score":
+                # Compuesto: trend_score + score + created_at (covering)
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS "
+                    f"{idx_name} ON signals(trend_score DESC, score DESC, created_at DESC)"
+                )
+            else:
+                conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS {idx_name} ON signals({col_name})"
+                )
+        except sqlite3.OperationalError as e:
+            logger.warning("storage: index %s failed: %s", idx_name, e)
 
 
 @contextmanager
