@@ -2945,6 +2945,88 @@ def test_consensus_handles_special_characters_in_text(client, auth):
     assert r.status_code == 200
 
 
+# ---------------------------------------------------------------------------
+# M7.0 — Admin Status endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_admin_status_returns_full_shape(client, auth):
+    """El endpoint devuelve la estructura completa con agentes, env_checks y crons."""
+    r = client.get("/api/v1/admin/status", headers=auth)
+    assert r.status_code == 200
+    data = r.json()
+    assert "mode" in data
+    assert data["mode"] in ("live", "mock")
+    assert "agents" in data and isinstance(data["agents"], list)
+    assert "env_checks" in data and isinstance(data["env_checks"], list)
+    assert "crons" in data and isinstance(data["crons"], list)
+
+
+def test_admin_status_lists_all_13_agents(client, auth):
+    """Los 13 agentes (7 workflow + 6 on-demand) deben aparecer."""
+    r = client.get("/api/v1/admin/status", headers=auth)
+    agents = r.json()["agents"]
+    names = {a["name"] for a in agents}
+    expected_workflow = {
+        "idea_hunter", "idea_enricher", "idea_maturer",
+        "market_validator", "landing_generator", "gate_decider",
+        "source_scanner",
+    }
+    expected_ondemand = {
+        "trend_gap_analyzer", "niche_scout", "event_relevance_scorer",
+        "sleeper_company_detector", "product_arbitrage_evaluator",
+        "multi_agent_consensus",
+    }
+    assert expected_workflow.issubset(names)
+    assert expected_ondemand.issubset(names)
+    assert len(agents) >= 13
+
+
+def test_admin_status_secret_vars_no_masked_value(client, auth, monkeypatch):
+    """Secret vars (ANTHROPIC_API_KEY etc.) NUNCA exponen masked_value."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret-12345")
+    r = client.get("/api/v1/admin/status", headers=auth)
+    data = r.json()
+    api_key_check = next(
+        c for c in data["env_checks"] if c["name"] == "ANTHROPIC_API_KEY"
+    )
+    assert api_key_check["set"] is True
+    assert api_key_check["masked_value"] is None  # NO leakea el valor
+
+
+def test_admin_status_safe_vars_show_masked_value(client, auth, monkeypatch):
+    """Safe vars (SMTP_HOST etc., no-secret) SÍ muestran preview de 32 chars."""
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    r = client.get("/api/v1/admin/status", headers=auth)
+    data = r.json()
+    smtp_check = next(
+        c for c in data["env_checks"] if c["name"] == "SMTP_HOST"
+    )
+    assert smtp_check["set"] is True
+    assert smtp_check["masked_value"] == "smtp.gmail.com"
+
+
+def test_admin_status_crons_present(client, auth):
+    """Dos crons configurados: auto-scan + weekly-digest."""
+    r = client.get("/api/v1/admin/status", headers=auth)
+    crons = r.json()["crons"]
+    assert len(crons) >= 2
+    names = {c["name"] for c in crons}
+    assert "Hunter Auto-Scan" in names
+    assert "Weekly Digest" in names
+
+
+def test_admin_status_experimental_count_zero(client, auth):
+    """Tras M6.0b, ningún agente está en estado experimental."""
+    r = client.get("/api/v1/admin/status", headers=auth)
+    experimental = [a for a in r.json()["agents"] if a["experimental"]]
+    assert len(experimental) == 0
+
+
+def test_admin_status_requires_auth(client):
+    assert client.get("/api/v1/admin/status").status_code == 401
+
+
 def test_consensus_reasoning_mentions_perspectives_count(client, auth):
     """Case #30: reasoning del mock menciona la cantidad de perspectives
     analizadas (signal de transparencia interna)."""

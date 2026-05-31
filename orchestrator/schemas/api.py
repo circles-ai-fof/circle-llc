@@ -521,6 +521,43 @@ class SignalsBulkFeedbackResponse(BaseModel):
     skipped_missing: int = Field(description="IDs que no existen en la base")
 
 
+# M7.0 — Admin Status (diagnóstico interno del sistema)
+class AdminAgentStatus(BaseModel):
+    name: str
+    version: str
+    status: str          # "active(workflow)" | "active(on-demand)" | "experimental" | "deferred"
+    experimental: bool
+    sprint_origin: str   # ej "M5.0/M5.1"
+
+
+class AdminEnvCheck(BaseModel):
+    name: str
+    set: bool
+    masked_value: Optional[str] = None  # primeros 8 chars si set, None si no
+
+
+class AdminCronStatus(BaseModel):
+    name: str
+    schedule: str
+    secret_keys_required: List[str]
+    secret_keys_present: List[bool]
+
+
+class AdminStatusResponse(BaseModel):
+    mode: str                              # "live" | "mock"
+    persistent_storage: bool
+    db_path: Optional[str]
+    cors_origins_count: int
+    allowed_emails_count: int
+    sources_total: int
+    sources_active: int
+    signals_total: int
+    runs_total: int
+    agents: List[AdminAgentStatus]
+    env_checks: List[AdminEnvCheck]
+    crons: List[AdminCronStatus]
+
+
 # M6.0 — MultiAgentConsensus
 class ConsensusPerspective(BaseModel):
     source: str = Field(min_length=1, max_length=100)

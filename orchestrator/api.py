@@ -88,6 +88,7 @@ from .schemas.api import (
     DigestData,
     DigestSendResponse,
     ConsensusRequest, ConsensusResponse,
+    AdminStatusResponse, AdminAgentStatus, AdminEnvCheck, AdminCronStatus,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2360,6 +2361,149 @@ def get_digest_text(request: Request, window_days: int = 7):
     data = build_digest_data(window_days=window_days)
     text = render_digest_text(data)
     return PlainTextResponse(content=text, status_code=200)
+
+
+@app.get(
+    "/api/v1/admin/status",
+    response_model=AdminStatusResponse,
+    summary="M7.0 — Estado completo del sistema (agentes, crons, env vars)",
+    tags=["meta"],
+)
+def admin_status(request: Request) -> AdminStatusResponse:
+    """Snapshot interno del sistema para diagnóstico operacional.
+
+    Auth requerido. Solo revela existencia de env vars, NO sus valores
+    (solo primeros 8 chars de SMTP_HOST y similares no-secretos).
+    Las API keys / passwords se muestran solo como "set: true" sin masked_value.
+    """
+    _require_user(request)
+    from .core.storage import signals_store, sources_store, runs_store, _db_path  # type: ignore[attr-defined]
+
+    # ----- Agentes registrados (inspección dinámica) -----
+    agents_meta = [
+        # Workflow (los 7 del EvidenceGateWorkflow)
+        ("idea_hunter", "n/a", "active(workflow)", False, "M1"),
+        ("idea_enricher", "n/a", "active(workflow)", False, "M3"),
+        ("idea_maturer", "n/a", "active(workflow)", False, "M1"),
+        ("market_validator", "n/a", "active(workflow)", False, "M1"),
+        ("landing_generator", "n/a", "active(workflow)", False, "M1"),
+        ("gate_decider", "n/a", "active(workflow)", False, "M1"),
+        ("source_scanner", "n/a", "active(workflow)", False, "M3"),
+    ]
+    # On-demand agents: introspect from clases
+    for module_name, agent_cls_name in [
+        ("trend_gap_analyzer", "TrendGapAnalyzerAgent"),
+        ("niche_scout", "NicheScoutAgent"),
+        ("event_relevance_scorer", "EventRelevanceScorerAgent"),
+        ("sleeper_company_detector", "SleeperCompanyDetectorAgent"),
+        ("product_arbitrage_evaluator", "ProductArbitrageEvaluatorAgent"),
+        ("multi_agent_consensus", "MultiAgentConsensusAgent"),
+    ]:
+        try:
+            mod = __import__(f"orchestrator.agents.{module_name}", fromlist=[agent_cls_name])
+            cls = getattr(mod, agent_cls_name)
+            experimental = getattr(cls, "EXPERIMENTAL", False)
+            version = getattr(cls, "AGENT_VERSION", "n/a")
+            status = "experimental" if experimental else "active(on-demand)"
+            # Sprint origen: heurística por nombre
+            sprint_map = {
+                "trend_gap_analyzer": "M5.0/M5.1",
+                "niche_scout": "M5.2/M5.8",
+                "event_relevance_scorer": "M5.3/M5.9",
+                "sleeper_company_detector": "M5.4/M5.10",
+                "product_arbitrage_evaluator": "M5.5/M5.11",
+                "multi_agent_consensus": "M6.0/M6.0b",
+            }
+            agents_meta.append((
+                module_name, version, status, experimental,
+                sprint_map.get(module_name, "?"),
+            ))
+        except Exception:  # noqa: BLE001
+            continue
+
+    agents = [
+        AdminAgentStatus(
+            name=name, version=version, status=status,
+            experimental=experimental, sprint_origin=sprint,
+        )
+        for name, version, status, experimental, sprint in agents_meta
+    ]
+
+    # ----- Env vars relevantes -----
+    SECRET_VARS = {
+        "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY",
+        "SMTP_PASSWORD", "GATE_RUN_SECRET",
+    }
+    SAFE_VARS = {  # estas sí mostramos masked_value
+        "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "DIGEST_FROM",
+        "DATABASE_PATH", "DASHBOARD_URL",
+    }
+    env_check_names = list(SECRET_VARS) + list(SAFE_VARS) + [
+        "ALLOWED_EMAILS", "DIGEST_TO", "ENSEMBLE_GATE_ENABLED",
+        "IDEA_ENRICHER_RESEARCH", "FACT_CHECK_ENABLED",
+    ]
+    env_checks: List[AdminEnvCheck] = []
+    for name in env_check_names:
+        v = os.getenv(name, "")
+        if not v:
+            env_checks.append(AdminEnvCheck(name=name, set=False, masked_value=None))
+        elif name in SECRET_VARS:
+            env_checks.append(AdminEnvCheck(name=name, set=True, masked_value=None))
+        else:
+            # Mostrar primeros 32 chars como hint (config, no secret)
+            env_checks.append(AdminEnvCheck(
+                name=name, set=True, masked_value=v[:32] + ("…" if len(v) > 32 else ""),
+            ))
+
+    # ----- Crons configurados -----
+    crons = [
+        AdminCronStatus(
+            name="Hunter Auto-Scan",
+            schedule="0 */6 * * * (cada 6h, minuto 17)",
+            secret_keys_required=["AUTO_SCAN_API_URL", "AUTO_SCAN_TOKEN"],
+            secret_keys_present=[bool(os.getenv("AUTO_SCAN_API_URL")), bool(os.getenv("AUTO_SCAN_TOKEN"))],
+        ),
+        AdminCronStatus(
+            name="Weekly Digest",
+            schedule="0 12 * * 1 (lunes 12 UTC)",
+            secret_keys_required=[
+                "AUTO_SCAN_API_URL", "AUTO_SCAN_TOKEN",
+                "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD",
+                "DIGEST_FROM", "DIGEST_TO",
+            ],
+            secret_keys_present=[
+                bool(os.getenv("AUTO_SCAN_API_URL")),
+                bool(os.getenv("AUTO_SCAN_TOKEN")),
+                bool(os.getenv("SMTP_HOST")),
+                bool(os.getenv("SMTP_USER")),
+                bool(os.getenv("SMTP_PASSWORD")),
+                bool(os.getenv("DIGEST_FROM")),
+                bool(os.getenv("DIGEST_TO")),
+            ],
+        ),
+    ]
+
+    # ----- Stats agregados (cheap) -----
+    all_sources = sources_store.list()
+    all_signals = signals_store.list(limit=10_000, min_score=0.0)
+    all_runs = list(runs_store.values())
+
+    return AdminStatusResponse(
+        mode="live" if not _workflow._mock_mode else "mock",
+        persistent_storage=bool(_db_path),
+        db_path=_db_path,
+        cors_origins_count=len(_DEFAULT_ALLOWED_ORIGINS + _extra_origins),
+        allowed_emails_count=len([
+            e for e in os.getenv("ALLOWED_EMAILS", "").split(",") if e.strip()
+        ]),
+        sources_total=len(all_sources),
+        sources_active=sum(1 for s in all_sources if s.get("active")),
+        signals_total=len(all_signals),
+        runs_total=len(all_runs),
+        agents=agents,
+        env_checks=env_checks,
+        crons=crons,
+    )
 
 
 @app.post(
