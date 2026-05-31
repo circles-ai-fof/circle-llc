@@ -3027,6 +3027,70 @@ def test_admin_status_requires_auth(client):
     assert client.get("/api/v1/admin/status").status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# M7.5 — Diagnose deploy endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_diagnose_deploy_returns_full_shape(client, auth):
+    r = client.get("/api/v1/admin/diagnose-deploy", headers=auth)
+    assert r.status_code == 200
+    data = r.json()
+    assert data["overall_status"] in ("ready", "warnings", "errors")
+    assert "error_count" in data
+    assert "warning_count" in data
+    assert isinstance(data["issues"], list)
+    assert isinstance(data["summary"], str) and data["summary"]
+
+
+def test_diagnose_deploy_flags_missing_allowed_emails(client, auth, monkeypatch):
+    """ALLOWED_EMAILS vacío es un ERROR bloqueante."""
+    monkeypatch.delenv("ALLOWED_EMAILS", raising=False)
+    r = client.get("/api/v1/admin/diagnose-deploy", headers=auth)
+    data = r.json()
+    error_issues = [i for i in data["issues"] if i["severity"] == "error"]
+    error_messages = " ".join(i["message"] for i in error_issues)
+    assert "ALLOWED_EMAILS" in error_messages
+
+
+def test_diagnose_deploy_flags_missing_anthropic_key(client, auth, monkeypatch):
+    """ANTHROPIC_API_KEY ausente → warning."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    r = client.get("/api/v1/admin/diagnose-deploy", headers=auth)
+    data = r.json()
+    warn_messages = " ".join(i["message"] for i in data["issues"] if i["severity"] == "warning")
+    assert "ANTHROPIC" in warn_messages
+
+
+def test_diagnose_deploy_smtp_partial_is_warning(client, auth, monkeypatch):
+    """SMTP parcial → warning explicito con qué falta."""
+    monkeypatch.setenv("SMTP_HOST", "smtp.gmail.com")
+    monkeypatch.setenv("SMTP_PORT", "587")
+    # otros 4 SMTP_* sin setear
+    for k in ("SMTP_USER", "SMTP_PASSWORD", "DIGEST_FROM", "DIGEST_TO"):
+        monkeypatch.delenv(k, raising=False)
+    r = client.get("/api/v1/admin/diagnose-deploy", headers=auth)
+    data = r.json()
+    smtp_issues = [i for i in data["issues"] if i["category"] == "smtp"]
+    assert any("parcialmente" in i["message"] for i in smtp_issues)
+
+
+def test_diagnose_deploy_severities_are_valid(client, auth):
+    r = client.get("/api/v1/admin/diagnose-deploy", headers=auth)
+    for issue in r.json()["issues"]:
+        assert issue["severity"] in ("error", "warning", "info")
+
+
+def test_diagnose_deploy_each_issue_has_fix_hint(client, auth):
+    r = client.get("/api/v1/admin/diagnose-deploy", headers=auth)
+    for issue in r.json()["issues"]:
+        assert issue["fix_hint"], f"Issue sin fix_hint: {issue['message']}"
+
+
+def test_diagnose_deploy_requires_auth(client):
+    assert client.get("/api/v1/admin/diagnose-deploy").status_code == 401
+
+
 def test_consensus_reasoning_mentions_perspectives_count(client, auth):
     """Case #30: reasoning del mock menciona la cantidad de perspectives
     analizadas (signal de transparencia interna)."""

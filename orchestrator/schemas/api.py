@@ -521,6 +521,22 @@ class SignalsBulkFeedbackResponse(BaseModel):
     skipped_missing: int = Field(description="IDs que no existen en la base")
 
 
+# M7.5 — Deploy diagnostic (detecta misconfig común)
+class DeployIssue(BaseModel):
+    severity: str  # "error" | "warning" | "info"
+    category: str  # "secrets" | "cors" | "smtp" | "cron" | "agents" | "storage"
+    message: str
+    fix_hint: str
+
+
+class DiagnoseDeployResponse(BaseModel):
+    overall_status: str  # "ready" | "warnings" | "errors"
+    error_count: int
+    warning_count: int
+    issues: List[DeployIssue]
+    summary: str
+
+
 # M7.0 — Admin Status (diagnóstico interno del sistema)
 class AdminAgentStatus(BaseModel):
     name: str

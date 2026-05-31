@@ -89,6 +89,7 @@ from .schemas.api import (
     DigestSendResponse,
     ConsensusRequest, ConsensusResponse,
     AdminStatusResponse, AdminAgentStatus, AdminEnvCheck, AdminCronStatus,
+    DiagnoseDeployResponse, DeployIssue,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2361,6 +2362,137 @@ def get_digest_text(request: Request, window_days: int = 7):
     data = build_digest_data(window_days=window_days)
     text = render_digest_text(data)
     return PlainTextResponse(content=text, status_code=200)
+
+
+@app.get(
+    "/api/v1/admin/diagnose-deploy",
+    response_model=DiagnoseDeployResponse,
+    summary="M7.5 — Detecta misconfig común del deploy (env vars, CORS, SMTP, cron)",
+    tags=["meta"],
+)
+def diagnose_deploy(request: Request) -> DiagnoseDeployResponse:
+    """Recorre las dimensiones críticas del setup y reporta issues:
+    - error:   bloqueante para producción
+    - warning: degradación funcional pero no falla
+    - info:    nota informativa
+    """
+    _require_user(request)
+    issues: List[DeployIssue] = []
+
+    # ----- 1. API keys de LLM (mock vs live mode) -----
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        issues.append(DeployIssue(
+            severity="warning",
+            category="secrets",
+            message="ANTHROPIC_API_KEY no está configurado — backend corre en mock_mode",
+            fix_hint="Configura ANTHROPIC_API_KEY en las env vars del backend deployed (Railway/Render).",
+        ))
+    if not os.getenv("OPENAI_API_KEY"):
+        issues.append(DeployIssue(
+            severity="warning",
+            category="secrets",
+            message="OPENAI_API_KEY no configurado — gate_decider ensemble degradado a 2 modelos",
+            fix_hint="Añadir OPENAI_API_KEY para activar ensemble vote completo.",
+        ))
+    if not os.getenv("GOOGLE_API_KEY"):
+        issues.append(DeployIssue(
+            severity="info",
+            category="secrets",
+            message="GOOGLE_API_KEY no configurado — fact-check con Gemini deshabilitado",
+            fix_hint="Opcional: añadir GOOGLE_API_KEY para fact-check cross-LLM.",
+        ))
+
+    # ----- 2. CORS / auth -----
+    allowed = os.getenv("ALLOWED_EMAILS", "").strip()
+    if not allowed:
+        issues.append(DeployIssue(
+            severity="error",
+            category="secrets",
+            message="ALLOWED_EMAILS vacío — NADIE puede loguear al dashboard",
+            fix_hint="Configura ALLOWED_EMAILS=email1@x.com,email2@x.com en env vars.",
+        ))
+    elif len([e for e in allowed.split(",") if e.strip()]) < 1:
+        issues.append(DeployIssue(
+            severity="error",
+            category="secrets",
+            message="ALLOWED_EMAILS mal-formateado",
+            fix_hint="Usa CSV: 'email1@x.com,email2@x.com'.",
+        ))
+
+    # ----- 3. Storage persistente -----
+    from .core.storage import _db_path  # type: ignore[attr-defined]
+    if not _db_path:
+        issues.append(DeployIssue(
+            severity="warning",
+            category="storage",
+            message="DATABASE_PATH no configurado — usando storage en memoria (data se pierde al reiniciar)",
+            fix_hint="En Railway: monta un Volume en /data y setea DATABASE_PATH=/data/circle.db.",
+        ))
+
+    # ----- 4. SMTP para weekly digest -----
+    smtp_required = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
+                      "DIGEST_FROM", "DIGEST_TO")
+    missing_smtp = [v for v in smtp_required if not os.getenv(v)]
+    if missing_smtp:
+        if len(missing_smtp) == len(smtp_required):
+            issues.append(DeployIssue(
+                severity="info",
+                category="smtp",
+                message="SMTP no configurado — weekly digest no se envía (cron skipea silencioso)",
+                fix_hint="Para enviar emails: configurá los 6 SMTP_* vars con Gmail App Password.",
+            ))
+        else:
+            issues.append(DeployIssue(
+                severity="warning",
+                category="smtp",
+                message=f"SMTP parcialmente configurado — faltan: {', '.join(missing_smtp)}",
+                fix_hint="Completá los SMTP_* faltantes o quitá los que están parciales.",
+            ))
+
+    # ----- 5. Cron secrets (auto-scan + weekly-digest) -----
+    auto_scan_url = os.getenv("AUTO_SCAN_API_URL")
+    auto_scan_token = os.getenv("AUTO_SCAN_TOKEN")
+    if not auto_scan_url or not auto_scan_token:
+        issues.append(DeployIssue(
+            severity="info",
+            category="cron",
+            message="AUTO_SCAN_API_URL/AUTO_SCAN_TOKEN no configurados — crons GitHub Actions saltan silencioso",
+            fix_hint="Configurá los 2 secrets en GitHub repo Settings → Secrets → Actions. "
+                     "Token: genera vía POST /api/v1/auth/login.",
+        ))
+
+    # ----- 6. Agentes lifecycle -----
+    from .agents.trend_gap_analyzer import TrendGapAnalyzerAgent
+    from .agents.multi_agent_consensus import MultiAgentConsensusAgent
+    for cls in (TrendGapAnalyzerAgent, MultiAgentConsensusAgent):
+        if getattr(cls, "EXPERIMENTAL", False):
+            issues.append(DeployIssue(
+                severity="info",
+                category="agents",
+                message=f"Agente {cls.AGENT_NAME} en estado experimental",
+                fix_hint=f"Promoción a active requiere completar 30 golden cases.",
+            ))
+
+    # ----- 7. Tally -----
+    errors = sum(1 for i in issues if i.severity == "error")
+    warnings = sum(1 for i in issues if i.severity == "warning")
+    if errors > 0:
+        status = "errors"
+        summary = f"{errors} error(es) bloqueante(s) + {warnings} warning(s). NO listo para producción."
+    elif warnings > 0:
+        status = "warnings"
+        summary = f"{warnings} warning(s) — funciona con degradación. Revisar fix_hints."
+    else:
+        status = "ready"
+        summary = "Sistema listo para producción. Sin errores ni warnings."
+
+    return DiagnoseDeployResponse(
+        overall_status=status,
+        error_count=errors,
+        warning_count=warnings,
+        issues=issues,
+        summary=summary,
+    )
 
 
 @app.get(
