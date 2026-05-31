@@ -106,8 +106,31 @@ Abre [http://localhost:3001/login](http://localhost:3001/login), meté tu email 
 ### 4. Tests
 
 ```bash
-pytest tests/ -v   # 741 tests verdes, ~40s
+pytest tests/ -v   # 751 tests verdes, ~40s
 ```
+
+### 5. Bootstrap con fuentes de ejemplo (opcional pero recomendado)
+
+Si querés ver el dashboard con actividad real desde minuto 1 sin esperar
+a configurar fuentes manualmente:
+
+```bash
+# Genera un token
+TOKEN=$(curl -s -X POST http://localhost:8002/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"YOUR@EMAIL"}' | jq -r .token)
+
+# Inserta 17 fuentes curadas (RSS, HN, Reddit, GitHub Trending, Product Hunt,
+# YouTube, Bluesky, Telegram, Lu.ma events, 2 CIKs SEC EDGAR, 4 países Google Trends)
+BEARER_TOKEN=$TOKEN python scripts/seed-example-sources.py
+
+# Dispara primer escaneo
+curl -X POST http://localhost:8002/api/v1/sources/scan \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}'
+```
+
+El script es **idempotente** — re-ejecutarlo no duplica fuentes. Soporta
+`--dry-run` para preview sin tocar nada.
 
 ## Arquitectura
 
