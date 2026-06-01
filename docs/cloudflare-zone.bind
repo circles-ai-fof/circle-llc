@@ -1,0 +1,6 @@
+;; Circle LLC — DNS records for import in Cloudflare
+;; Zone: circles-ai.ai
+;; Date: 2026-06-01
+
+dashboard.circles-ai.ai. 1 IN CNAME cname.vercel-dns.com.
+api.circles-ai.ai. 1 IN CNAME circle-llc-backend-production.up.railway.app.
