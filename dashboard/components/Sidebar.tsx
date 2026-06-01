@@ -4,9 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { authFetch } from "@/lib/auth";
+import LocaleToggle from "./LocaleToggle";
+import { useI18n } from "@/i18n/useI18n";
+import type { DictKey } from "@/i18n/dict";
 
 interface NavItem {
   label: string;
+  i18nKey?: DictKey;
   href: string;
   icon: React.ReactNode;
   // Which stats counter to show as a badge (optional)
@@ -36,7 +40,7 @@ type Stats = {
 
 const navItems: NavItem[] = [
   {
-    label: "Dashboard",
+    label: "Dashboard", i18nKey: "nav.dashboard",
     href: "/",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -46,7 +50,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Cazar idea",
+    label: "Cazar idea", i18nKey: "nav.cazar",
     href: "/cazar",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -56,7 +60,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Fuentes",
+    label: "Fuentes", i18nKey: "nav.fuentes",
     href: "/cazar/fuentes",
     badgeKey: "sources_active",
     icon: (
@@ -67,7 +71,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Señales",
+    label: "Señales", i18nKey: "nav.senales",
     href: "/cazar/senales",
     badgeKey: "signals_unmarked",
     icon: (
@@ -78,7 +82,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Oportunidades",
+    label: "Oportunidades", i18nKey: "nav.oportunidades",
     href: "/cazar/oportunidades",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -88,7 +92,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Migajas",
+    label: "Migajas", i18nKey: "nav.nichos",
     href: "/cazar/nichos",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -98,7 +102,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Analytics",
+    label: "Analytics", i18nKey: "nav.analytics",
     href: "/analytics",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -108,7 +112,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Weekly Digest",
+    label: "Weekly Digest", i18nKey: "nav.digest",
     href: "/digest",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -118,7 +122,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Bitácora",
+    label: "Bitácora", i18nKey: "nav.bitacora",
     href: "/cazar/bitacora",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -128,7 +132,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Pipeline",
+    label: "Pipeline", i18nKey: "nav.pipeline",
     href: "/pipeline",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -138,7 +142,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Fábricas",
+    label: "Fábricas", i18nKey: "nav.fabricas",
     href: "/fabricas",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -148,7 +152,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Agentes",
+    label: "Agentes", i18nKey: "nav.agentes",
     href: "/agentes",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -158,7 +162,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Revisión",
+    label: "Revisión", i18nKey: "nav.revision",
     href: "/revision",
     badgeKey: "runs_pending_review",
     icon: (
@@ -169,7 +173,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Leads",
+    label: "Leads", i18nKey: "nav.leads",
     href: "/leads",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -179,7 +183,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Intentos",
+    label: "Intentos", i18nKey: "nav.intentos",
     href: "/admin/attempts",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -189,7 +193,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Configuración",
+    label: "Configuración", i18nKey: "nav.configuracion",
     href: "/configuracion",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -200,7 +204,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Admin Status",
+    label: "Admin Status", i18nKey: "nav.admin_status",
     href: "/admin/status",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -210,7 +214,7 @@ const navItems: NavItem[] = [
     ),
   },
   {
-    label: "Deploy Check",
+    label: "Deploy Check", i18nKey: "nav.deploy_check",
     href: "/admin/diagnose-deploy",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -224,6 +228,7 @@ const navItems: NavItem[] = [
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const pathname = usePathname();
   const [stats, setStats] = useState<Stats | null>(null);
+  const { t } = useI18n();
 
   // Poll /stats every 30s — cheap aggregate, no LLM call.
   useEffect(() => {
@@ -246,7 +251,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
 
   return (
     <aside className="w-60 flex-shrink-0 flex flex-col h-full" style={{ backgroundColor: "#0B0F1A" }}>
-      {/* Logo */}
+      {/* Logo + locale toggle */}
       <div className="flex items-center gap-2 px-6 py-5 border-b border-border">
         <div className="w-8 h-8 rounded-lg flex items-center justify-center"
           style={{ background: "linear-gradient(135deg, #00D4FF 0%, #00E5A0 100%)" }}>
@@ -255,6 +260,9 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
         <span className="font-semibold text-white text-base tracking-tight">
           circles-ai<span style={{ color: "#00D4FF" }}>.</span>ai
         </span>
+        <div className="ml-auto">
+          <LocaleToggle />
+        </div>
       </div>
 
       {/* Navigation */}
@@ -281,7 +289,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
               <span className={isActive ? "text-accent" : ""} style={isActive ? { color: "#00D4FF" } : {}}>
                 {item.icon}
               </span>
-              <span className="flex-1">{item.label}</span>
+              <span className="flex-1">{item.i18nKey ? t(item.i18nKey) : item.label}</span>
               {item.badgeKey && stats && stats[item.badgeKey] > 0 && (
                 <span
                   className="px-1.5 py-0.5 rounded text-[10px] font-bold"

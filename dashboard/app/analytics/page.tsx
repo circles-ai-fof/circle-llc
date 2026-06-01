@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth";
+import { useI18n } from "@/i18n/useI18n";
 
 /**
  * M8.0 — Analytics ejecutivo.
@@ -33,6 +34,7 @@ type Analytics = {
 };
 
 export default function AnalyticsPage() {
+  const { t } = useI18n();
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,29 +61,29 @@ export default function AnalyticsPage() {
       <header style={{ marginBottom: 24, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, color: "#fff", marginBottom: 6 }}>
-            📈 Analytics
+            📈 {t("analytics.title")}
           </h1>
           <p style={{ color: "#94a3b8", fontSize: 13 }}>
-            Vista ejecutiva: signals/runs/cost por día + tops + feedback distribution.
+            {t("analytics.subtitle")}
           </p>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
-          <label style={{ color: "#94a3b8", fontSize: 12 }}>Ventana:</label>
+          <label style={{ color: "#94a3b8", fontSize: 12 }}>{t("analytics.window")}</label>
           <select
             value={windowDays}
             onChange={(e) => setWindowDays(parseInt(e.target.value, 10))}
             style={{ background: "#0F1525", color: "#cbd5e1", border: "1px solid #1e293b", borderRadius: 6, padding: "4px 8px", fontSize: 12 }}
           >
-            <option value={7}>7 días</option>
-            <option value={30}>30 días</option>
-            <option value={90}>90 días</option>
-            <option value={180}>180 días</option>
+            <option value={7}>{t("analytics.days_7")}</option>
+            <option value={30}>{t("analytics.days_30")}</option>
+            <option value={90}>{t("analytics.days_90")}</option>
+            <option value={180}>{t("analytics.days_180")}</option>
           </select>
           <button
             onClick={refresh}
             style={{ padding: "6px 14px", background: "transparent", color: "#00D4FF", border: "1px solid #00D4FF", borderRadius: 6, fontSize: 13, cursor: "pointer" }}
           >
-            ↻ Refresh
+            ↻ {t("common.refresh")}
           </button>
         </div>
       </header>
@@ -93,35 +95,31 @@ export default function AnalyticsPage() {
       )}
 
       {loading && !data && (
-        <div style={{ color: "#94a3b8", padding: 32, textAlign: "center" }}>Cargando…</div>
+        <div style={{ color: "#94a3b8", padding: 32, textAlign: "center" }}>{t("common.loading")}</div>
       )}
 
       {data && (
         <>
-          {/* KPI cards */}
           <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 24 }}>
-            <KPI label="Señales nuevas" value={data.totals.signals_in_window} accent="#00D4FF" />
-            <KPI label="Runs ejecutados" value={data.totals.runs_in_window} accent="#A78BFA" />
-            <KPI label="Pass rate" value={`${data.totals.pass_rate_pct}%`} accent="#00E5A0" />
-            <KPI label="Costo total LLM" value={`$${data.totals.cost_total_usd.toFixed(4)}`} accent="#FFB800" />
+            <KPI label={t("analytics.kpi_signals_new")} value={data.totals.signals_in_window} accent="#00D4FF" />
+            <KPI label={t("analytics.kpi_runs_executed")} value={data.totals.runs_in_window} accent="#A78BFA" />
+            <KPI label={t("analytics.kpi_pass_rate")} value={`${data.totals.pass_rate_pct}%`} accent="#00E5A0" />
+            <KPI label={t("analytics.kpi_total_cost")} value={`$${data.totals.cost_total_usd.toFixed(4)}`} accent="#FFB800" />
           </section>
 
-          {/* Time series: Signals + Runs */}
-          <Section title="📡 Señales capturadas por día">
+          <Section title={t("analytics.signals_per_day")}>
             <BarChart buckets={data.signals_per_day} color="#00D4FF" />
           </Section>
 
-          <Section title="🏭 Runs ejecutados por día">
+          <Section title={t("analytics.runs_per_day")}>
             <BarChart buckets={data.runs_per_day} color="#A78BFA" />
           </Section>
 
-          {/* Stacked verdicts */}
-          <Section title="🎯 Verdicts por día (PASS / ITERATE / KILL)">
+          <Section title={t("analytics.verdicts_per_day")}>
             <StackedVerdictChart buckets={data.verdicts_per_day} />
           </Section>
 
-          {/* Cost trend */}
-          <Section title="💰 Costo LLM por día (USD)">
+          <Section title={t("analytics.cost_per_day")}>
             <BarChart
               buckets={data.cost_per_day.map((b) => ({ date: b.date, count: b.cost_usd }))}
               color="#FFB800"
@@ -129,19 +127,17 @@ export default function AnalyticsPage() {
             />
           </Section>
 
-          {/* Two-column: top topics + top sources */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
-            <Section title="🏷️ Top topics (suggested_topic)">
+            <Section title={t("analytics.top_topics")}>
               <TopList items={data.top_topics} accent="#00D4FF" />
             </Section>
-            <Section title="📰 Top fuentes por señales">
+            <Section title={t("analytics.top_sources")}>
               <TopList items={data.top_sources} accent="#A78BFA" />
             </Section>
           </div>
 
-          {/* Feedback distribution */}
-          <Section title="👍 Distribución de feedback">
-            <FeedbackBar dist={data.feedback_distribution} />
+          <Section title={t("analytics.feedback_dist")}>
+            <FeedbackBar dist={data.feedback_distribution} unmarkedLabel={t("analytics.unmarked")} />
           </Section>
         </>
       )}
@@ -262,22 +258,22 @@ function TopList({ items, accent }: { items: TopItem[]; accent: string }) {
   );
 }
 
-function FeedbackBar({ dist }: { dist: { up: number; down: number; unmarked: number } }) {
+function FeedbackBar({ dist, unmarkedLabel }: { dist: { up: number; down: number; unmarked: number }; unmarkedLabel: string }) {
   const total = dist.up + dist.down + dist.unmarked;
   if (total === 0) {
-    return <div style={{ color: "#64748b", fontSize: 12, fontStyle: "italic" }}>Sin señales aún.</div>;
+    return <div style={{ color: "#64748b", fontSize: 12, fontStyle: "italic" }}>—</div>;
   }
   return (
     <>
       <div style={{ display: "flex", height: 16, borderRadius: 8, overflow: "hidden", border: "1px solid #1e293b" }}>
         {dist.up > 0 && <div style={{ flex: dist.up, background: "#00E5A0" }} title={`👍 ${dist.up}`} />}
         {dist.down > 0 && <div style={{ flex: dist.down, background: "#FF4444" }} title={`👎 ${dist.down}`} />}
-        {dist.unmarked > 0 && <div style={{ flex: dist.unmarked, background: "#475569" }} title={`Sin marcar ${dist.unmarked}`} />}
+        {dist.unmarked > 0 && <div style={{ flex: dist.unmarked, background: "#475569" }} title={`${unmarkedLabel} ${dist.unmarked}`} />}
       </div>
       <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 11, color: "#cbd5e1" }}>
         <span><strong style={{ color: "#00E5A0" }}>👍 {dist.up}</strong> ({((dist.up / total) * 100).toFixed(1)}%)</span>
         <span><strong style={{ color: "#FF4444" }}>👎 {dist.down}</strong> ({((dist.down / total) * 100).toFixed(1)}%)</span>
-        <span><strong style={{ color: "#94a3b8" }}>Sin marcar {dist.unmarked}</strong> ({((dist.unmarked / total) * 100).toFixed(1)}%)</span>
+        <span><strong style={{ color: "#94a3b8" }}>{unmarkedLabel} {dist.unmarked}</strong> ({((dist.unmarked / total) * 100).toFixed(1)}%)</span>
       </div>
     </>
   );
