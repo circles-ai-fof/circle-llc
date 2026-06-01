@@ -195,6 +195,9 @@ Filosofía Reganti (AI Builder's Handbook 2026):
 | `orchestrator/decisions/ADR-XXX.md` | 27 ADRs documentando cada decisión grande |
 | `docs/architecture.md` | Diagrama del sistema completo con flujos del Cazador y EvidenceGateWorkflow |
 | `docs/openapi.json` | Spec OpenAPI 3.1.0 (63 endpoints, 112 schemas) auto-regenerable con `make openapi` |
+| `CHANGELOG.md` | Historial de milestones desde M0 hasta M7.x |
+| `CONTRIBUTING.md` | Guía para colaboradores (setup + reglas + patrón de agentes) |
+| `LICENSE` | Proprietary — Circle LLC. Docs bajo CC BY 4.0 |
 
 ## Roadmap
 
@@ -235,7 +238,14 @@ incluye el patrón paso a paso para añadir agentes y source kinds nuevos.
 
 ## Licencia
 
-Propietario — Circle LLC (Wyoming USA). Closed-beta hasta M7+. Contacto: `circles.fof.ai@gmail.com`.
+Propietario — Circle LLC (Wyoming USA). Ver [`LICENSE`](LICENSE) para los términos completos:
+
+- **Código:** All Rights Reserved, closed-beta para colaboradores en `ALLOWED_EMAILS`
+- **Documentación** (`README.md`, `docs/*`, `CONTRIBUTING.md`, ADRs): CC BY 4.0
+- Permitido: fork + lectura + research educacional
+- Prohibido: re-distribución comercial sin autorización
+
+Contacto licencias / commercial: `circles.fof.ai@gmail.com`
 
 ---
 

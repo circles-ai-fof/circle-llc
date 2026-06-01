@@ -1,0 +1,53 @@
+Copyright (c) 2026 Circle LLC (Wyoming, USA)
+
+All rights reserved.
+
+This software and associated documentation files (the "Software") are
+proprietary to Circle LLC. The Software is in closed-beta and is provided
+to authorized collaborators (listed in `ALLOWED_EMAILS` in the deployed
+backend configuration) under the following terms:
+
+1. PERMITTED USE
+   - Authorized collaborators may use, modify, and contribute to the
+     Software in connection with the Circle LLC "Factory of Factories"
+     project (https://circles-ai.ai).
+   - Permission is granted to read, fork, and reference the source code
+     for educational and research purposes.
+
+2. RESTRICTIONS
+   - The Software may NOT be used to operate a commercial service or
+     product that competes with Circle LLC without prior written
+     authorization.
+   - Re-distribution of the Software, in whole or in significant part,
+     under a different brand or for commercial gain is prohibited
+     without prior written authorization.
+   - The API keys, tokens, secrets and credentials shipped or referenced
+     in the repository are NOT authorizations to use third-party services
+     on behalf of Circle LLC.
+
+3. CONTRIBUTIONS
+   - By contributing to this repository (via pull request, patch, or
+     direct commit), you grant Circle LLC a perpetual, worldwide, non-
+     exclusive license to use, modify, sublicense, and distribute your
+     contribution as part of the Software.
+
+4. DOCUMENTATION
+   - The documentation files (`README.md`, `CONTRIBUTING.md`, `docs/*`,
+     `DEPLOY.md`, ADRs under `orchestrator/decisions/`, etc.) are
+     released under CC BY 4.0 — you may share and adapt them with
+     attribution to Circle LLC.
+
+5. WARRANTY DISCLAIMER
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+   CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM, OUT OF OR IN CONNECTION
+   WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+For licensing inquiries or commercial use: circles.fof.ai@gmail.com
+
+This license replaces any prior verbal or written agreements regarding the
+Software. The license may be updated unilaterally by Circle LLC; the
+version effective at the time of your use is the one shipped in the
+repository at https://github.com/circles-ai-fof/circle-llc/blob/master/LICENSE.
