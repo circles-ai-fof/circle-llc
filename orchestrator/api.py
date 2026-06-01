@@ -268,7 +268,13 @@ _DEFAULT_ALLOWED_ORIGINS = [
 ]
 _extra_origins = [
     o.strip()
-    for o in os.getenv("EXTRA_ALLOWED_ORIGINS", "").split(",")
+    # Accept BOTH names — production-checklist.md and finish-deploy.sh use
+    # EXTRA_CORS_ORIGINS, but the legacy env was EXTRA_ALLOWED_ORIGINS. Read
+    # whichever is present; concat both to allow gradual migration.
+    for o in (
+        os.getenv("EXTRA_ALLOWED_ORIGINS", "") + "," +
+        os.getenv("EXTRA_CORS_ORIGINS", "")
+    ).split(",")
     if o.strip()
 ]
 app.add_middleware(
