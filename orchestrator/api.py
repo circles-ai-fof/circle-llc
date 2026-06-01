@@ -90,6 +90,8 @@ from .schemas.api import (
     ConsensusRequest, ConsensusResponse,
     AdminStatusResponse, AdminAgentStatus, AdminEnvCheck, AdminCronStatus,
     DiagnoseDeployResponse, DeployIssue,
+    AnalyticsResponse, AnalyticsBucket, AnalyticsVerdictBucket,
+    AnalyticsCostBucket, AnalyticsTopItem,
     SignalsCleanupResponse,
     SignalsListResponse,
     StatsResponse,
@@ -2362,6 +2364,139 @@ def get_digest_text(request: Request, window_days: int = 7):
     data = build_digest_data(window_days=window_days)
     text = render_digest_text(data)
     return PlainTextResponse(content=text, status_code=200)
+
+
+@app.get(
+    "/api/v1/analytics/timeseries",
+    response_model=AnalyticsResponse,
+    summary="M8.0 — Analytics ejecutivo: time series + tops + feedback distribution",
+    tags=["meta"],
+)
+def analytics_timeseries(request: Request, window_days: int = 30) -> AnalyticsResponse:
+    """Devuelve buckets diarios para charts del dashboard ejecutivo:
+    - signals_per_day, runs_per_day, verdicts_per_day, cost_per_day
+    - top_topics (10) por count de signals
+    - top_sources (10) por count de signals
+    - feedback_distribution (up/down/unmarked)
+    - totals agregados (signals, runs, cost USD, pass_rate%)
+
+    Sin LLM. Costo $0. Heurística pura sobre data persistida.
+    """
+    _require_user(request)
+    if window_days < 1 or window_days > 365:
+        raise HTTPException(status_code=422, detail="window_days must be 1-365")
+
+    import time as _t
+    from collections import Counter, defaultdict
+    from .core.storage import signals_store, runs_store, sources_store
+
+    now = int(_t.time())
+    cutoff = now - (window_days * 86_400)
+
+    all_signals = signals_store.list(limit=10_000, min_score=0.0)
+    all_runs = list(runs_store.values())
+    all_sources = sources_store.list()
+    sources_by_id = {s["id"]: s.get("name") or s.get("kind") for s in all_sources}
+
+    # Helper para extraer fecha YYYY-MM-DD desde epoch
+    def to_date(ts: int) -> str:
+        if not ts:
+            return "1970-01-01"
+        return _t.strftime("%Y-%m-%d", _t.gmtime(ts))
+
+    # Generar lista de buckets diarios (todos los días en la ventana, incluso vacíos)
+    bucket_dates: List[str] = []
+    for d in range(window_days):
+        bucket_dates.append(to_date(now - (window_days - 1 - d) * 86_400))
+
+    # Signals per day
+    signals_by_date: Counter = Counter()
+    for s in all_signals:
+        ts = s.get("created_at", 0)
+        if ts >= cutoff:
+            signals_by_date[to_date(ts)] += 1
+
+    # Runs per day + verdicts + cost
+    runs_by_date: Counter = Counter()
+    verdicts_by_date: defaultdict = defaultdict(lambda: {"pass": 0, "kill": 0, "iterate": 0})
+    cost_by_date: defaultdict = defaultdict(float)
+    # NOTE: RunsStore .values() doesn't expose created_at; usamos approximación
+    # consultando directo el storage si es persistente
+    from .core.storage import _db_path, _conn  # type: ignore[attr-defined]
+    if _db_path:
+        with _conn() as c:
+            for row in c.execute(
+                "SELECT data_json, created_at FROM gate_runs WHERE created_at >= ?",
+                (cutoff,),
+            ).fetchall():
+                import json as _json
+                try:
+                    data = _json.loads(row["data_json"])
+                except Exception:  # noqa: BLE001
+                    continue
+                date = to_date(int(row["created_at"]))
+                runs_by_date[date] += 1
+                verdict = data.get("verdict", "iterate")
+                if verdict in ("pass", "kill", "iterate"):
+                    verdicts_by_date[date][verdict] += 1
+                cost = float(data.get("cost_usd_estimated") or 0)
+                cost_by_date[date] += cost
+
+    # Top topics
+    topic_counter: Counter = Counter()
+    for s in all_signals:
+        if s.get("created_at", 0) < cutoff:
+            continue
+        topic = (s.get("suggested_topic") or "").strip().lower()[:60]
+        if topic:
+            topic_counter[topic] += 1
+
+    # Top sources
+    source_counter: Counter = Counter()
+    for s in all_signals:
+        if s.get("created_at", 0) < cutoff:
+            continue
+        sid = s.get("source_id")
+        if sid:
+            label = sources_by_id.get(sid, f"source_{sid}")
+            source_counter[label] += 1
+
+    # Feedback distribution
+    up = sum(1 for s in all_signals if s.get("feedback") == "up")
+    down = sum(1 for s in all_signals if s.get("feedback") == "down")
+    unmarked = sum(1 for s in all_signals if not s.get("feedback"))
+
+    # Totals
+    signals_in_window = sum(signals_by_date.values())
+    runs_in_window = sum(runs_by_date.values())
+    cost_total = sum(cost_by_date.values())
+    pass_count = sum(b["pass"] for b in verdicts_by_date.values())
+    pass_rate = round(100 * pass_count / runs_in_window, 1) if runs_in_window else 0.0
+
+    return AnalyticsResponse(
+        window_days=window_days,
+        signals_per_day=[AnalyticsBucket(date=d, count=signals_by_date.get(d, 0)) for d in bucket_dates],
+        runs_per_day=[AnalyticsBucket(date=d, count=runs_by_date.get(d, 0)) for d in bucket_dates],
+        verdicts_per_day=[
+            AnalyticsVerdictBucket(
+                date=d,
+                pass_count=verdicts_by_date.get(d, {}).get("pass", 0),
+                kill_count=verdicts_by_date.get(d, {}).get("kill", 0),
+                iterate_count=verdicts_by_date.get(d, {}).get("iterate", 0),
+            )
+            for d in bucket_dates
+        ],
+        cost_per_day=[AnalyticsCostBucket(date=d, cost_usd=round(cost_by_date.get(d, 0.0), 4)) for d in bucket_dates],
+        top_topics=[AnalyticsTopItem(label=t, count=c) for t, c in topic_counter.most_common(10)],
+        top_sources=[AnalyticsTopItem(label=s, count=c) for s, c in source_counter.most_common(10)],
+        feedback_distribution={"up": up, "down": down, "unmarked": unmarked},
+        totals={
+            "signals_in_window": signals_in_window,
+            "runs_in_window": runs_in_window,
+            "cost_total_usd": round(cost_total, 4),
+            "pass_rate_pct": pass_rate,
+        },
+    )
 
 
 @app.get(

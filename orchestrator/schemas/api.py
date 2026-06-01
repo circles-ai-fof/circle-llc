@@ -521,6 +521,41 @@ class SignalsBulkFeedbackResponse(BaseModel):
     skipped_missing: int = Field(description="IDs que no existen en la base")
 
 
+# M8.0 — Analytics ejecutivo (time-series + tops)
+class AnalyticsBucket(BaseModel):
+    date: str        # YYYY-MM-DD
+    count: int = 0
+
+
+class AnalyticsVerdictBucket(BaseModel):
+    date: str
+    pass_count: int = 0
+    kill_count: int = 0
+    iterate_count: int = 0
+
+
+class AnalyticsCostBucket(BaseModel):
+    date: str
+    cost_usd: float = 0.0
+
+
+class AnalyticsTopItem(BaseModel):
+    label: str
+    count: int
+
+
+class AnalyticsResponse(BaseModel):
+    window_days: int
+    signals_per_day: List[AnalyticsBucket]
+    runs_per_day: List[AnalyticsBucket]
+    verdicts_per_day: List[AnalyticsVerdictBucket]
+    cost_per_day: List[AnalyticsCostBucket]
+    top_topics: List[AnalyticsTopItem]
+    top_sources: List[AnalyticsTopItem]
+    feedback_distribution: dict   # {up: N, down: N, unmarked: N}
+    totals: dict                  # signals, runs, cost_total_usd, pass_rate_pct
+
+
 # M7.5 — Deploy diagnostic (detecta misconfig común)
 class DeployIssue(BaseModel):
     severity: str  # "error" | "warning" | "info"

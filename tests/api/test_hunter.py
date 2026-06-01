@@ -3091,6 +3091,79 @@ def test_diagnose_deploy_requires_auth(client):
     assert client.get("/api/v1/admin/diagnose-deploy").status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# M8.0 — Analytics timeseries
+# ---------------------------------------------------------------------------
+
+
+def test_analytics_returns_full_shape(client, auth):
+    r = client.get("/api/v1/analytics/timeseries", headers=auth)
+    assert r.status_code == 200
+    data = r.json()
+    expected_keys = {
+        "window_days", "signals_per_day", "runs_per_day", "verdicts_per_day",
+        "cost_per_day", "top_topics", "top_sources", "feedback_distribution",
+        "totals",
+    }
+    assert expected_keys <= set(data.keys())
+
+
+def test_analytics_default_window_30_days(client, auth):
+    r = client.get("/api/v1/analytics/timeseries", headers=auth)
+    data = r.json()
+    assert data["window_days"] == 30
+    assert len(data["signals_per_day"]) == 30
+    assert len(data["runs_per_day"]) == 30
+
+
+def test_analytics_custom_window(client, auth):
+    r = client.get("/api/v1/analytics/timeseries?window_days=7", headers=auth)
+    data = r.json()
+    assert data["window_days"] == 7
+    assert len(data["signals_per_day"]) == 7
+
+
+def test_analytics_rejects_invalid_window(client, auth):
+    assert client.get("/api/v1/analytics/timeseries?window_days=0", headers=auth).status_code == 422
+    assert client.get("/api/v1/analytics/timeseries?window_days=400", headers=auth).status_code == 422
+
+
+def test_analytics_counts_signals(client, auth):
+    """Inyecta 3 signals y verifica que aparezcan en totals."""
+    from orchestrator.core.storage import signals_store
+    for i in range(3):
+        signals_store.add(
+            source_id=None, source_kind="rss", theme=f"Test M80 #{i}",
+            score=0.5, excerpt="ex",
+            evidence_urls=[f"https://example.com/m80-{i}"],
+            suggested_topic="test m80",
+            item_titles=["t"],
+        )
+    r = client.get("/api/v1/analytics/timeseries", headers=auth)
+    data = r.json()
+    assert data["totals"]["signals_in_window"] >= 3
+
+
+def test_analytics_feedback_distribution_sums_correctly(client, auth):
+    """up + down + unmarked = total signals."""
+    r = client.get("/api/v1/analytics/timeseries", headers=auth)
+    dist = r.json()["feedback_distribution"]
+    assert "up" in dist
+    assert "down" in dist
+    assert "unmarked" in dist
+
+
+def test_analytics_top_lists_capped_at_10(client, auth):
+    r = client.get("/api/v1/analytics/timeseries", headers=auth)
+    data = r.json()
+    assert len(data["top_topics"]) <= 10
+    assert len(data["top_sources"]) <= 10
+
+
+def test_analytics_requires_auth(client):
+    assert client.get("/api/v1/analytics/timeseries").status_code == 401
+
+
 def test_consensus_reasoning_mentions_perspectives_count(client, auth):
     """Case #30: reasoning del mock menciona la cantidad de perspectives
     analizadas (signal de transparencia interna)."""
