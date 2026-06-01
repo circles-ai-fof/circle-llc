@@ -91,14 +91,24 @@ printf "  ${GREEN}OK${NC} .env loaded\n"
 
 printf "\n${CYAN}[2/10] Initializing Railway project...${NC}\n"
 
-if [ -f .railway/config.json ] || [ -f railway.json ]; then
-    printf "  ${YELLOW}Already linked to Railway project — skipping init${NC}\n"
-else
-    railway init --name circle-llc 2>&1 | tail -3 || {
+# Check link state via `railway status`: if not linked it returns "No linked project found"
+LINK_STATUS=$(railway status 2>&1 | head -5)
+if echo "$LINK_STATUS" | grep -qi "no linked project\|not linked\|unauthorized"; then
+    printf "  ${YELLOW}Not linked yet — running railway init...${NC}\n"
+    railway init --name circle-llc 2>&1 | tail -5 || {
         printf "${RED}FAIL${NC} railway init failed. Check 'railway projects ls'.\n"
         exit 1
     }
     printf "  ${GREEN}OK${NC} Project 'circle-llc' initialized\n"
+else
+    printf "  ${YELLOW}Already linked to Railway project — skipping init${NC}\n"
+    echo "$LINK_STATUS" | head -3 | sed 's/^/    /'
+fi
+
+# Verify link worked
+if railway status 2>&1 | grep -qi "no linked project\|not linked"; then
+    printf "${RED}FAIL${NC} Railway still not linked after init. Aborting.\n"
+    exit 1
 fi
 
 # ===========================================================================
