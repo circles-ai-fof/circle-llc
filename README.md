@@ -188,7 +188,9 @@ Filosofía Reganti (AI Builder's Handbook 2026):
 
 | Archivo | Qué es |
 |---|---|
-| `DEPLOY.md` | Guía paso a paso para deploy a Railway + Vercel + cron secrets |
+| `DEPLOY.md` | Guía deploy general (Railway + Vercel + cron secrets) |
+| `docs/production-checklist.md` | Checklist deploy paso a paso con 20 items + troubleshooting |
+| `scripts/preflight.sh` | Pre-deploy verification (tests + TS + git + secrets scan) |
 | `CLAUDE.md` | Contexto completo para Claude Code (instrucciones del proyecto) |
 | `orchestrator/rulebook.md` | Las 29 reglas del rulebook con su rationale |
 | `orchestrator/agents/SCOPES.md` | Scope exclusivo de cada agente (anti-overlap) |
