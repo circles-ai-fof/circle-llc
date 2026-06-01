@@ -1,0 +1,12 @@
+;; Circle LLC - DNS records for import in Cloudflare
+;; Zone: circles-ai.ai
+;; Date: 2026-06-01
+;; Instructions:
+;;   1. Cloudflare dashboard -> select circles-ai.ai zone
+;;   2. DNS -> Records -> Import and Export -> Import DNS Records
+;;   3. Upload this file
+;;   4. After import: set Proxy status to DNS only (gray cloud) for BOTH records
+;;   5. Do NOT delete or modify existing apex records (circles-ai.ai, www)
+
+dashboard.circles-ai.ai. 1 IN CNAME cname.vercel-dns.com.
+api.circles-ai.ai. 1 IN CNAME circle-llc-backend-production.up.railway.app.
