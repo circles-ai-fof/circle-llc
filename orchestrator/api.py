@@ -1897,6 +1897,56 @@ def get_scan_queue(request: Request) -> Dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# M10.0 — LinkFollowerAgent: mine evidence_urls for new source candidates
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/api/v1/signals/{signal_id}/discover-feeds",
+    summary="Mine the signal's evidence_urls for RSS feeds, GitHub releases, and subreddits",
+    tags=["hunter"],
+)
+def discover_feeds_for_signal(signal_id: int, request: Request) -> Dict:
+    """M10.0 — runs LinkFollowerAgent over a single signal's evidence URLs.
+
+    Returns a list of ProposedSource dicts. Does NOT persist anything — the
+    founder reviews proposals in the dashboard before calling /api/v1/sources
+    to actually add them. This keeps autonomy gated behind explicit approval.
+    """
+    _require_user(request)
+    from .core.storage import signals_store
+    from .agents.link_follower import LinkFollowerAgent
+    import json as _json
+
+    sig = signals_store.get(signal_id)
+    if not sig:
+        raise HTTPException(status_code=404, detail="signal not found")
+    # signals_store.get() runs _signal_row_to_dict which renames
+    # evidence_json -> evidence_urls (already parsed to a list).
+    evidence_urls = sig.get("evidence_urls") or []
+    if isinstance(evidence_urls, str):
+        try:
+            evidence_urls = _json.loads(evidence_urls)
+        except Exception:  # noqa: BLE001
+            evidence_urls = []
+
+    agent = LinkFollowerAgent()
+    result = agent.follow(signal_id, evidence_urls)
+    return {
+        "signal_id": signal_id,
+        "evidence_count": len(evidence_urls),
+        "proposals": [
+            {
+                "kind": p.kind, "target": p.target, "name": p.name,
+                "reason": p.reason, "origin_url": p.origin_url, "score": p.score,
+            }
+            for p in result.proposals
+        ],
+        "errors": result.errors,
+    }
+
+
 def _run_scan_internal(
     source_ids: Optional[List[int]] = None,
     auto_promote_threshold: float = 0.0,
