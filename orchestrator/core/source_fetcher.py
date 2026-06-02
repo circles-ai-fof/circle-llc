@@ -839,6 +839,146 @@ def fetch_github_trending(max_items: int = MAX_ITEMS_PER_FEED) -> List[FetchedIt
 # ---------------------------------------------------------------------------
 
 
+def fetch_app_marketplace(
+    target: str,
+    max_items: int = MAX_ITEMS_PER_FEED,
+    selectors: Optional[dict] = None,
+) -> List[FetchedItem]:
+    """M9.2 — generic scraper for "list of apps by category" aggregator sites.
+
+    Examples in the wild:
+      - lovableapp.org (categorized vibe-coding apps)
+      - claudecreations.com (community projects built with Claude)
+      - adorableapp.org (AI apps catalog)
+
+    Strategy: download the listing HTML, regex-scan for repeated app cards.
+    Each card produces one FetchedItem with title + summary + canonical link
+    so the downstream source_scanner can dedup with M9.3 canonical_hash.
+
+    The default selector set is intentionally permissive (h2/h3/article tags)
+    because each aggregator has its own DOM. If a particular site needs more
+    precise selectors, callers can pass `selectors` dict:
+      {
+        "card_pattern": r"<article[^>]*class=\"app-card[^\"]*\"[^>]*>...</article>",
+        "title_pattern": r"<h\\d[^>]*>(.*?)</h\\d>",
+        "desc_pattern":  r"<p[^>]*class=\"description\"[^>]*>(.*?)</p>",
+        "link_pattern":  r"<a[^>]*href=\"([^\"]+)\"",
+      }
+    For now we ship sensible defaults — refinements come once we see real
+    site responses in production logs.
+    """
+    if not target:
+        return []
+    try:
+        req = urllib.request.Request(
+            target,
+            headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+        )
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            raw = resp.read(MAX_CHARS_PER_SOURCE * 6).decode(
+                "utf-8", errors="replace"
+            )
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        logger.warning("fetch_app_marketplace(%s): %s", target, e)
+        return []
+
+    s = selectors or {}
+    # Default heuristic patterns — good enough for most aggregator sites
+    card_pat = re.compile(
+        s.get("card_pattern",
+              r"<(?:article|li|div)[^>]*class=\"[^\"]*(?:card|app-item|project|tool-item)[^\"]*\"[^>]*>(.*?)</(?:article|li|div)>"),
+        re.IGNORECASE | re.DOTALL,
+    )
+    title_pat = re.compile(
+        s.get("title_pattern", r"<h[1-4][^>]*>(.*?)</h[1-4]>"),
+        re.IGNORECASE | re.DOTALL,
+    )
+    desc_pat = re.compile(
+        s.get("desc_pattern",
+              r"<p[^>]*(?:class=\"[^\"]*(?:desc|summary|tagline)[^\"]*\")?[^>]*>(.*?)</p>"),
+        re.IGNORECASE | re.DOTALL,
+    )
+    link_pat = re.compile(
+        s.get("link_pattern", r"<a[^>]*href=\"([^\"]+)\""),
+        re.IGNORECASE,
+    )
+
+    items: List[FetchedItem] = []
+    cards = card_pat.findall(raw)
+    if not cards:
+        # Fallback: maybe the site just emits a flat list of <h2> headers
+        # with linked names. Try to bootstrap from <h2><a href>...</a></h2>.
+        for m in re.finditer(
+            r"<h[2-3][^>]*>\s*<a[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>",
+            raw, re.IGNORECASE | re.DOTALL,
+        ):
+            href = _absolutize(m.group(1), target)
+            title = _strip_html(m.group(2))[:200]
+            if not title:
+                continue
+            items.append(FetchedItem(
+                source_kind="app_marketplace",
+                url=href,
+                title=title,
+                summary=f"App listed on {target}",
+                body=title,
+            ))
+            if len(items) >= max_items:
+                break
+        return items
+
+    for card in cards[: max_items * 2]:  # over-sample, filter dupes below
+        title_m = title_pat.search(card)
+        desc_m = desc_pat.search(card)
+        link_m = link_pat.search(card)
+        title = _strip_html(title_m.group(1)) if title_m else ""
+        desc = _strip_html(desc_m.group(1)) if desc_m else ""
+        link = _absolutize(link_m.group(1), target) if link_m else target
+        title = title.strip()[:200]
+        desc = desc.strip()[:400]
+        if not title:
+            continue
+        items.append(FetchedItem(
+            source_kind="app_marketplace",
+            url=link,
+            title=title,
+            summary=desc or f"App listed on {target}",
+            body=(title + "\n\n" + desc)[:MAX_CHARS_PER_SOURCE],
+        ))
+        if len(items) >= max_items:
+            break
+    return items
+
+
+def _absolutize(href: str, base: str) -> str:
+    """Resolve a possibly-relative href to absolute, falling back to base."""
+    if not href:
+        return base
+    if href.startswith(("http://", "https://")):
+        return href
+    try:
+        return urllib.parse.urljoin(base, href)
+    except Exception:  # noqa: BLE001
+        return base
+
+
+def _strip_html(s: str) -> str:
+    """Quick-and-dirty HTML stripper for card text (we don't want bs4)."""
+    if not s:
+        return ""
+    # Drop tags
+    s = re.sub(r"<[^>]+>", " ", s)
+    # Collapse whitespace + decode common entities
+    s = re.sub(r"\s+", " ", s)
+    s = (s.replace("&amp;", "&")
+           .replace("&lt;", "<")
+           .replace("&gt;", ">")
+           .replace("&quot;", '"')
+           .replace("&#39;", "'")
+           .replace("&nbsp;", " "))
+    return s.strip()
+
+
 def fetch_by_kind(kind: str, target: str = "", max_items: int = MAX_ITEMS_PER_FEED) -> List[FetchedItem]:
     """
     Generic dispatch. Returns a list (single-item for url, many for feeds).
@@ -884,6 +1024,12 @@ def fetch_by_kind(kind: str, target: str = "", max_items: int = MAX_ITEMS_PER_FE
         # clasificador de content_type detecta "course_tutorial"/"video_podcast"
         # según el contenido. En M4.14+ podemos especializar con Eventbrite API.
         return fetch_rss(target, max_items)
+    if kind == "app_marketplace":
+        # M9.2 — sitios aggregator estilo Lovable / Claude Creations / Adorable
+        # (catálogos de apps por categoría). Scraper genérico con selectors por
+        # default + override opcional via dict en source.config (no implementado
+        # todavía — usaremos defaults hasta ver respuesta real en prod).
+        return fetch_app_marketplace(target, max_items)
     logger.warning("fetch_by_kind: unknown kind %r", kind)
     return []
 
@@ -903,5 +1049,6 @@ __all__ = [
     "fetch_youtube_channel",
     "fetch_bluesky",
     "fetch_telegram",
+    "fetch_app_marketplace",  # M9.2
     "fetch_by_kind",
 ]

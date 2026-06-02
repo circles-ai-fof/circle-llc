@@ -114,6 +114,22 @@ EXAMPLE_SOURCES: List[Tuple[str, str, str]] = [
     # ----- 19. GitHub trending por lenguaje (TypeScript — webapps/SaaS) -----
     ("rss", "https://github.com/trending/typescript.atom?since=daily",
      "GitHub Trending — TypeScript (daily)"),
+
+    # ============================================================
+    # M9.2 — App marketplaces (vibe-coding apps, builder showcases)
+    # ============================================================
+
+    # ----- 20. Lovable App marketplace -----
+    ("app_marketplace", "https://lovableapp.org",
+     "Lovable App — All categories"),
+
+    # ----- 21. Claude Creations (community showcase de Anthropic) -----
+    ("app_marketplace", "https://claudecreations.com",
+     "Claude Creations — Community"),
+
+    # ----- 22. Adorable APP (catálogo categorizado de AI apps) -----
+    ("app_marketplace", "https://adorableapp.org",
+     "Adorable APP — Catalog"),
 ]
 
 
