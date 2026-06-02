@@ -347,6 +347,24 @@ def _migrate(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError as e:
             logger.warning("storage: migration canonical_hash failed: %s", e)
 
+    # M9.5 — source quality scoring. Adds 4 columns to `sources` so the
+    # cazador can prioritize the scan queue by hit rate (auto-promote / signal
+    # score / count). Recomputed by a cron-like endpoint, not on every insert.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(sources)").fetchall()}
+    if "quality_score" not in cols:
+        try:
+            conn.execute("ALTER TABLE sources ADD COLUMN quality_score REAL NOT NULL DEFAULT 0.5")
+            conn.execute("ALTER TABLE sources ADD COLUMN hit_rate REAL NOT NULL DEFAULT 0.0")
+            conn.execute("ALTER TABLE sources ADD COLUMN avg_signal_score REAL NOT NULL DEFAULT 0.0")
+            conn.execute("ALTER TABLE sources ADD COLUMN last_quality_calc INTEGER")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sources_quality "
+                "ON sources(quality_score DESC, hit_rate DESC)"
+            )
+            logger.info("storage: migrated sources.quality_score + hit_rate + avg_signal_score (M9.5)")
+        except sqlite3.OperationalError as e:
+            logger.warning("storage: migration source_quality failed: %s", e)
+
     # M9.1 — user_settings table for prod databases that pre-date the schema
     # (Railway volume already has the data — CREATE TABLE in _SCHEMA only fires
     # on first init). The seed-row INSERT OR IGNORE is also re-issued so the
@@ -850,6 +868,109 @@ class SourcesStore:
                 if r["id"] == source_id:
                     r["last_scanned_at"] = ts
                     return
+
+    # ---------------------------------------------------------------------
+    # M9.5 — Source quality scoring
+    # ---------------------------------------------------------------------
+
+    def recompute_quality(self, source_id: int) -> Dict[str, float]:
+        """Recompute quality_score / hit_rate / avg_signal_score for one source.
+
+        Formula:
+            avg_signal_score = avg(signals.score) for this source over all time
+            hit_rate         = promoted / total (promoted_run_id IS NOT NULL)
+            quality_score    = 0.6 * hit_rate + 0.4 * avg_signal_score
+
+        Returns the new triple as a dict. A source with zero signals stays at
+        the neutral defaults (0.5 / 0.0 / 0.0) so brand-new sources aren't
+        unfairly demoted before they've had a chance to produce signals.
+        """
+        ts = int(time.time())
+        if _db_path:
+            with _conn() as c:
+                row = c.execute(
+                    "SELECT COUNT(*) AS total, "
+                    "       AVG(score) AS avg_score, "
+                    "       SUM(CASE WHEN promoted_run_id IS NOT NULL THEN 1 ELSE 0 END) AS promoted "
+                    "FROM signals WHERE source_id = ?",
+                    (source_id,),
+                ).fetchone()
+                total = int(row["total"] or 0)
+                avg = float(row["avg_score"] or 0.0)
+                promoted = int(row["promoted"] or 0)
+                hit_rate = (promoted / total) if total > 0 else 0.0
+                quality = (0.6 * hit_rate + 0.4 * avg) if total > 0 else 0.5
+                c.execute(
+                    "UPDATE sources SET "
+                    "  quality_score = ?, hit_rate = ?, avg_signal_score = ?, "
+                    "  last_quality_calc = ? "
+                    "WHERE id = ?",
+                    (quality, hit_rate, avg, ts, source_id),
+                )
+                return {
+                    "quality_score": quality,
+                    "hit_rate": hit_rate,
+                    "avg_signal_score": avg,
+                    "signals_total": total,
+                    "last_quality_calc": ts,
+                }
+        # Memory fallback
+        sigs = [s for s in _memory_signals if s.get("source_id") == source_id]
+        total = len(sigs)
+        avg = (sum(s["score"] for s in sigs) / total) if total > 0 else 0.0
+        promoted = sum(1 for s in sigs if s.get("promoted_run_id"))
+        hit_rate = (promoted / total) if total > 0 else 0.0
+        quality = (0.6 * hit_rate + 0.4 * avg) if total > 0 else 0.5
+        for r in _memory_sources:
+            if r["id"] == source_id:
+                r["quality_score"] = quality
+                r["hit_rate"] = hit_rate
+                r["avg_signal_score"] = avg
+                r["last_quality_calc"] = ts
+                break
+        return {
+            "quality_score": quality, "hit_rate": hit_rate,
+            "avg_signal_score": avg, "signals_total": total,
+            "last_quality_calc": ts,
+        }
+
+    def recompute_quality_all(self) -> int:
+        """Recompute quality for every source. Returns the count processed.
+
+        Designed to be called from a cron / scheduler. Cheap: pure SQL
+        aggregates, no LLM. ~O(N sources) DB calls."""
+        count = 0
+        for s in self.list():
+            self.recompute_quality(int(s["id"]))
+            count += 1
+        return count
+
+    def smart_scan_queue(self) -> List[Dict]:
+        """M9.5 — return active sources ordered by scan priority.
+
+        Top quartile (quality_score > 0.6) goes first, then middle, then
+        bottom. Within each band we sort by last_scanned_at ASC so the
+        coldest source in the band wins. The cazador cron can iterate this
+        list and stop once the per-tick budget is spent.
+        """
+        active = [s for s in self.list(active_only=True)]
+        if not active:
+            return []
+
+        def _band(s: Dict) -> int:
+            q = float(s.get("quality_score") or 0.5)
+            if q > 0.6:
+                return 0
+            if q > 0.3:
+                return 1
+            return 2
+
+        def _last_scan(s: Dict) -> int:
+            v = s.get("last_scanned_at")
+            return int(v) if v is not None else 0
+
+        active.sort(key=lambda s: (_band(s), _last_scan(s)))
+        return active
 
     def set_active(self, source_id: int, active: bool) -> None:
         _ensure_init()

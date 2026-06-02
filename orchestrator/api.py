@@ -1833,6 +1833,70 @@ def post_user_settings(
     return _put_settings_impl(body, request)
 
 
+# ---------------------------------------------------------------------------
+# M9.5 — Source quality scoring + smart scan queue
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/api/v1/sources/recompute-quality",
+    summary="Recompute quality_score / hit_rate / avg_signal_score for all sources",
+    tags=["hunter"],
+)
+def recompute_source_quality(request: Request) -> Dict:
+    """M9.5 — cron-callable endpoint. Recomputes the 3 quality columns for
+    every source based on its signals' scores + promotion rate. Returns the
+    count processed and the top 5 sources by new quality_score.
+    """
+    _require_user(request)
+    from .core.storage import sources_store
+    count = sources_store.recompute_quality_all()
+    # Return top 5 to make the result feel useful in the dashboard
+    top = sorted(
+        sources_store.list(),
+        key=lambda s: float(s.get("quality_score") or 0),
+        reverse=True,
+    )[:5]
+    return {
+        "processed": count,
+        "top_sources": [
+            {
+                "id": s["id"], "name": s["name"], "kind": s["kind"],
+                "quality_score": float(s.get("quality_score") or 0),
+                "hit_rate": float(s.get("hit_rate") or 0),
+                "avg_signal_score": float(s.get("avg_signal_score") or 0),
+            }
+            for s in top
+        ],
+    }
+
+
+@app.get(
+    "/api/v1/sources/scan-queue",
+    summary="Return active sources ordered by scan priority (quality + recency)",
+    tags=["hunter"],
+)
+def get_scan_queue(request: Request) -> Dict:
+    """M9.5 — preview of the order in which the smart scan cron would visit
+    active sources. Useful for the founder to verify the ranking is sensible
+    before enabling auto-scan."""
+    _require_user(request)
+    from .core.storage import sources_store
+    queue = sources_store.smart_scan_queue()
+    return {
+        "total": len(queue),
+        "items": [
+            {
+                "id": s["id"], "name": s["name"], "kind": s["kind"],
+                "quality_score": float(s.get("quality_score") or 0.5),
+                "hit_rate": float(s.get("hit_rate") or 0),
+                "last_scanned_at": s.get("last_scanned_at"),
+            }
+            for s in queue
+        ],
+    }
+
+
 def _run_scan_internal(
     source_ids: Optional[List[int]] = None,
     auto_promote_threshold: float = 0.0,
