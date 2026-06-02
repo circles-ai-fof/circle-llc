@@ -1903,6 +1903,84 @@ def get_scan_queue(request: Request) -> Dict:
 
 
 @app.post(
+    "/api/v1/sources/discover",
+    summary="Use approved-cluster keywords to discover new sources via LLM (M9.4)",
+    tags=["hunter"],
+)
+def discover_sources_from_clusters(request: Request) -> Dict:
+    """M9.4 — SourceDiscoveryAgent endpoint.
+
+    Pulls cluster keywords from approved signals (M4.1 preferences engine)
+    and asks an LLM (Gemini first, Claude fallback) to propose new sources
+    in those topics. Returns proposals as a queue — the founder still has
+    to explicitly add via POST /api/v1/sources before scanning starts.
+
+    Body can optionally pass {"keywords": [...]} to override the cluster
+    extraction (e.g., for manual exploration). If omitted, the agent reads
+    the current cluster keywords automatically.
+    """
+    _require_user(request)
+    from .agents.source_discovery import SourceDiscoveryAgent
+    body = {}
+    try:
+        body = request.scope.get("body_cache") or {}  # populated below
+    except Exception:  # noqa: BLE001
+        body = {}
+
+    # Override path: caller passed explicit keywords
+    explicit_kws: List[str] = []
+    try:
+        # FastAPI may not have parsed body if we didn't declare it — try sync
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            data = loop.run_until_complete(request.json())
+            if isinstance(data, dict) and isinstance(data.get("keywords"), list):
+                explicit_kws = [str(k) for k in data["keywords"]]
+        except Exception:  # noqa: BLE001 — best-effort
+            pass
+        finally:
+            loop.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+    keywords = explicit_kws
+    if not keywords:
+        # Pull from cluster suggestions (M4.1)
+        try:
+            from .core.preferences import suggest_sources_from_clusters
+            from .core.storage import signals_store, embeddings_store
+            sigs = signals_store.list()
+            vecs = embeddings_store.get_by_signal_ids(
+                [int(s["id"]) for s in sigs if s.get("feedback") == "up"]
+            )
+            suggestions = suggest_sources_from_clusters(sigs, vecs)
+            for s in suggestions:
+                kws = s.get("shared_keywords") or []
+                for k in kws:
+                    if k and k not in keywords:
+                        keywords.append(k)
+            keywords = keywords[:10]  # cap to control prompt size
+        except Exception as e:  # noqa: BLE001
+            logger.warning("discover_sources: cluster extraction failed: %s", e)
+
+    agent = SourceDiscoveryAgent()
+    result = agent.discover(keywords)
+    return {
+        "keywords": result.keywords,
+        "llm_provider": result.llm_provider,
+        "proposals": [
+            {
+                "kind": p.kind, "target": p.target, "name": p.name,
+                "reason": p.reason, "origin_url": p.origin_url, "score": p.score,
+            }
+            for p in result.proposals
+        ],
+        "errors": result.errors,
+    }
+
+
+@app.post(
     "/api/v1/signals/{signal_id}/discover-feeds",
     summary="Mine the signal's evidence_urls for RSS feeds, GitHub releases, and subreddits",
     tags=["hunter"],
