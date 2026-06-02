@@ -116,7 +116,13 @@ def _user_prompt(keywords: Iterable[str]) -> str:
 
 def _call_gemini(keywords: List[str]) -> Optional[str]:
     """Try Gemini first — Google Search grounding gives it an edge for
-    discovering current blogs/communities."""
+    discovering current blogs/communities.
+
+    Forces JSON output via response_mime_type. Gemini Flash otherwise drifts
+    into conversational mode and ignores the JSON schema in the prompt
+    (observed in prod 2026-06-02). The mime-type hint is far more reliable
+    than prose instructions ("Return JSON ONLY!").
+    """
     if not os.getenv("GOOGLE_API_KEY"):
         return None
     try:
@@ -129,7 +135,8 @@ def _call_gemini(keywords: List[str]) -> Optional[str]:
             contents=_user_prompt(keywords),
             config=types.GenerateContentConfig(
                 system_instruction=_system_prompt(),
-                max_output_tokens=800,
+                max_output_tokens=1500,
+                response_mime_type="application/json",
             ),
         )
         return (resp.text or "") if hasattr(resp, "text") else ""
