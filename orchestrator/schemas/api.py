@@ -380,6 +380,60 @@ class AutonomyUpdateRequest(BaseModel):
     level: str = Field(pattern='^(manual|assisted|autonomous_with_approval)$')
 
 
+# ---------------------------------------------------------------------------
+# M9.1 — User Settings (i18n + cazador knobs)
+# ---------------------------------------------------------------------------
+
+
+class UserSettingsResponse(BaseModel):
+    """Single-row global settings. Multi-user moves to Postgres in M10+."""
+
+    # i18n
+    locale: str = Field(description='BCP-47 locale, e.g. "es-EC", "en-US"')
+    timezone: str = Field(description='IANA timezone, e.g. "America/Guayaquil"')
+    date_format: str = Field(description='DD/MM/YYYY | MM/DD/YYYY | YYYY-MM-DD')
+    time_format: str = Field(description='"12h" | "24h"')
+    currency: str = Field(description='ISO 4217, e.g. "USD"')
+    number_format: str = Field(description='"es" (1.000,50) | "en" (1,000.50)')
+
+    # Idea pipeline
+    auto_translate_to: str = Field(
+        description='Lang code to translate scraped signals into ("" disables)'
+    )
+    preferred_regions: List[str] = Field(description='ISO 3166-1 alpha-2 codes')
+    preferred_topics: List[str] = Field(description='Topics to up-rank')
+    excluded_topics: List[str] = Field(description='Topics to drop pre-promotion')
+
+    # Cazador autonomy
+    auto_discovery_enabled: bool = Field(
+        description='Allow SourceDiscoveryAgent (M9.4) to propose new sources'
+    )
+    max_new_sources_per_week: int = Field(
+        ge=0, le=50,
+        description='Safety brake — max sources auto-added per 7 days'
+    )
+
+    updated_at: int
+
+
+class UserSettingsUpdateRequest(BaseModel):
+    """Partial update. All fields optional — unknown ones are ignored by the
+    store. Use `null`/omit to leave a field unchanged."""
+
+    locale: Optional[str] = None
+    timezone: Optional[str] = None
+    date_format: Optional[str] = None
+    time_format: Optional[str] = Field(default=None, pattern='^(12h|24h)$')
+    currency: Optional[str] = None
+    number_format: Optional[str] = Field(default=None, pattern='^(es|en)$')
+    auto_translate_to: Optional[str] = None
+    preferred_regions: Optional[List[str]] = None
+    preferred_topics: Optional[List[str]] = None
+    excluded_topics: Optional[List[str]] = None
+    auto_discovery_enabled: Optional[bool] = None
+    max_new_sources_per_week: Optional[int] = Field(default=None, ge=0, le=50)
+
+
 class ReclusterResponse(BaseModel):
     signals_embedded: int
     clusters_found: int

@@ -204,6 +204,27 @@ CREATE TABLE IF NOT EXISTS autonomy (
 );
 INSERT OR IGNORE INTO autonomy(id, level, updated_at) VALUES(1, 'manual', strftime('%s','now'));
 
+-- M9.1 — User-wide settings (single-row in M9; multi-user moves to Postgres in M10+)
+-- Controls i18n (locale/timezone/date/currency), idea filters (preferred/excluded
+-- topics), and cazador autonomy knobs (auto-discovery, max sources per week).
+CREATE TABLE IF NOT EXISTS user_settings (
+    id                       INTEGER PRIMARY KEY CHECK (id = 1),  -- single row
+    locale                   TEXT NOT NULL DEFAULT 'es-EC',
+    timezone                 TEXT NOT NULL DEFAULT 'America/Guayaquil',
+    date_format              TEXT NOT NULL DEFAULT 'DD/MM/YYYY',
+    time_format              TEXT NOT NULL DEFAULT '24h',
+    currency                 TEXT NOT NULL DEFAULT 'USD',
+    number_format            TEXT NOT NULL DEFAULT 'es',           -- es: 1.000,50 | en: 1,000.50
+    auto_translate_to        TEXT NOT NULL DEFAULT 'es',           -- '' disables; 'es'|'en'|...
+    preferred_regions_json   TEXT NOT NULL DEFAULT '["EC","CO","PE","MX"]',
+    preferred_topics_json    TEXT NOT NULL DEFAULT '[]',
+    excluded_topics_json     TEXT NOT NULL DEFAULT '[]',
+    auto_discovery_enabled   INTEGER NOT NULL DEFAULT 0,
+    max_new_sources_per_week INTEGER NOT NULL DEFAULT 5,
+    updated_at               INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO user_settings(id, updated_at) VALUES(1, strftime('%s','now'));
+
 -- M7.10 / Performance — indexes para queries hot path sobre columnas que
 -- existen en la CREATE TABLE original. Los indexes sobre columnas añadidas
 -- por _migrate() (content_type, language, feedback) se crean dentro del
@@ -325,6 +346,36 @@ def _migrate(conn: sqlite3.Connection) -> None:
             logger.info("storage: migrated signals.canonical_hash + times_seen columns")
         except sqlite3.OperationalError as e:
             logger.warning("storage: migration canonical_hash failed: %s", e)
+
+    # M9.1 — user_settings table for prod databases that pre-date the schema
+    # (Railway volume already has the data — CREATE TABLE in _SCHEMA only fires
+    # on first init). The seed-row INSERT OR IGNORE is also re-issued so the
+    # single row always exists.
+    try:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS user_settings (
+                id                       INTEGER PRIMARY KEY CHECK (id = 1),
+                locale                   TEXT NOT NULL DEFAULT 'es-EC',
+                timezone                 TEXT NOT NULL DEFAULT 'America/Guayaquil',
+                date_format              TEXT NOT NULL DEFAULT 'DD/MM/YYYY',
+                time_format              TEXT NOT NULL DEFAULT '24h',
+                currency                 TEXT NOT NULL DEFAULT 'USD',
+                number_format            TEXT NOT NULL DEFAULT 'es',
+                auto_translate_to        TEXT NOT NULL DEFAULT 'es',
+                preferred_regions_json   TEXT NOT NULL DEFAULT '["EC","CO","PE","MX"]',
+                preferred_topics_json    TEXT NOT NULL DEFAULT '[]',
+                excluded_topics_json     TEXT NOT NULL DEFAULT '[]',
+                auto_discovery_enabled   INTEGER NOT NULL DEFAULT 0,
+                max_new_sources_per_week INTEGER NOT NULL DEFAULT 5,
+                updated_at               INTEGER NOT NULL
+            )"""
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO user_settings(id, updated_at) VALUES(1, strftime('%s','now'))"
+        )
+        logger.info("storage: migrated user_settings table (M9.1)")
+    except sqlite3.OperationalError as e:
+        logger.warning("storage: migration user_settings failed: %s", e)
 
     # M7.10 — Indexes para columnas añadidas por migration. Si las columnas
     # existen en este punto (las ALTER TABLE arriba ya pasaron), creamos el
@@ -925,14 +976,25 @@ class SignalsStore:
             self._bump_times_seen(existing_id)
             return existing_id
 
+        # M9.1 — scrape-time translation. Best-effort; never blocks the save.
+        # Triggers only if user_settings.auto_translate_to is set AND the
+        # detected language differs from the target.
+        translated_theme, translated_excerpt = self._maybe_translate(
+            theme, excerpt, lang,
+        )
+
         if _db_path:
             with _conn() as c:
                 cur = c.execute(
                     "INSERT INTO signals(source_id,source_kind,theme,score,excerpt,"
-                    "evidence_json,suggested_topic,trend_score,published_at,item_titles_json,content_type,language,canonical_hash,times_seen,created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "evidence_json,suggested_topic,trend_score,published_at,item_titles_json,"
+                    "content_type,language,translated_theme,translated_excerpt,"
+                    "canonical_hash,times_seen,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic,
-                     trend, published_at, titles_json, cat, lang, canonical, 1, ts),
+                     trend, published_at, titles_json, cat, lang,
+                     translated_theme, translated_excerpt,
+                     canonical, 1, ts),
                 )
                 return int(cur.lastrowid)
         new_id = max([s["id"] for s in _memory_signals], default=0) + 1
@@ -943,11 +1005,62 @@ class SignalsStore:
             "feedback": None, "promoted_run_id": None,
             "trend_score": trend, "published_at": published_at,
             "item_titles_json": titles_json, "content_type": cat,
-            "language": lang, "translated_theme": None, "translated_excerpt": None,
+            "language": lang,
+            "translated_theme": translated_theme,
+            "translated_excerpt": translated_excerpt,
             "canonical_hash": canonical, "times_seen": 1,  # M9.3
             "created_at": ts,
         })
         return new_id
+
+    def _maybe_translate(
+        self, theme: str, excerpt: str, detected_lang: str,
+    ) -> tuple[Optional[str], Optional[str]]:
+        """M9.1 — call the translator if user settings request a different lang.
+
+        Returns (None, None) when translation should NOT happen, or the
+        translation fails. Caller persists those values as-is — the dashboard
+        treats None as "show original".
+        """
+        # Local import keeps the storage module independent of translator at
+        # import time (storage is imported very early in the app lifecycle).
+        try:
+            target = self._get_auto_translate_target()
+        except Exception:  # noqa: BLE001 — best-effort
+            return None, None
+        if not target:
+            return None, None
+        # Skip if we already are in the target language. "unknown" is treated
+        # as "translate just in case" because the heuristic detector is conservative.
+        if detected_lang and detected_lang.lower() == target.lower():
+            return None, None
+        try:
+            from .translator import translate_text
+            return translate_text(theme, excerpt, target)
+        except Exception:  # noqa: BLE001
+            return None, None
+
+    @staticmethod
+    def _get_auto_translate_target() -> str:
+        """Look up the auto-translate target without hard-coupling the call site
+        to UserSettingsStore (avoids circular-import + makes tests easy to mock)."""
+        try:
+            row: Optional[Dict[str, Any]] = None
+            if _db_path:
+                with _conn() as c:
+                    r = c.execute(
+                        "SELECT auto_translate_to FROM user_settings WHERE id=1"
+                    ).fetchone()
+                    if r:
+                        row = dict(r)
+            else:
+                row = dict(_memory_user_settings) if _memory_user_settings else None
+            if not row:
+                return ""
+            return str(row.get("auto_translate_to") or "")
+        except sqlite3.OperationalError:
+            # Table doesn't exist yet on this DB — caller treats empty as "skip"
+            return ""
 
     def _find_by_canonical_hash(self, canonical: str) -> Optional[int]:
         """M9.3 — return existing signal id if this idea was already captured."""
@@ -2326,6 +2439,148 @@ class AutonomyStore:
         _memory_autonomy["updated_at"] = int(time.time())
 
 
+class UserSettingsStore:
+    """M9.1 — single-row global settings (i18n + cazador knobs).
+
+    Multi-user setup deferred to M10+ when we migrate to Postgres. For now
+    every authenticated email shares one settings row — fine for closed-beta.
+    """
+
+    # Fields that are integers; the rest are TEXT.
+    _INT_FIELDS = {"auto_discovery_enabled", "max_new_sources_per_week", "id", "updated_at"}
+    # Fields stored as JSON-encoded TEXT but exposed to callers as lists.
+    _JSON_LIST_FIELDS = {
+        "preferred_regions_json": "preferred_regions",
+        "preferred_topics_json": "preferred_topics",
+        "excluded_topics_json": "excluded_topics",
+    }
+    # All editable fields (id + updated_at are managed by the store)
+    _EDITABLE = {
+        "locale", "timezone", "date_format", "time_format", "currency",
+        "number_format", "auto_translate_to", "preferred_regions",
+        "preferred_topics", "excluded_topics", "auto_discovery_enabled",
+        "max_new_sources_per_week",
+    }
+
+    _DEFAULTS: Dict[str, Any] = {
+        "id": 1,
+        "locale": "es-EC",
+        "timezone": "America/Guayaquil",
+        "date_format": "DD/MM/YYYY",
+        "time_format": "24h",
+        "currency": "USD",
+        "number_format": "es",
+        "auto_translate_to": "es",
+        "preferred_regions": ["EC", "CO", "PE", "MX"],
+        "preferred_topics": [],
+        "excluded_topics": [],
+        "auto_discovery_enabled": 0,
+        "max_new_sources_per_week": 5,
+        "updated_at": 0,
+    }
+
+    def get(self) -> Dict[str, Any]:
+        """Return the settings row as a plain dict with list fields decoded.
+
+        Always merges over `_DEFAULTS` so partial updates can't accidentally
+        drop fields from the response. If the DB row exists, its non-NULL
+        values win over defaults. List fields stored as JSON are decoded.
+        """
+        _ensure_init()
+        # Start with a fully-populated default snapshot. We'll override with
+        # whatever's actually persisted.
+        d: Dict[str, Any] = {k: (list(v) if isinstance(v, list) else v)
+                              for k, v in self._DEFAULTS.items()}
+        # The defaults dict uses the EXPOSED key names (preferred_regions,
+        # not preferred_regions_json), so seed the JSON columns too.
+        for json_key in self._JSON_LIST_FIELDS:
+            d[json_key] = None  # will be filled below if persisted
+
+        if _db_path:
+            with _conn() as c:
+                row = c.execute("SELECT * FROM user_settings WHERE id=1").fetchone()
+                if row is not None:
+                    for k in row.keys():
+                        v = row[k]
+                        if v is not None:
+                            d[k] = v
+        else:
+            for k, v in _memory_user_settings.items():
+                if v is not None:
+                    d[k] = v
+
+        # Decode JSON list fields, drop the *_json suffix in the exposed dict
+        for json_key, exposed_key in self._JSON_LIST_FIELDS.items():
+            raw = d.pop(json_key, None)
+            if raw is None:
+                # Keep the default list value that was already seeded
+                continue
+            if isinstance(raw, list):
+                d[exposed_key] = list(raw)
+                continue
+            try:
+                d[exposed_key] = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                d[exposed_key] = list(self._DEFAULTS[exposed_key])
+        return d
+
+    def update(self, patch: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply a partial patch and return the new full state.
+
+        Unknown keys are ignored (defense against client typos sending fields
+        that shouldn't be writeable). Returns the updated dict.
+        """
+        _ensure_init()
+        # Filter to allowed fields only — drop unknown / server-managed keys
+        filtered: Dict[str, Any] = {}
+        for k, v in patch.items():
+            if k in self._EDITABLE:
+                filtered[k] = v
+        if not filtered:
+            return self.get()
+
+        ts = int(time.time())
+        # Translate list fields back to JSON columns
+        sql_updates: Dict[str, Any] = {}
+        for k, v in filtered.items():
+            if k in {"preferred_regions", "preferred_topics", "excluded_topics"}:
+                sql_updates[f"{k}_json"] = json.dumps(list(v), ensure_ascii=False)
+            elif k == "auto_discovery_enabled":
+                sql_updates[k] = 1 if bool(v) else 0
+            else:
+                sql_updates[k] = v
+        sql_updates["updated_at"] = ts
+
+        if _db_path:
+            assignments = ", ".join(f"{k}=?" for k in sql_updates.keys())
+            params = list(sql_updates.values())
+            with _conn() as c:
+                c.execute(
+                    f"UPDATE user_settings SET {assignments} WHERE id=1",
+                    params,
+                )
+        else:
+            _memory_user_settings.update(sql_updates)
+            _memory_user_settings.setdefault("id", 1)
+
+        return self.get()
+
+    def clear(self) -> None:
+        """Reset to defaults — used by test fixtures."""
+        if _db_path:
+            with _conn() as c:
+                c.execute("DELETE FROM user_settings")
+                c.execute(
+                    "INSERT INTO user_settings(id, updated_at) VALUES(1, ?)",
+                    (int(time.time()),),
+                )
+        _memory_user_settings.clear()
+
+
+# In-memory fallback for tests / DATABASE_PATH-unset deploys
+_memory_user_settings: Dict[str, Any] = {}
+
+
 # Module-level singletons used by api.py
 leads_store = LeadsStore()
 runs_store = RunsStore()
@@ -2336,12 +2591,14 @@ links_log_store = LinksLogStore()
 connected_accounts_store = ConnectedAccountsStore()
 embeddings_store = EmbeddingsStore()
 autonomy_store = AutonomyStore()
+user_settings_store = UserSettingsStore()  # M9.1
 
 
 __all__ = [
     "ConnectedAccountsStore", "connected_accounts_store",
     "EmbeddingsStore", "embeddings_store",
     "AutonomyStore", "autonomy_store",
+    "UserSettingsStore", "user_settings_store",  # M9.1
     "leads_store",
     "runs_store",
     "auth_store",

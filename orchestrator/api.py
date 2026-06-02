@@ -101,6 +101,8 @@ from .schemas.api import (
     SourceQuality,
     AutonomyResponse,
     AutonomyUpdateRequest,
+    UserSettingsResponse,
+    UserSettingsUpdateRequest,
     CheckPlatformRequest,
     CheckPlatformResponse,
     ClusterItem,
@@ -1744,6 +1746,91 @@ def set_autonomy_put(body: AutonomyUpdateRequest, request: Request) -> AutonomyR
 def set_autonomy_post(body: AutonomyUpdateRequest, request: Request) -> AutonomyResponse:
     """M4.5: alias POST del PUT de arriba. Ver _set_autonomy_impl()."""
     return _set_autonomy_impl(body, request)
+
+
+# ---------------------------------------------------------------------------
+# M9.1 — User Settings (i18n + cazador knobs)
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/api/v1/settings",
+    response_model=UserSettingsResponse,
+    summary="Get global user settings (i18n + cazador knobs)",
+    tags=["settings"],
+)
+def get_user_settings(request: Request) -> UserSettingsResponse:
+    """M9.1 — single-row global settings. Multi-user moves to Postgres in M10+.
+
+    Returns the current values for locale/timezone/date/currency formatting,
+    auto-translate target, preferred/excluded topics, and cazador autonomy
+    knobs. Defaults are LATAM-friendly (es-EC + America/Guayaquil + 24h + USD).
+    """
+    _require_user(request)
+    from .core.storage import user_settings_store
+    s = user_settings_store.get()
+    return UserSettingsResponse(
+        locale=s["locale"],
+        timezone=s["timezone"],
+        date_format=s["date_format"],
+        time_format=s["time_format"],
+        currency=s["currency"],
+        number_format=s["number_format"],
+        auto_translate_to=s["auto_translate_to"],
+        preferred_regions=s["preferred_regions"],
+        preferred_topics=s["preferred_topics"],
+        excluded_topics=s["excluded_topics"],
+        auto_discovery_enabled=bool(s["auto_discovery_enabled"]),
+        max_new_sources_per_week=int(s["max_new_sources_per_week"]),
+        updated_at=int(s["updated_at"]),
+    )
+
+
+def _put_settings_impl(body: UserSettingsUpdateRequest, request: Request) -> UserSettingsResponse:
+    _require_user(request)
+    from .core.storage import user_settings_store
+    # exclude_none means we only patch the keys the caller explicitly sent
+    patch = body.model_dump(exclude_none=True)
+    s = user_settings_store.update(patch)
+    return UserSettingsResponse(
+        locale=s["locale"],
+        timezone=s["timezone"],
+        date_format=s["date_format"],
+        time_format=s["time_format"],
+        currency=s["currency"],
+        number_format=s["number_format"],
+        auto_translate_to=s["auto_translate_to"],
+        preferred_regions=s["preferred_regions"],
+        preferred_topics=s["preferred_topics"],
+        excluded_topics=s["excluded_topics"],
+        auto_discovery_enabled=bool(s["auto_discovery_enabled"]),
+        max_new_sources_per_week=int(s["max_new_sources_per_week"]),
+        updated_at=int(s["updated_at"]),
+    )
+
+
+@app.put(
+    "/api/v1/settings",
+    response_model=UserSettingsResponse,
+    summary="Update global user settings (partial — only provided fields change)",
+    tags=["settings"],
+)
+def put_user_settings(
+    body: UserSettingsUpdateRequest, request: Request,
+) -> UserSettingsResponse:
+    return _put_settings_impl(body, request)
+
+
+@app.post(
+    "/api/v1/settings",
+    response_model=UserSettingsResponse,
+    summary="Update settings (POST alias — for browsers/proxies that block PUT)",
+    tags=["settings"],
+)
+def post_user_settings(
+    body: UserSettingsUpdateRequest, request: Request,
+) -> UserSettingsResponse:
+    return _put_settings_impl(body, request)
 
 
 def _run_scan_internal(
