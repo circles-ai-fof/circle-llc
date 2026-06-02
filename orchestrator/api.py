@@ -896,6 +896,8 @@ def diagnostic() -> DiagnosticResponse:
             "openai_key_present": bool(os.getenv("OPENAI_API_KEY")),
             "google_key_present": bool(os.getenv("GOOGLE_API_KEY")),
             "anthropic_key_present": bool(os.getenv("ANTHROPIC_API_KEY")),
+            # M9.0 — Grok/xAI as 4th voter in gate_decider ensemble
+            "xai_key_present": bool(os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")),
             "persistent_storage": bool(os.getenv("DATABASE_PATH")),
             "webhooks_configured": bool(
                 os.getenv("WEBHOOK_URL_SLACK") or os.getenv("WEBHOOK_URL_GENERIC")
