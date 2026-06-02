@@ -1903,6 +1903,87 @@ def get_scan_queue(request: Request) -> Dict:
 
 
 @app.post(
+    "/api/v1/signals/translate-bulk",
+    summary="Backfill translation for all signals that don't have it yet (M9.1)",
+    tags=["hunter"],
+)
+def translate_signals_bulk(request: Request) -> Dict:
+    """M9.1 — backfill scrape-time translation for OLD signals.
+
+    Useful right after rolling out M9.1: any signal captured before the
+    translation hook was deployed has translated_theme IS NULL. This walks
+    all signals whose detected language differs from settings.auto_translate_to
+    and runs the translator on each one (Haiku, ~$0.001/each).
+
+    Capped at `limit` per call (default 50) so the founder controls cost.
+    Returns counts (translated / skipped / failed) so the UI can show
+    progress and re-call with the offset if there are more.
+    """
+    _require_user(request)
+    from .core.storage import signals_store, user_settings_store
+    from .core.language import detect_language
+    from .core.translator import translate_text
+
+    # Parse optional body — { "limit": 50 }
+    limit = 50
+    try:
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            body = loop.run_until_complete(request.json())
+            if isinstance(body, dict) and isinstance(body.get("limit"), int):
+                limit = max(1, min(int(body["limit"]), 200))
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            loop.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+    settings = user_settings_store.get()
+    target = (settings.get("auto_translate_to") or "").strip()
+    if not target:
+        return {
+            "translated": 0, "skipped": 0, "failed": 0,
+            "reason": "auto_translate_to is empty in settings",
+        }
+
+    sigs = signals_store.list()
+    translated = 0
+    skipped = 0
+    failed = 0
+    for sig in sigs:
+        if translated >= limit:
+            break
+        if sig.get("translated_theme"):
+            skipped += 1
+            continue
+        theme = sig.get("theme", "")
+        excerpt = sig.get("excerpt", "")
+        lang, _ = detect_language(f"{theme} {excerpt}")
+        if lang and lang.lower() == target.lower():
+            skipped += 1
+            continue
+        t_theme, t_excerpt = translate_text(theme, excerpt, target)
+        if not t_theme:
+            failed += 1
+            continue
+        try:
+            signals_store.set_translation(
+                int(sig["id"]), t_theme, t_excerpt, original_language=lang,
+            )
+            translated += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("translate_bulk: persist failed for sig %s: %s",
+                           sig.get("id"), e)
+            failed += 1
+    return {
+        "translated": translated, "skipped": skipped, "failed": failed,
+        "target_lang": target, "scanned": min(len(sigs), translated + skipped + failed),
+    }
+
+
+@app.post(
     "/api/v1/sources/discover",
     summary="Use approved-cluster keywords to discover new sources via LLM (M9.4)",
     tags=["hunter"],

@@ -222,3 +222,63 @@ def test_settings_survive_signals_add():
     )
     after = user_settings_store.get()
     assert after["timezone"] == "Europe/Madrid"
+
+
+# ---------------------------------------------------------------------------
+# /api/v1/signals/translate-bulk — backfill endpoint
+# ---------------------------------------------------------------------------
+
+def test_translate_bulk_skips_when_target_empty():
+    """If auto_translate_to is '' the endpoint must NOT call the LLM at all
+    — returns a no-op response with a reason field."""
+    from orchestrator.core.storage import user_settings_store
+    user_settings_store.clear()
+    user_settings_store.update({"auto_translate_to": ""})
+
+    c, h = _client_with_auth()
+    r = c.post("/api/v1/signals/translate-bulk", headers=h, json={"limit": 10})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["translated"] == 0
+    assert "reason" in body
+
+
+def test_translate_bulk_translates_pending_signals():
+    """In mock mode the translator returns deterministic placeholders, so
+    the bulk endpoint should mark signals as translated even without a real
+    API call. Lets the founder smoke-test the workflow risk-free."""
+    import os
+    from orchestrator.core.storage import (
+        user_settings_store, signals_store,
+    )
+    # Force mock mode so we don't hit the real LLM
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+    user_settings_store.clear()
+    user_settings_store.update({"auto_translate_to": "es"})
+    signals_store.clear()
+    # Add an English signal that does NOT auto-translate at add() time
+    # (set auto_translate_to to '' first, then update it AFTER add)
+    user_settings_store.update({"auto_translate_to": ""})
+    sid = signals_store.add(
+        source_id=1, source_kind="rss",
+        theme="OpenAI announces big tool for developers",
+        score=0.7,
+        excerpt="The announcement covered new APIs and pricing for the platform.",
+        evidence_urls=["https://openai.com/x"],
+        suggested_topic="ai",
+    )
+    # Verify nothing was translated at add() time
+    before = signals_store.get(sid)
+    assert before["translated_theme"] is None
+    # Now enable auto-translate and trigger backfill
+    user_settings_store.update({"auto_translate_to": "es"})
+
+    c, h = _client_with_auth()
+    r = c.post(
+        "/api/v1/signals/translate-bulk", headers=h, json={"limit": 5},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["translated"] >= 1
+    after = signals_store.get(sid)
+    assert after["translated_theme"] is not None
