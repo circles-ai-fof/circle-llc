@@ -1,5 +1,5 @@
 """
-Multi-LLM ensemble client — opt-in fan-out to Claude + GPT + Gemini.
+Multi-LLM ensemble client — opt-in fan-out to Claude + GPT + Gemini + Grok.
 
 Justification: Reganti Cap 8 §8.6 — "Ensembles only where they buy real accuracy.
 Use for the FINAL gate decision, never for the workflow's body, where prompt
@@ -7,12 +7,19 @@ calibration on one strong model beats ensemble overhead."
 
 Activation:
 - ENSEMBLE_GATE_ENABLED=true       → triggers ensemble in gate_decider
-- ANTHROPIC_API_KEY                → Claude (required, baseline)
-- OPENAI_API_KEY                   → GPT-4 (optional)
-- GOOGLE_API_KEY                   → Gemini (optional)
+- ANTHROPIC_API_KEY                → Claude (rigor lens, baseline)
+- OPENAI_API_KEY                   → GPT-4o-mini (general knowledge lens, optional)
+- GOOGLE_API_KEY                   → Gemini Flash (web grounding lens, optional)
+- XAI_API_KEY (or GROK_API_KEY)    → Grok (contrarian/X pulse lens, optional)  ← M9.0
 
 If a provider key is missing the ensemble degrades gracefully to the available
 ones. With only Claude available it returns the single Claude vote.
+
+Voting policy (M9.0):
+- 4 providers: 3-of-4 majority → respeta verdict. 2-2 empate → iterate.
+- 3 providers: 2-of-3 majority (legacy behavior preserved).
+- 2 providers: must agree, else iterate.
+- 1 provider: that vote wins.
 """
 from __future__ import annotations
 
@@ -133,6 +140,40 @@ def _vote_gemini(prompt: str, system: str) -> Optional[EnsembleVote]:
         return None
 
 
+def _vote_grok(prompt: str, system: str) -> Optional[EnsembleVote]:
+    """
+    Grok / xAI vote — uses OpenAI-compatible endpoint at https://api.x.ai/v1.
+
+    Why Grok in the ensemble (M9.0):
+    - Trained on X corpus → catches hype patterns the other 3 may miss
+    - Less RLHF-sycophant → more willing to say KILL on weak ideas
+    - Adds adversarial/contrarian lens that pure Claude+GPT+Gemini converge on
+    """
+    api_key = os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")
+    if not api_key:
+        return None
+    try:
+        from openai import OpenAI
+        client = OpenAI(
+            api_key=api_key,
+            base_url=os.getenv("XAI_BASE_URL", "https://api.x.ai/v1"),
+        )
+        model_name = os.getenv("GROK_MODEL", "grok-3-mini")
+        resp = client.chat.completions.create(
+            model=model_name,
+            max_tokens=400,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        text = resp.choices[0].message.content or ""
+        return _parse_vote("xai", model_name, text)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("ensemble: grok vote failed: %s", e)
+        return None
+
+
 def _parse_vote(provider: str, model: str, text: str) -> Optional[EnsembleVote]:
     """
     Parse a verdict from free-form LLM text. Expects: "VERDICT: pass|kill|iterate"
@@ -174,7 +215,7 @@ def gate_ensemble_vote(prompt: str, system: str) -> EnsembleResult:
     Returns EnsembleResult with majority verdict.
     """
     votes: list[EnsembleVote] = []
-    for fn in (_vote_claude, _vote_openai, _vote_gemini):
+    for fn in (_vote_claude, _vote_openai, _vote_gemini, _vote_grok):
         vote = fn(prompt, system)
         if vote:
             votes.append(vote)
@@ -190,10 +231,30 @@ def gate_ensemble_vote(prompt: str, system: str) -> EnsembleResult:
 
     verdicts = [v.verdict for v in votes]
     counts = Counter(verdicts)
-    top, top_count = counts.most_common(1)[0]
+    most_common = counts.most_common(2)
+    top, top_count = most_common[0]
+
+    # M9.0 — Tie-break policy: with 4 voters, a 2-2 split must NOT pick an
+    # arbitrary winner (Counter.most_common returns insertion order on ties).
+    # Force ITERATE so the workflow asks for more evidence instead of guessing.
+    if len(votes) >= 2 and len(most_common) >= 2 and most_common[0][1] == most_common[1][1]:
+        logger.info(
+            "ensemble: TIE detected (%s) — forcing iterate",
+            dict(counts),
+        )
+        top = "iterate"
+        top_count = counts.get("iterate", 1)  # at least 1 for math below
+
     agreement_pct = top_count / len(votes)
-    avg_confidence = sum(v.confidence for v in votes if v.verdict == top) / top_count
-    # Cap confidence by agreement: 3/3 = full conf, 2/3 = 0.75x, 1/3 = 0.5x
+    matching_votes = [v for v in votes if v.verdict == top]
+    avg_confidence = (
+        sum(v.confidence for v in matching_votes) / len(matching_votes)
+        if matching_votes
+        else 0.5
+    )
+    # Cap confidence by agreement:
+    #   4/4 = full conf, 3/4 = 0.75x, 2/4 = 0.5x
+    #   3/3 = full conf, 2/3 = 0.67x, 1/3 = 0.33x
     final_confidence = avg_confidence * agreement_pct
 
     logger.info(
