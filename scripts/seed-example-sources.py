@@ -77,6 +77,43 @@ EXAMPLE_SOURCES: List[Tuple[str, str, str]] = [
     ("google_trends", "EC", "Google Trends — Ecuador"),
     ("google_trends", "MX", "Google Trends — México"),
     ("google_trends", "CO", "Google Trends — Colombia"),
+
+    # ============================================================
+    # M9.x EASY WINS — Dev/AI builder ecosystem (added 2026-06-02)
+    # 8 fuentes adicionales para enriquecer descubrimiento de ideas
+    # ============================================================
+
+    # ----- 12. Indie Hackers milestones (validación social real) -----
+    ("rss", "https://www.indiehackers.com/milestones.rss",
+     "Indie Hackers — Milestones"),
+
+    # ----- 13. Y Combinator Launches (startups que recién arrancan) -----
+    ("rss", "https://www.ycombinator.com/launches/feed.atom",
+     "YC Launches"),
+
+    # ----- 14. Vercel blog (stack moderno, lo que adoptan early adopters) -----
+    ("rss", "https://vercel.com/atom",
+     "Vercel Blog"),
+
+    # ----- 15. OpenAI blog (lanzamientos de API/tools) -----
+    ("rss", "https://openai.com/news/rss.xml",
+     "OpenAI Blog"),
+
+    # ----- 16. Anthropic blog (lanzamientos Claude + use cases) -----
+    ("rss", "https://www.anthropic.com/news/rss.xml",
+     "Anthropic News"),
+
+    # ----- 17. Show HN — Indie launches con código real -----
+    ("hn", "show",
+     "Hacker News — Show HN"),
+
+    # ----- 18. GitHub trending por lenguaje (Python — apps de IA) -----
+    ("rss", "https://github.com/trending/python.atom?since=daily",
+     "GitHub Trending — Python (daily)"),
+
+    # ----- 19. GitHub trending por lenguaje (TypeScript — webapps/SaaS) -----
+    ("rss", "https://github.com/trending/typescript.atom?since=daily",
+     "GitHub Trending — TypeScript (daily)"),
 ]
 
 

@@ -14,9 +14,11 @@ Thread-safety: SQLite connection is created per-request via context manager.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -24,8 +26,58 @@ from collections import defaultdict
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# M9.3 — canonical_hash helper (cross-source dedup)
+# ---------------------------------------------------------------------------
+
+# Strip common URL noise so the same article-with-tracking still matches.
+_URL_TRACKING_PARAMS = re.compile(
+    r"[?&](utm_[^&]+|gclid|fbclid|mc_eid|ref|source|via)=[^&]*",
+    re.IGNORECASE,
+)
+
+
+def _canonicalize_url(url: str) -> str:
+    """Normalize a URL so cosmetic variants collapse to one identity."""
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url.strip().lower())
+        # Drop port, fragment, tracking params, trailing slash. Keep host+path+query.
+        host = parsed.netloc.split(":", 1)[0]
+        if host.startswith("www."):
+            host = host[4:]
+        path = (parsed.path or "/").rstrip("/")
+        query = _URL_TRACKING_PARAMS.sub("", "?" + (parsed.query or "")).lstrip("?&")
+        canonical = f"{host}{path}"
+        if query:
+            canonical += f"?{query}"
+        return canonical
+    except Exception:  # noqa: BLE001
+        # If urlparse chokes, fall back to lowercased trimmed string
+        return url.strip().lower()
+
+
+def _canonical_hash(theme: str, evidence_urls: List[str]) -> str:
+    """
+    Compute a stable 16-char hash that identifies the same idea even if it
+    appears in different fuentes with cosmetic differences. The hash is
+    derived from:
+      - First evidence URL (canonicalized; tracking params stripped)
+      - Lowercased title (truncated to 120 chars)
+    This is intentionally permissive — slightly different titles for the same
+    idea should still collapse. If the same hash appears twice the second
+    insert bumps `times_seen` on the original instead of creating a new row.
+    """
+    first_url = _canonicalize_url(evidence_urls[0] if evidence_urls else "")
+    normalized_title = (theme or "").lower().strip()[:120]
+    payload = f"{normalized_title}|{first_url}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS leads (
@@ -262,6 +314,18 @@ def _migrate(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError as e:
             logger.warning("storage: migration item_titles_json failed: %s", e)
 
+    # M9.3 — canonical_hash dedup (cross-source). Si una idea aparece en
+    # múltiples fuentes (HN + Reddit + Product Hunt) sólo se guarda una vez,
+    # y `times_seen` cuenta cuántas fuentes la mencionaron (= señal de hype real).
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
+    if "canonical_hash" not in cols:
+        try:
+            conn.execute("ALTER TABLE signals ADD COLUMN canonical_hash TEXT")
+            conn.execute("ALTER TABLE signals ADD COLUMN times_seen INTEGER NOT NULL DEFAULT 1")
+            logger.info("storage: migrated signals.canonical_hash + times_seen columns")
+        except sqlite3.OperationalError as e:
+            logger.warning("storage: migration canonical_hash failed: %s", e)
+
     # M7.10 — Indexes para columnas añadidas por migration. Si las columnas
     # existen en este punto (las ALTER TABLE arriba ya pasaron), creamos el
     # index. Idempotente vía IF NOT EXISTS.
@@ -271,6 +335,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("language", "idx_signals_language"),
         ("feedback", "idx_signals_feedback"),
         ("trend_score", "idx_signals_trend_created"),
+        ("canonical_hash", "idx_signals_canonical_hash"),  # M9.3
+        ("times_seen", "idx_signals_times_seen"),  # M9.3
     ]:
         if col_name not in cols:
             continue
@@ -849,13 +915,24 @@ class SignalsStore:
         )
         # M4.4 — detect language of theme+excerpt
         lang, _ = detect_language(f"{theme} {excerpt}")
+        # M9.3 — canonical_hash dedup. Si la misma idea ya fue capturada por
+        # OTRA fuente, NO duplicamos. Solo aumentamos `times_seen` y devolvemos
+        # el id existente. Eso convierte "aparece en 5 fuentes" en un score de
+        # hype real ranking-able.
+        canonical = _canonical_hash(theme, evidence_urls)
+        existing_id = self._find_by_canonical_hash(canonical)
+        if existing_id is not None:
+            self._bump_times_seen(existing_id)
+            return existing_id
+
         if _db_path:
             with _conn() as c:
                 cur = c.execute(
                     "INSERT INTO signals(source_id,source_kind,theme,score,excerpt,"
-                    "evidence_json,suggested_topic,trend_score,published_at,item_titles_json,content_type,language,created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic, trend, published_at, titles_json, cat, lang, ts),
+                    "evidence_json,suggested_topic,trend_score,published_at,item_titles_json,content_type,language,canonical_hash,times_seen,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic,
+                     trend, published_at, titles_json, cat, lang, canonical, 1, ts),
                 )
                 return int(cur.lastrowid)
         new_id = max([s["id"] for s in _memory_signals], default=0) + 1
@@ -867,9 +944,40 @@ class SignalsStore:
             "trend_score": trend, "published_at": published_at,
             "item_titles_json": titles_json, "content_type": cat,
             "language": lang, "translated_theme": None, "translated_excerpt": None,
+            "canonical_hash": canonical, "times_seen": 1,  # M9.3
             "created_at": ts,
         })
         return new_id
+
+    def _find_by_canonical_hash(self, canonical: str) -> Optional[int]:
+        """M9.3 — return existing signal id if this idea was already captured."""
+        if not canonical:
+            return None
+        if _db_path:
+            with _conn() as c:
+                row = c.execute(
+                    "SELECT id FROM signals WHERE canonical_hash = ? LIMIT 1",
+                    (canonical,),
+                ).fetchone()
+                return int(row["id"]) if row else None
+        for s in _memory_signals:
+            if s.get("canonical_hash") == canonical:
+                return int(s["id"])
+        return None
+
+    def _bump_times_seen(self, signal_id: int) -> None:
+        """M9.3 — when an idea reappears, increment times_seen (hype signal)."""
+        if _db_path:
+            with _conn() as c:
+                c.execute(
+                    "UPDATE signals SET times_seen = times_seen + 1 WHERE id = ?",
+                    (signal_id,),
+                )
+            return
+        for s in _memory_signals:
+            if s["id"] == signal_id:
+                s["times_seen"] = int(s.get("times_seen", 1)) + 1
+                return
 
     def _compute_trend_score(self, theme: str, ts: int) -> float:
         """
