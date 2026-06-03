@@ -347,6 +347,19 @@ def _migrate(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError as e:
             logger.warning("storage: migration canonical_hash failed: %s", e)
 
+    # M12.1 — solution_type column (heuristic taxonomy from OpportunityScout spec)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
+    if "solution_type" not in cols:
+        try:
+            conn.execute("ALTER TABLE signals ADD COLUMN solution_type TEXT")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_signals_solution_type "
+                "ON signals(solution_type)"
+            )
+            logger.info("storage: migrated signals.solution_type column (M12.1)")
+        except sqlite3.OperationalError as e:
+            logger.warning("storage: migration solution_type failed: %s", e)
+
     # M9.5 — source quality scoring. Adds 4 columns to `sources` so the
     # cazador can prioritize the scan queue by hit rate (auto-promote / signal
     # score / count). Recomputed by a cron-like endpoint, not on every insert.
@@ -1087,6 +1100,34 @@ class SignalsStore:
         )
         # M4.4 — detect language of theme+excerpt
         lang, _ = detect_language(f"{theme} {excerpt}")
+        # M12.0 — Pain-phrase booster. If the theme/excerpt contain explicit
+        # pain language ("I wish there was X", "ojalá hubiera Y", "anyone
+        # know a tool for Z") the signal score gets a multiplicative boost.
+        # Capped at 1.0 so high-base-score signals don't overflow.
+        try:
+            from .pain_phrases import apply_boost
+            boosted_score, _pain_matches = apply_boost(
+                float(score), f"{theme} {excerpt}",
+            )
+            score = boosted_score
+        except Exception:  # noqa: BLE001 — best-effort
+            pass
+        # M12.1 — solution_type heuristic classification (no LLM cost).
+        # Tags the signal with one of {app_movil, webapp_saas, sitio_web,
+        # automatizacion_agente, extension, marketplace,
+        # infoproducto_contenido, servicio, unknown} so the dashboard can
+        # filter by what kind of thing the opportunity would become.
+        solution_type = "unknown"
+        try:
+            from .solution_type import classify_solution
+            stype = classify_solution(
+                theme=theme,
+                excerpt=excerpt,
+                url=evidence_urls[0] if evidence_urls else None,
+            )
+            solution_type = stype.kind
+        except Exception:  # noqa: BLE001 — best-effort
+            pass
         # M9.3 — canonical_hash dedup. Si la misma idea ya fue capturada por
         # OTRA fuente, NO duplicamos. Solo aumentamos `times_seen` y devolvemos
         # el id existente. Eso convierte "aparece en 5 fuentes" en un score de
@@ -1110,12 +1151,12 @@ class SignalsStore:
                     "INSERT INTO signals(source_id,source_kind,theme,score,excerpt,"
                     "evidence_json,suggested_topic,trend_score,published_at,item_titles_json,"
                     "content_type,language,translated_theme,translated_excerpt,"
-                    "canonical_hash,times_seen,created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "canonical_hash,times_seen,solution_type,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (source_id, source_kind, theme, score, excerpt, ev_json, suggested_topic,
                      trend, published_at, titles_json, cat, lang,
                      translated_theme, translated_excerpt,
-                     canonical, 1, ts),
+                     canonical, 1, solution_type, ts),
                 )
                 return int(cur.lastrowid)
         new_id = max([s["id"] for s in _memory_signals], default=0) + 1
@@ -1130,6 +1171,7 @@ class SignalsStore:
             "translated_theme": translated_theme,
             "translated_excerpt": translated_excerpt,
             "canonical_hash": canonical, "times_seen": 1,  # M9.3
+            "solution_type": solution_type,  # M12.1
             "created_at": ts,
         })
         return new_id

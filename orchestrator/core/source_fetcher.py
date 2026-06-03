@@ -839,6 +839,242 @@ def fetch_github_trending(max_items: int = MAX_ITEMS_PER_FEED) -> List[FetchedIt
 # ---------------------------------------------------------------------------
 
 
+def fetch_job_boards(
+    target: str,
+    max_items: int = MAX_ITEMS_PER_FEED,
+) -> List[FetchedItem]:
+    """M12.3 — Job board listings (RemoteOK public JSON API).
+
+    Per the OpportunityScout spec: "ofertas que buscan resolver un
+    problema (señal de presupuesto existente)". A company posting a
+    job for "automate our reporting pipeline" is concrete evidence
+    of (a) a real problem, (b) budget allocated to solve it. That's
+    a stronger signal than indirect chatter.
+
+    RemoteOK has a stable public JSON endpoint at:
+      https://remoteok.com/api?tags=<comma_separated_tags>
+
+    `target` is optional comma-separated tag filter. Examples:
+      ""                    → all recent listings (full feed)
+      "automation,ai"       → only matching listings
+      "saas"                → only saas listings
+      "remoteok"            → alias, returns all
+
+    We further filter the resulting listings to those whose
+    DESCRIPTION contains automation/tool-building language (the gigs
+    where someone needs a thing built, not generic engineering
+    roles), so the dashboard isn't flooded with senior dev jobs.
+    """
+    tags = (target or "").strip().lower()
+    if tags == "remoteok" or not tags:
+        feed_url = "https://remoteok.com/api"
+    else:
+        # Comma → comma in URL is fine, RemoteOK handles it
+        feed_url = f"https://remoteok.com/api?tags={urllib.parse.quote(tags)}"
+
+    try:
+        req = urllib.request.Request(
+            feed_url,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            raw = resp.read(MAX_CHARS_PER_SOURCE * 12).decode("utf-8", errors="replace")
+            data = json.loads(raw)
+    except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as e:
+        logger.warning("fetch_job_boards(%s): %s", feed_url, e)
+        return []
+
+    if not isinstance(data, list):
+        return []
+
+    # RemoteOK's first item is a "legal" metadata blob, skip it.
+    listings = [x for x in data if isinstance(x, dict) and x.get("position")]
+    if not listings:
+        return []
+
+    out: List[FetchedItem] = []
+    # Keywords indicating "someone wants a thing built" — the actionable
+    # signal vs senior-dev-hire noise.
+    pain_keywords = re.compile(
+        r"\b(automat|build\s+a\s+tool|build\s+an?\s+(internal\s+)?tool|"
+        r"scrape|scraper|webhook|integration|automate\s+our|"
+        r"replace\s+(our|the)\s+spreadsheet|n8n|zapier|workflow|"
+        r"chatbot|ai\s+agent)\b",
+        re.I,
+    )
+
+    for listing in listings:
+        title = str(listing.get("position", ""))[:200]
+        company = str(listing.get("company", ""))[:80]
+        description = str(listing.get("description", ""))[:MAX_CHARS_PER_SOURCE]
+        href = str(listing.get("url") or listing.get("apply_url") or "")
+        if not title or not href:
+            continue
+        # Filter: only keep listings that look like "I need a tool built"
+        text = f"{title} {description}"
+        if not pain_keywords.search(text):
+            continue
+        # Salary surfaces signal of budget
+        salary_min = listing.get("salary_min") or 0
+        salary_max = listing.get("salary_max") or 0
+        salary_str = ""
+        if salary_min or salary_max:
+            salary_str = f" [${int(salary_min)}-${int(salary_max)}]"
+        published_raw = listing.get("date") or listing.get("epoch")
+        try:
+            published_ts = int(published_raw) if isinstance(published_raw, (int, float)) else _parse_rfc822_or_iso(str(published_raw or ""))
+        except (TypeError, ValueError):
+            published_ts = None
+        summary = description[:380].replace("\n", " ")
+        out.append(FetchedItem(
+            source_kind="job_boards",
+            url=href,
+            title=f"💼 {company}: {title}{salary_str}",
+            summary=summary,
+            body=(
+                f"{title} — {company}\n\n"
+                f"{description[:MAX_CHARS_PER_SOURCE]}"
+            ),
+            published_at=published_ts,
+        ))
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def fetch_reviews(
+    target: str,
+    max_items: int = MAX_ITEMS_PER_FEED,
+) -> List[FetchedItem]:
+    """M12.2 — Reviews fetcher (App Store low-star reviews).
+
+    Per the OpportunityScout spec: "reseñas 1-2 estrellas de G2 / Capterra /
+    App Store / Play Store. Cada queja de un producto popular = un hueco
+    de mercado." We start with the App Store because it's the only one
+    with a stable PUBLIC RSS endpoint (no scraping, no auth).
+
+    Endpoint shape:
+      https://itunes.apple.com/{country}/rss/customerreviews/page=1/id={app_id}/sortby=mostrecent/json
+
+    `target` accepts either:
+      - "<app_id>"                 (defaults country to "us")
+      - "<country>:<app_id>"       ("mx:1635060198")
+      - "https://apps.apple.com/<country>/app/<slug>/id<app_id>"
+
+    Only star ratings 1-2 surface as signals (4-5 are noise for our use
+    case — happy customers don't reveal market gaps). Each review's text
+    becomes the FetchedItem.body, the title is the review title, and the
+    URL points back to the app listing for context.
+    """
+    if not target:
+        return []
+    country, app_id = _parse_appstore_target(target)
+    if not app_id:
+        logger.warning("fetch_reviews: could not parse app_id from %r", target)
+        return []
+
+    feed_url = (
+        f"https://itunes.apple.com/{country}/rss/customerreviews"
+        f"/page=1/id={app_id}/sortby=mostrecent/json"
+    )
+    try:
+        req = urllib.request.Request(
+            feed_url,
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            raw = resp.read(MAX_CHARS_PER_SOURCE * 8).decode("utf-8", errors="replace")
+            data = json.loads(raw)
+    except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as e:
+        logger.warning("fetch_reviews(%s): %s", feed_url, e)
+        return []
+
+    entries = data.get("feed", {}).get("entry") or []
+    if not isinstance(entries, list):
+        return []
+
+    # The first entry in Apple's JSON RSS is the APP ITSELF, not a review.
+    # We skip it and look at the rest as reviews.
+    review_entries = entries[1:] if len(entries) > 1 else []
+
+    out: List[FetchedItem] = []
+    app_listing_url = f"https://apps.apple.com/{country}/app/id{app_id}"
+    for entry in review_entries:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            rating_raw = (entry.get("im:rating") or {}).get("label", "")
+            rating = int(rating_raw) if rating_raw.isdigit() else 0
+        except (AttributeError, ValueError):
+            rating = 0
+        # Pain is in the 1-2 star reviews. Skip happy reviews.
+        if rating not in (1, 2):
+            continue
+        title = (entry.get("title") or {}).get("label", "") or "(no title)"
+        body = (entry.get("content") or {}).get("label", "") or ""
+        author = (entry.get("author") or {}).get("name", {}).get("label", "")
+        review_id = (entry.get("id") or {}).get("label", "")
+        published_raw = (entry.get("updated") or {}).get("label", "")
+        published_ts = _parse_rfc822_or_iso(published_raw)
+        # We tag the title with the star rating so it stands out in dashboards.
+        prefixed_title = f"★{rating} — {title[:160]}"
+        summary = body[:380]
+        out.append(FetchedItem(
+            source_kind="reviews",
+            url=review_id or app_listing_url,
+            title=prefixed_title,
+            summary=summary,
+            body=(
+                f"{title}\n\n"
+                f"Rating: {rating}/5\n"
+                f"Author: {author or 'anonymous'}\n\n"
+                f"{body[:MAX_CHARS_PER_SOURCE]}"
+            ),
+            published_at=published_ts,
+        ))
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def _parse_appstore_target(target: str) -> tuple[str, str]:
+    """Resolve a user-supplied target into (country, app_id).
+
+    Accepts: bare app_id, country:app_id, or any apps.apple.com URL.
+    Defaults country to "us" when missing.
+    """
+    t = (target or "").strip()
+    if not t:
+        return "us", ""
+
+    # Full URL form: https://apps.apple.com/<cc>/app/<slug>/id<digits>
+    if t.startswith("http"):
+        m = re.search(r"apps\.apple\.com/([a-zA-Z]{2})/app/[^/]+/id(\d+)", t)
+        if m:
+            return m.group(1).lower(), m.group(2)
+        m2 = re.search(r"id(\d+)", t)
+        if m2:
+            return "us", m2.group(1)
+        return "us", ""
+
+    # country:app_id
+    if ":" in t:
+        cc, _sep, aid = t.partition(":")
+        cc = cc.strip().lower()
+        aid = aid.strip()
+        if re.fullmatch(r"[a-z]{2}", cc) and aid.isdigit():
+            return cc, aid
+
+    # Bare digits
+    if t.isdigit():
+        return "us", t
+
+    return "us", ""
+
+
 def fetch_app_marketplace(
     target: str,
     max_items: int = MAX_ITEMS_PER_FEED,
@@ -1024,6 +1260,13 @@ def fetch_by_kind(kind: str, target: str = "", max_items: int = MAX_ITEMS_PER_FE
         # clasificador de content_type detecta "course_tutorial"/"video_podcast"
         # según el contenido. En M4.14+ podemos especializar con Eventbrite API.
         return fetch_rss(target, max_items)
+    if kind == "reviews":
+        # M12.2 — App Store low-star reviews. Pain straight from the customer.
+        return fetch_reviews(target, max_items)
+    if kind == "job_boards":
+        # M12.3 — RemoteOK listings, filtered for "automate X" gigs (signal
+        # of existing budget + concrete pain point).
+        return fetch_job_boards(target, max_items)
     if kind == "app_marketplace":
         # M9.2 — sitios aggregator estilo Lovable / Claude Creations / Adorable
         # (catálogos de apps por categoría). Scraper genérico con selectors por
@@ -1050,5 +1293,7 @@ __all__ = [
     "fetch_bluesky",
     "fetch_telegram",
     "fetch_app_marketplace",  # M9.2
+    "fetch_reviews",  # M12.2
+    "fetch_job_boards",  # M12.3
     "fetch_by_kind",
 ]

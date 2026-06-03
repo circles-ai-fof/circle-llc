@@ -251,7 +251,7 @@ class AuthAttemptsResponse(BaseModel):
 
 
 class SourceCreate(BaseModel):
-    kind: str = Field(pattern="^(url|rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram|events|sec_edgar|google_trends|app_marketplace)$")
+    kind: str = Field(pattern="^(url|rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram|events|sec_edgar|google_trends|app_marketplace|reviews|job_boards)$")
     target: str = Field(default="", max_length=500)
     name: str = Field(min_length=1, max_length=120)
 
@@ -525,7 +525,7 @@ class SignalsDeleteByTypeRequest(BaseModel):
     )
     source_kind: Optional[str] = Field(
         default=None,
-        pattern="^(rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram|url|events|sec_edgar|google_trends|app_marketplace)$",
+        pattern="^(rss|hn|reddit|github_trending|product_hunt|youtube|bluesky|telegram|url|events|sec_edgar|google_trends|app_marketplace|reviews|job_boards)$",
         description="Filtra por kind de fuente (M4.6b)",
     )
     source_id: Optional[int] = Field(
