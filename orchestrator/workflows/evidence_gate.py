@@ -40,6 +40,7 @@ from ..core.canonical_goal import CanonicalGoal
 from ..core.models import (
     EvidenceTestDesign,
     GateDecision,
+    GateVerdict,
     IdeaSpec,
     LandingSpec,
     MatureIdeaSpec,
@@ -57,9 +58,13 @@ class EvidenceGateRun:
     started_at: datetime
     idea: IdeaSpec
     mature_idea: MatureIdeaSpec
-    test_design: EvidenceTestDesign
-    landing: LandingSpec
-    decision: GateDecision
+    # M11.4 — test_design + landing are Optional because IdeaValidator can
+    # short-circuit the workflow before those steps run. When the validator
+    # returns MATAR, decision is populated but the post-Step-2 steps are
+    # skipped — these fields stay None.
+    test_design: Optional[EvidenceTestDesign] = None
+    landing: Optional[LandingSpec] = None
+    decision: Optional[GateDecision] = None
     canonical_goal: CanonicalGoal = field(default=None)
     budget_tracker: BudgetTracker = field(default=None)
     completed_at: datetime = field(default_factory=_utc_now)
@@ -170,6 +175,85 @@ class EvidenceGateWorkflow:
         mature = self._idea_maturer.mature(idea)
         tracker.record_step(cost_usd=0.01)
         logger.info("[2/4] done: value_prop=%r", mature.value_proposition[:60])
+
+        # Step 2.5 — IdeaValidator red-team pre-test gate (M11.4)
+        # Opt-in via IDEA_VALIDATOR_ENABLED=true. When the verdict is MATAR
+        # we short-circuit the workflow BEFORE spending $50 in ads. The
+        # market_validator + landing_generator + gate_decider steps are
+        # skipped and the run completes with a synthetic GateDecision that
+        # carries the validator's lethal_assumption + experiment as
+        # rationale. PIVOTAR returns the precondition for the founder to
+        # iterate the idea manually; the workflow STILL runs the full path
+        # so the founder can compare the validator's pessimism against the
+        # gate's real verdict. AVANZAR_CON_EVIDENCIA is the green-light
+        # path and produces no log diff vs the pre-M11.4 behavior.
+        validator_decision: Optional[GateDecision] = None
+        try:
+            from ..agents.idea_validator import validate_idea, validator_enabled
+            if validator_enabled():
+                logger.info("[2.5/4] idea_validator (red-team)")
+                vres = validate_idea(
+                    topic=topic,
+                    value_prop=mature.value_proposition,
+                    icp=str(getattr(mature, "icp", "") or "")[:600],
+                    evidence=getattr(idea, "summary", "") or "",
+                )
+                tracker.record_step(cost_usd=0.06)  # Opus call
+                logger.info(
+                    "[2.5/4] verdict=%s lethal=%r",
+                    vres.verdict, vres.lethal_assumption.statement[:80],
+                )
+                if vres.verdict == "MATAR":
+                    # Short-circuit: build a synthetic kill GateDecision so
+                    # the rest of the system treats this as a normal run
+                    # with a definitive kill verdict.
+                    snap = MetricsSnapshot(
+                        impressions=0, clicks=0, conversions=0,
+                        cost_usd=0.0, ctr=0.0,
+                        conversion_rate=0.0, cost_per_conversion=0.0,
+                    )
+                    validator_decision = GateDecision(
+                        verdict=GateVerdict("kill"),
+                        confidence=0.85,
+                        rationale=(
+                            f"IdeaValidator MATAR (pre-test). Lethal assumption: "
+                            f"{vres.lethal_assumption.statement[:200]}. "
+                            f"Suggested $50 experiment: {vres.experiment.description[:200]}"
+                        ),
+                        key_evidence=[
+                            f"{v.name}: {v.finding[:120]}"
+                            for v in vres.attack_vectors[:5]
+                        ] or ["No attack vectors enumerated."],
+                        next_steps=[
+                            f"Lethal assumption to refute: {vres.lethal_assumption.statement[:160]}",
+                            f"$50 + 7d experiment: {vres.experiment.description[:160]}",
+                            f"Real buyer pre-mortem: {vres.real_buyer[:160] or 'undefined'}",
+                        ],
+                        metrics=snap,
+                        needs_human_review=False,
+                        review_reason=None,
+                    )
+        except Exception as e:  # noqa: BLE001 — validator is best-effort
+            logger.warning("idea_validator hook failed: %s — continuing workflow", e)
+
+        if validator_decision is not None:
+            run = EvidenceGateRun(
+                run_id=run_id,
+                topic=topic,
+                started_at=started_at,
+                idea=idea,
+                mature_idea=mature,
+                test_design=None,
+                landing=None,
+                decision=validator_decision,
+                canonical_goal=goal,
+                budget_tracker=tracker,
+            )
+            logger.info(
+                "EvidenceGate short-circuited by IdeaValidator MATAR "
+                "run_id=%s topic=%r", run_id, topic[:60],
+            )
+            return run
 
         # Step 3 — Test design
         logger.info("[3/4] market_validator")
