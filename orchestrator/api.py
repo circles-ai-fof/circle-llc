@@ -1903,6 +1903,85 @@ def get_scan_queue(request: Request) -> Dict:
 
 
 @app.post(
+    "/api/v1/ideas/validate",
+    summary="M11.3 — IdeaValidator red-team gate (pre-test, kills before ad spend)",
+    tags=["hunter"],
+)
+def validate_idea_endpoint(request: Request) -> Dict:
+    """M11.3 — Red-team validator.
+
+    Acts as a skeptical investor / scarred operator. Tries to KILL the
+    idea with the best argument possible. Returns one of three verdicts:
+
+      - MATAR:                kill before ad spend
+      - PIVOTAR:              return to idea_maturer with `precondition`
+      - AVANZAR_CON_EVIDENCIA: continue to market_validator (Step 3)
+
+    Body schema:
+      {"topic":       "fintech para PYMEs Ecuador",
+       "value_prop":  "Reconciliación bancaria automática vía Open Banking",
+       "icp":         "PYMEs con 5-50 empleados que usan Excel hoy",
+       "evidence":    "<extra context, e.g. competitor list, market data>"}
+
+    Returns the full ValidatorResult JSON shape (verdict + lethal
+    assumption + $50 experiment + attack vectors + 3 mandatory question
+    answers + sources).
+
+    Cost: ~$0.06 per call with Opus + ~$0.04 if IDEA_VALIDATOR_RESEARCH=true
+    (web_search tool active). The pre-test gate's value math: 1 killed bad
+    idea = ~$50 in ad spend avoided, so net positive on >2% kill rate.
+    """
+    _require_user(request)
+    from .agents.idea_validator import validate_idea
+    import asyncio
+
+    body: Dict = {}
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            body = loop.run_until_complete(request.json()) or {}
+        finally:
+            loop.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+    topic = str(body.get("topic", "")).strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="topic is required")
+
+    result = validate_idea(
+        topic=topic,
+        value_prop=str(body.get("value_prop", ""))[:1500],
+        icp=str(body.get("icp", ""))[:800],
+        evidence=str(body.get("evidence", ""))[:3000],
+    )
+    return {
+        "verdict": result.verdict,
+        "lethal_assumption": {
+            "statement": result.lethal_assumption.statement,
+            "why_lethal": result.lethal_assumption.why_lethal,
+        },
+        "experiment": {
+            "description": result.experiment.description,
+            "budget_usd": result.experiment.budget_usd,
+            "duration_days": result.experiment.duration_days,
+            "success_criterion": result.experiment.success_criterion,
+        },
+        "precondition": result.precondition,
+        "attack_vectors": [
+            {"name": v.name, "finding": v.finding, "is_blocker": v.is_blocker}
+            for v in result.attack_vectors
+        ],
+        "pre_mortem_60d": result.pre_mortem_60d,
+        "real_buyer": result.real_buyer,
+        "economic_impact": result.economic_impact,
+        "sources": result.sources,
+        "provider": result.provider,
+        "error": result.error,
+    }
+
+
+@app.post(
     "/api/v1/admin/adversarial-check",
     summary="M11.1 — Manually invoke adversarial callback on a verdict (testing/audit)",
     tags=["meta"],
