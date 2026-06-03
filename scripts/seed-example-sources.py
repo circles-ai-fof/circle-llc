@@ -130,6 +130,26 @@ EXAMPLE_SOURCES: List[Tuple[str, str, str]] = [
     # ----- 22. Adorable APP (catálogo categorizado de AI apps) -----
     ("app_marketplace", "https://adorableapp.org",
      "Adorable APP — Catalog"),
+
+    # ============================================================
+    # M12.2-M12.3 — Pain sources (low-star reviews + automation gigs)
+    # ============================================================
+
+    # ----- 23. App Store reviews — Notion (popular SaaS, many reviewers) -----
+    ("reviews", "us:1232780281",
+     "App Store reviews — Notion (low-star = pain)"),
+
+    # ----- 24. App Store reviews — ChatGPT (largest AI app, common complaints) -----
+    ("reviews", "us:6448311069",
+     "App Store reviews — ChatGPT"),
+
+    # ----- 25. RemoteOK — all automation gigs (filtered to pain keywords) -----
+    ("job_boards", "automation",
+     "RemoteOK — automation gigs (budget = signal)"),
+
+    # ----- 26. RemoteOK — AI agent gigs -----
+    ("job_boards", "ai",
+     "RemoteOK — AI gigs"),
 ]
 
 
