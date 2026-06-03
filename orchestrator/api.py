@@ -1903,6 +1903,99 @@ def get_scan_queue(request: Request) -> Dict:
 
 
 @app.post(
+    "/api/v1/security/validate-url",
+    summary="M13.0 — Heuristic URL safety check (typosquat, homoglyph, TLD, etc.)",
+    tags=["meta"],
+)
+def validate_url_endpoint(request: Request) -> Dict:
+    """M13.0 — Run the heuristic security validator on a URL.
+
+    Body: {"url": "<url>", "link_text": "<optional visible text>"}
+    Returns SecurityVerdict shape (verdict, confidence, signals[], recommendation).
+
+    Verdict scale: SAFE | SUSPICIOUS | DANGEROUS | UNKNOWN
+    Safe-biased: when in doubt the verdict skews to SUSPICIOUS or UNKNOWN,
+    never SAFE. A false SAFE is the worst possible error here.
+    """
+    _require_user(request)
+    from .core.security_validator import validate_url
+    import asyncio
+
+    body: Dict = {}
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            body = loop.run_until_complete(request.json()) or {}
+        finally:
+            loop.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+    url = str(body.get("url", "")).strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="url is required")
+
+    v = validate_url(url, link_text=body.get("link_text"))
+    return {
+        "url": v.url,
+        "verdict": v.verdict,
+        "confidence": v.confidence,
+        "recommendation": v.recommendation,
+        "signals": [
+            {"severity": s.severity, "code": s.code,
+             "message": s.message, "evidence": s.evidence}
+            for s in v.signals
+        ],
+        "strong_signal_count": len(v.strong_signals),
+        "weak_signal_count": len(v.weak_signals),
+    }
+
+
+@app.post(
+    "/api/v1/security/scan-text",
+    summary="M13.1 — Scan text for prompt injection patterns (no LLM cost)",
+    tags=["meta"],
+)
+def scan_text_endpoint(request: Request) -> Dict:
+    """M13.1 — Heuristic prompt-injection scanner.
+
+    Body: {"text": "<arbitrary string>"}
+    Returns: {detected, max_severity, matches[], critical_count, ...}
+
+    Useful for auditing past signals or testing new sources before adding
+    them to the cazador. The scanner runs automatically inside
+    SignalsStore.add — this endpoint is for ad-hoc inspection.
+    """
+    _require_user(request)
+    from .core.prompt_injection import scan_for_injection
+    import asyncio
+
+    body: Dict = {}
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            body = loop.run_until_complete(request.json()) or {}
+        finally:
+            loop.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+    text = str(body.get("text", ""))
+    scan = scan_for_injection(text)
+    return {
+        "detected": scan.detected,
+        "max_severity": scan.max_severity,
+        "critical_count": scan.critical_count,
+        "high_count": scan.high_count,
+        "medium_count": scan.medium_count,
+        "matches": [
+            {"severity": m.severity, "code": m.code, "snippet": m.snippet}
+            for m in scan.matches
+        ],
+    }
+
+
+@app.post(
     "/api/v1/ideas/validate",
     summary="M11.3 — IdeaValidator red-team gate (pre-test, kills before ad spend)",
     tags=["hunter"],

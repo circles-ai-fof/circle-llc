@@ -1100,6 +1100,24 @@ class SignalsStore:
         )
         # M4.4 — detect language of theme+excerpt
         lang, _ = detect_language(f"{theme} {excerpt}")
+        # M13.1 — Prompt injection defense. Scan the scraped text for
+        # patterns like "ignore previous instructions" or fake <system>
+        # tags BEFORE applying any boost. If detected, penalize the score
+        # so the corrupted signal sinks in the ranking. The same scan
+        # surfaces in logs for the founder to audit.
+        try:
+            from .prompt_injection import (
+                scan_for_injection, apply_injection_penalty,
+            )
+            inj_scan = scan_for_injection(f"{theme} {excerpt}")
+            if inj_scan.detected:
+                logger.warning(
+                    "prompt_injection: %d match(es) max_sev=%s in incoming signal",
+                    len(inj_scan.matches), inj_scan.max_severity,
+                )
+                score = apply_injection_penalty(float(score), inj_scan)
+        except Exception:  # noqa: BLE001 — best-effort
+            pass
         # M12.0 — Pain-phrase booster. If the theme/excerpt contain explicit
         # pain language ("I wish there was X", "ojalá hubiera Y", "anyone
         # know a tool for Z") the signal score gets a multiplicative boost.
