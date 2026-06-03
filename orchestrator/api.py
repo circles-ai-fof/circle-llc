@@ -1903,6 +1903,58 @@ def get_scan_queue(request: Request) -> Dict:
 
 
 @app.post(
+    "/api/v1/signals/{signal_id}/validate-card",
+    summary="M11.0 — Run Claude vision on a signal's image to detect mockup vs real app",
+    tags=["hunter"],
+)
+def validate_card_endpoint(signal_id: int, request: Request) -> Dict:
+    """M11.0 — CardValidator endpoint.
+
+    Pulls the first evidence_url that looks like an image (or the signal's
+    image field if we add one later) and runs the card_validator agent on
+    it. Returns the verdict + applies the score_multiplier to the signal's
+    score so downstream ranking respects the new evidence.
+
+    Does NOT auto-promote/kill — the founder still decides. Just adjusts
+    the score to surface real apps above mockups.
+    """
+    _require_user(request)
+    from .core.storage import signals_store
+    from .agents.card_validator import validate_card
+
+    sig = signals_store.get(signal_id)
+    if not sig:
+        raise HTTPException(status_code=404, detail="signal not found")
+
+    # Pick the first url that looks image-ish, else fall back to first url
+    urls = sig.get("evidence_urls") or []
+    if isinstance(urls, str):
+        import json as _json
+        try:
+            urls = _json.loads(urls)
+        except Exception:  # noqa: BLE001
+            urls = []
+    image_url = ""
+    for u in urls:
+        low = (u or "").lower()
+        if any(low.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp")):
+            image_url = u
+            break
+    if not image_url and urls:
+        image_url = urls[0]  # let Claude decide whether it's an image
+
+    verdict = validate_card(image_url)
+    return {
+        "signal_id": signal_id,
+        "image_url": verdict.image_url,
+        "kind": verdict.kind,
+        "confidence": verdict.confidence,
+        "rationale": verdict.rationale,
+        "score_multiplier": verdict.score_multiplier,
+    }
+
+
+@app.post(
     "/api/v1/signals/translate-bulk",
     summary="Backfill translation for all signals that don't have it yet (M9.1)",
     tags=["hunter"],
