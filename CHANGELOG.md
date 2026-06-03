@@ -5,6 +5,95 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [M15.x] — CEO informado + cazador 100% autónomo (2026-06-03)
+
+Estado del repo: **1078 tests**, **29 ADRs**, **18 agentes active**, **60+ endpoints**, **15 source kinds**, **33 fuentes en producción**.
+
+### Added — M15.0: executive-status agent (18º agente)
+- `orchestrator/agents/executive_status.py` — el "cerebro" del WhatsApp Gateway, expuesto como REST
+- POST `/api/v1/executive-status` con 2 modos: REPORT (briefing standalone) y QA (responde pregunta)
+- Lee signals + sources + runs + agents + git commits + features y produce briefing estructurado (HEADLINE / HIGHLIGHTS / RIESGOS / PRÓXIMOS PASOS)
+- Tono operativo honesto en español neutro, sin markdown pesado ni emojis (renderiza bien en WhatsApp + email)
+- Costo: ~$0.005-0.01 por call con Sonnet 4.6
+- Mock-mode placeholder cuando ANTHROPIC_API_KEY ausente
+
+### Added — M15.1: daily SMTP briefing
+- POST `/api/v1/executive-status/send-email` — genera briefing + envía vía SMTP
+- HTML inline-styled (Gmail-friendly) + texto plano fallback
+- `.github/workflows/executive-briefing.yml` — cron diario 08:00 UTC (= 03:00 Lima/Quito)
+- Reusa SMTP_* envs de M6.2; falla suave si no están configurados
+- Reusa AUTO_SCAN_* secrets ya existentes
+
+### Added — M14.0: auto-tune + auto-analyze
+- Param `auto_tune=true` (default) en GET `/trend-gaps` y `/niche-opportunities`
+- Baja thresholds dinámicamente cuando hay <30 señales o <2 feedback → pagina nunca vacía durante ramp-up
+- POST `/api/v1/admin/auto-analyze` — precalienta análisis LLM sobre top-N items
+- `.github/workflows/auto-analyze.yml` — cron diario 05:00 UTC, cap 6 análisis/día (~$0.05/día)
+
+### Added — M13.0 + M13.1: SecurityValidator + prompt injection defense
+- `orchestrator/core/security_validator.py` — 13 heurísticos: typosquat (Levenshtein vs 35 trusted), homoglyph (Cyrillic/Greek), TLDs abusados, URL shorteners, executable downloads, label/href mismatch
+- POST `/api/v1/security/validate-url` con verdicts SAFE/SUSPICIOUS/DANGEROUS/UNKNOWN
+- `orchestrator/core/prompt_injection.py` — 27 patrones EN+ES en 4 severidades (CRITICAL/HIGH/MEDIUM/LOW)
+- Penalty multiplicativo en SignalsStore.add: CRITICAL -50%, HIGH -20%, MEDIUM -10%
+- `sanitize_for_llm()` reemplaza `<system>`, `[INST]`, `<|im_start|>` con placeholders
+- POST `/api/v1/security/scan-text` para auditoría ad-hoc
+
+### Added — M12.0-M12.3: OpportunityScout-inspired enhancements
+- **M12.0** `orchestrator/core/pain_phrases.py` — boost score cuando hay frases de dolor real EN+ES (21 patterns)
+- **M12.1** `orchestrator/core/solution_type.py` — clasificador heurístico en 8 buckets (app_movil, webapp_saas, sitio_web, automatizacion_agente, extension, marketplace, infoproducto_contenido, servicio)
+- **M12.2** source_kind `reviews` — App Store low-star RSS (Notion, ChatGPT)
+- **M12.3** source_kind `job_boards` — RemoteOK con filter "automate X"
+
+### Added — M11.0-M11.4: defensas + IdeaValidator
+- **M11.0** CardValidator (vision Claude) — filtra mockups Figma de apps reales
+- **M11.1** `adversarial_callback` — degrade verdicts borderline (0.6-0.8 confidence)
+- **M11.2** Watchdog Outcome DB + R2 backup diario (`db-backup.yml`)
+- **M11.3** IdeaValidator red-team (Opus + web_search opcional) — MATAR/PIVOTAR/AVANZAR_CON_EVIDENCIA
+- **M11.4** Wire IdeaValidator al workflow — short-circuit MATAR antes de ads
+- **ADR-028** Selective adversarial callback (controlled, caller-driven)
+- **ADR-029** No Governor anti-pattern al workflow level
+
+### Added — M10.0: LinkFollowerAgent
+- Mina evidence_urls de signals aprobadas para descubrir feeds RSS escondidos
+- 3 patterns: github.com/X/Y → releases.atom, reddit.com/r/X → reddit kind, `<link rel=alternate>`
+- POST `/api/v1/signals/{id}/discover-feeds`
+
+### Added — M9.0-M9.5: autonomía del cazador
+- **M9.0** Grok como 4ª voz del ensemble (Claude+GPT+Gemini+Grok) + 2-2 tie → forzado iterate
+- **M9.1** UserSettings (i18n) + traducción al scrapear con Haiku
+- **M9.2** source_kind `app_marketplace` (Lovable, Claude Creations, Adorable)
+- **M9.3** canonical_hash dedup cross-source + times_seen
+- **M9.4** SourceDiscoveryAgent (Gemini search → propone fuentes)
+- **M9.5** source_quality scoring + smart_scan_queue (top 30% cada 6h, mid 40% cada 12h, bottom cada 48h)
+
+### Tests
+- 1078 verdes (de 741 al inicio de M9) · +337 tests · 0 regresiones
+- Nuevos archivos: test_multi_llm_4way, test_user_settings, test_canonical_hash_dedup, test_source_quality, test_link_follower, test_card_validator, test_outcome_db_watchdog, test_adversarial_callback, test_app_marketplace, test_source_discovery, test_idea_validator, test_workflow_idea_validator_hook, test_pain_phrases, test_solution_type, test_reviews_and_jobs, test_security_validator, test_prompt_injection, test_auto_tune_and_analyze, test_executive_status
+
+### Infra
+- 5 crons GitHub Actions: auto-scan (cada 6h), auto-analyze (diario 05 UTC), db-backup (diario 04 UTC), executive-briefing (diario 08 UTC), weekly-digest (lunes 12 UTC)
+- LLM providers integrados: 4 (Anthropic + OpenAI + Google + xAI)
+- Producción Railway con persistent volume + Cloudflare R2 backup
+
+---
+
+## [M8.x] — Production deploy (2026-06-01)
+
+### Added
+- Backend live en Railway con `mode:live` + `persistent_storage:true`
+- Dashboard live en Vercel con custom domain `dashboard.circles-ai.ai` + SSL Let's Encrypt
+- Cloudflare DNS records para circles-ai.ai (CNAME a Vercel/Railway)
+- `scripts/finish-deploy.sh` — automated Railway + Vercel deploy
+- `scripts/preflight.sh` — 23 checks antes de deploy
+- `docs/production-checklist.md` — guía paso-a-paso 20 items en 5 fases
+
+### Fixed
+- M9.4 Gemini drift: `response_mime_type=application/json` para forzar JSON
+- M9.2 schema regex: agregado `app_marketplace` a SourceCreate
+- Bug CORS env var name mismatch (EXTRA_ALLOWED_ORIGINS vs EXTRA_CORS_ORIGINS)
+
+---
+
 ## [M7.x] — Operacional + polish (2026-05-30 → 31)
 
 Estado del repo después de M7.x: **100 commits**, **775 tests**, **27 ADRs**,

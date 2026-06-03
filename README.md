@@ -2,9 +2,10 @@
 
 > **Plataforma meta-sistémica que valida ideas de negocio en modo *evidence-gate***: una landing + anuncios + métricas reales en 14 días antes de construir una sola línea de producto.
 
-🌐 **Live:** [circles-ai.ai](https://circles-ai.ai)
-🛠️ **Stack:** Python (FastAPI) + Next.js 15 + Anthropic Claude + OpenAI + Gemini
-📊 **Status:** 741 tests verdes · 27 ADRs · 13 agentes · 54 endpoints · 12 source kinds
+🌐 **Live:** [circles-ai.ai](https://circles-ai.ai) · 📊 [dashboard.circles-ai.ai](https://dashboard.circles-ai.ai)
+🛠️ **Stack:** Python (FastAPI) + Next.js 15 + **4-LLM ensemble** (Claude + GPT + Gemini + Grok)
+📊 **Status:** **1078 tests verdes** · **29 ADRs** · **18 agentes** · **60+ endpoints** · **15 source kinds**
+📄 **One-pager:** [ONE-PAGER.md](./ONE-PAGER.md) — resumen estratégico en una sola página
 
 ---
 
