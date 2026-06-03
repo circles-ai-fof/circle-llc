@@ -1,0 +1,58 @@
+name: Executive briefing daily
+
+# M15.1 — Cierra el loop "CEO informado".
+#
+# Llama /api/v1/executive-status/send-email cada mañana — el endpoint
+# genera el briefing ejecutivo con el agente executive-status (M15.0) y
+# lo envía vía SMTP usando los mismos SMTP_* envs que ya tenés para
+# weekly_digest (M6.2). El CEO abre Gmail y ve el reporte sin tocar
+# el dashboard.
+#
+# Cuando el WhatsApp Gateway (M15.x futuro) esté activo, este mismo
+# endpoint puede ser invocado por el bot — el cerebro es uno solo.
+#
+# Frecuencia: diario 08:00 UTC = 03:00 Lima/Quito. Suficientemente
+# temprano para que el reporte esté esperando cuando el founder
+# arranca el día.
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fire briefing send
+        env:
+          API_URL: ${{ secrets.AUTO_SCAN_API_URL }}
+          TOKEN: ${{ secrets.AUTO_SCAN_TOKEN }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$TOKEN" ]; then
+            echo "::error::Missing AUTO_SCAN_API_URL or AUTO_SCAN_TOKEN secret"
+            exit 1
+          fi
+
+          RESP=$(curl -sSf \
+            -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            "$API_URL/api/v1/executive-status/send-email" \
+            -d '{}')
+
+          echo "Response:"
+          echo "$RESP"
+
+          SENT=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sent', False))" 2>/dev/null || echo "False")
+          if [ "$SENT" != "True" ]; then
+            REASON=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('reason', ''))" 2>/dev/null || echo "")
+            echo "::warning::Briefing not sent ($REASON) — check SMTP envs on Railway"
+          else
+            TO=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('to', ''))" 2>/dev/null)
+            echo "::notice::Briefing sent to $TO"
+          fi

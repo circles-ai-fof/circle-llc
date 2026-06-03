@@ -1903,6 +1903,205 @@ def get_scan_queue(request: Request) -> Dict:
 
 
 @app.post(
+    "/api/v1/executive-status/send-email",
+    summary="M15.1 — Genera el briefing y lo envía por SMTP al CEO",
+    tags=["meta"],
+)
+def send_executive_briefing_email(request: Request) -> Dict:
+    """M15.1 — Cron-callable: genera el briefing ejecutivo + lo envía por SMTP."""
+    _require_user(request)
+    from .agents.executive_status import briefing
+    import asyncio
+    import smtplib
+    import email.mime.multipart as _mp
+    import email.mime.text as _txt
+    import time
+
+    body_in: Dict = {}
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            body_in = loop.run_until_complete(request.json()) or {}
+        finally:
+            loop.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+    required = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD")
+    missing = [k for k in required if not os.getenv(k)]
+    if missing:
+        return {
+            "sent": False,
+            "reason": f"SMTP missing envs: {missing}",
+            "briefing_generated": False,
+        }
+
+    b = briefing(question=None)
+
+    to_addr = str(body_in.get("to") or os.getenv("DIGEST_TO") or "circles.fof.ai@gmail.com").strip()
+    from_addr = os.getenv("DIGEST_FROM") or os.getenv("SMTP_USER") or to_addr
+    subject = str(
+        body_in.get("subject")
+        or f"Circle LLC · Briefing ejecutivo · {time.strftime('%Y-%m-%d')}"
+    )
+
+    text_body = b.body
+    html_body = _briefing_html(b)
+
+    msg = _mp.MIMEMultipart("alternative")
+    msg["From"] = from_addr
+    msg["To"] = to_addr
+    msg["Subject"] = subject
+    msg.attach(_txt.MIMEText(text_body, "plain", "utf-8"))
+    msg.attach(_txt.MIMEText(html_body, "html", "utf-8"))
+
+    try:
+        host = os.getenv("SMTP_HOST", "")
+        port = int(os.getenv("SMTP_PORT") or 587)
+        with smtplib.SMTP(host, port, timeout=15) as s:
+            s.ehlo()
+            s.starttls()
+            s.login(os.getenv("SMTP_USER", ""), os.getenv("SMTP_PASSWORD", ""))
+            s.sendmail(from_addr, [to_addr], msg.as_string())
+    except Exception as e:  # noqa: BLE001
+        logger.warning("send_executive_briefing_email failed: %s", e)
+        return {
+            "sent": False,
+            "reason": f"smtp send failed: {type(e).__name__}: {str(e)[:160]}",
+            "briefing_generated": True,
+        }
+
+    return {
+        "sent": True,
+        "to": to_addr,
+        "subject": subject,
+        "report_chars": len(b.body),
+        "highlight_count": len(b.highlights),
+        "risk_count": len(b.risks),
+        "ask_count": len(b.asks),
+        "mock_mode": b.mock_mode,
+    }
+
+
+def _briefing_html(b) -> str:
+    """HTML wrapper for the briefing — readable in Gmail without templates."""
+    import html as _html
+    def _esc(s):
+        return _html.escape(s or "")
+    def _bullets(items, color="#374151"):
+        if not items:
+            return "<p style='color:#9ca3af;font-style:italic'>(ninguno)</p>"
+        return "<ul style='margin:4px 0 12px 18px;padding:0;'>" + "".join(
+            f"<li style='margin:4px 0;color:{color};line-height:1.5'>{_esc(x)}</li>"
+            for x in items
+        ) + "</ul>"
+    sub = b.snapshot
+    snap_html = ""
+    if sub:
+        snap_html = (
+            f"<table style='border-collapse:collapse;margin-top:18px;font-size:13px'>"
+            f"<tr><td style='padding:4px 12px;color:#6b7280'>Señales</td>"
+            f"<td style='padding:4px 12px'><b>{sub.signals_total}</b> "
+            f"(+{sub.signals_new_24h} en 24h)</td></tr>"
+            f"<tr><td style='padding:4px 12px;color:#6b7280'>Fuentes activas</td>"
+            f"<td style='padding:4px 12px'><b>{sub.sources_active}/{sub.sources_total}</b></td></tr>"
+            f"<tr><td style='padding:4px 12px;color:#6b7280'>Runs</td>"
+            f"<td style='padding:4px 12px'>"
+            f"{sub.runs_pass} pass · {sub.runs_kill} kill · {sub.runs_iterate} iterate</td></tr>"
+            f"<tr><td style='padding:4px 12px;color:#6b7280'>Autonomía</td>"
+            f"<td style='padding:4px 12px'><b>{_esc(sub.autonomy_level)}</b></td></tr>"
+            f"</table>"
+        )
+    return (
+        "<!DOCTYPE html><html><body style='font-family:system-ui,sans-serif;"
+        "background:#f9fafb;margin:0;padding:24px;'>"
+        f"<div style='max-width:640px;margin:0 auto;background:white;padding:32px;"
+        f"border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);'>"
+        f"<h1 style='font-size:18px;margin:0 0 8px 0;color:#111827'>"
+        f"Circle LLC · Briefing ejecutivo</h1>"
+        f"<p style='color:#6b7280;font-size:13px;margin:0 0 24px 0'>"
+        f"circles-ai.ai · {_esc(b.mode)} mode</p>"
+        f"<h2 style='font-size:14px;color:#111827;margin:20px 0 6px 0'>HEADLINE</h2>"
+        f"<p style='margin:0;color:#374151;line-height:1.5'>{_esc(b.summary)}</p>"
+        f"<h2 style='font-size:14px;color:#111827;margin:20px 0 6px 0'>HIGHLIGHTS</h2>"
+        + _bullets(b.highlights) +
+        f"<h2 style='font-size:14px;color:#dc2626;margin:20px 0 6px 0'>RIESGOS</h2>"
+        + _bullets(b.risks, color="#991b1b") +
+        f"<h2 style='font-size:14px;color:#0891b2;margin:20px 0 6px 0'>PRÓXIMOS PASOS</h2>"
+        + _bullets(b.asks, color="#0e7490")
+        + snap_html
+        + f"<p style='margin-top:32px;font-size:11px;color:#9ca3af;"
+        f"border-top:1px solid #e5e7eb;padding-top:12px'>"
+        f"Generado automáticamente · executive-status agent ({'mock' if b.mock_mode else 'live'})"
+        f"</p></div></body></html>"
+    )
+
+
+@app.post(
+    "/api/v1/executive-status",
+    summary="M15.0 — Briefing ejecutivo para el CEO (texto + métricas)",
+    tags=["meta"],
+)
+def executive_status_endpoint(request: Request) -> Dict:
+    """M15.0 — El cerebro del WhatsApp Gateway, expuesto como REST.
+
+    Cualquier canal (dashboard, briefing diario SMTP, futura gateway
+    WhatsApp) llama acá.
+
+    Body opcional:
+      {"question": "..."}  → modo QA
+      {}                       → modo REPORT (briefing completo)
+    """
+    _require_user(request)
+    from .agents.executive_status import briefing
+    import asyncio
+
+    question = None
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            body = loop.run_until_complete(request.json()) or {}
+            q = body.get("question") if isinstance(body, dict) else None
+            if isinstance(q, str) and q.strip():
+                question = q.strip()
+        finally:
+            loop.close()
+    except Exception:
+        pass
+
+    b = briefing(question=question)
+    snap = b.snapshot
+    return {
+        "summary": b.summary,
+        "report": b.body,
+        "highlights": b.highlights,
+        "risks": b.risks,
+        "asks": b.asks,
+        "mode": b.mode,
+        "question": b.question,
+        "cost_usd_estimated": b.cost_usd_estimated,
+        "mock_mode": b.mock_mode,
+        "snapshot": ({
+            "signals_total": snap.signals_total,
+            "signals_new_24h": snap.signals_new_24h,
+            "signals_promoted": snap.signals_promoted,
+            "sources_active": snap.sources_active,
+            "sources_total": snap.sources_total,
+            "runs_total": snap.runs_total,
+            "runs_pass": snap.runs_pass,
+            "runs_kill": snap.runs_kill,
+            "runs_iterate": snap.runs_iterate,
+            "runs_pending_review": snap.runs_pending_review,
+            "agents_count": snap.agents_count,
+            "autonomy_level": snap.autonomy_level,
+            "features_on": snap.features_on,
+            "recent_commits": snap.recent_commits[:3],
+            "sources_top_quality": snap.sources_top_quality[:3],
+        } if snap else {}),
+    }
+
+
+@app.post(
     "/api/v1/admin/auto-analyze",
     summary="M14.0 — Cron-callable: precompute trend-gap + niche analyses",
     tags=["meta"],
