@@ -1,0 +1,129 @@
+name: DB backup to Cloudflare R2
+
+# M11.2 — Defensive infrastructure: backs up the SQLite file daily.
+#
+# Why: Circle LLC's "long-term memory" today lives in a single SQLite file
+# on Railway's persistent volume. If the volume gets corrupted, deleted
+# accidentally, or we hit a scaling event mid-incident, we lose every
+# signal + embedding + cluster + user setting. ADR-029 explicitly defers
+# the Postgres+pgvector migration to N>=3 fábricas (M11.2 watchdog),
+# which means we live with SQLite for a while. This workflow is the
+# safety net for that decision.
+#
+# Cost: Cloudflare R2 free tier is 10GB + 1M ops/month. The backup blob
+# is currently <10MB so we burn ~30¢/year at most.
+
+on:
+  schedule:
+    # Daily at 04:00 UTC (= 23:00 Lima/Quito previous day). Off-peak so
+    # the WAL checkpoint inside /admin/db-snapshot doesn't compete with
+    # founder activity.
+    - cron: "0 4 * * *"
+  workflow_dispatch: {}   # manual trigger for testing
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fetch DB snapshot from production
+        id: snapshot
+        env:
+          API_URL: ${{ secrets.AUTO_SCAN_API_URL }}
+          TOKEN: ${{ secrets.AUTO_SCAN_TOKEN }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$TOKEN" ]; then
+            echo "::error::Missing AUTO_SCAN_API_URL or AUTO_SCAN_TOKEN secret"
+            exit 1
+          fi
+          STAMP=$(date -u +'%Y-%m-%d_%H%M')
+          OUT="circle_llc_${STAMP}.db"
+          echo "stamp=$STAMP" >> $GITHUB_OUTPUT
+          echo "filename=$OUT" >> $GITHUB_OUTPUT
+
+          # Stream the file, fail loudly on non-200
+          HTTP_CODE=$(curl -sSf \
+            -w '%{http_code}' \
+            -H "Authorization: Bearer $TOKEN" \
+            -o "$OUT" \
+            "$API_URL/api/v1/admin/db-snapshot" || true)
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::DB snapshot returned HTTP $HTTP_CODE"
+            head -c 200 "$OUT" 2>/dev/null || true
+            exit 1
+          fi
+
+          SIZE=$(stat -c%s "$OUT")
+          echo "size_bytes=$SIZE" >> $GITHUB_OUTPUT
+          echo "Downloaded $OUT ($SIZE bytes)"
+
+          # Sanity: SQLite files start with the magic header "SQLite format 3"
+          HEAD=$(head -c 15 "$OUT")
+          if [ "$HEAD" != "SQLite format 3" ]; then
+            echo "::error::Downloaded blob doesn't look like a SQLite file"
+            exit 1
+          fi
+
+      - name: Upload to Cloudflare R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          FILENAME: ${{ steps.snapshot.outputs.filename }}
+        run: |
+          if [ -z "$R2_ENDPOINT" ] || [ -z "$R2_BUCKET" ]; then
+            echo "::warning::R2 secrets not configured — skipping upload (snapshot stays as artifact)"
+            exit 0
+          fi
+          # Use aws-cli with R2's S3-compatible endpoint.
+          # R2 needs --endpoint-url and respects standard AWS_* env vars.
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_KEY"
+          export AWS_DEFAULT_REGION=auto
+          aws --version
+          aws s3 cp "$FILENAME" "s3://${R2_BUCKET}/daily/${FILENAME}" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --no-verify-ssl-warnings || aws s3 cp "$FILENAME" "s3://${R2_BUCKET}/daily/${FILENAME}" \
+            --endpoint-url "$R2_ENDPOINT"
+
+      - name: Prune old backups (keep 30 days)
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          if [ -z "$R2_ENDPOINT" ] || [ -z "$R2_BUCKET" ]; then
+            echo "skip prune — R2 not configured"
+            exit 0
+          fi
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_KEY"
+          export AWS_DEFAULT_REGION=auto
+          # Delete backups older than 30 days. Use the lifecycle approach
+          # in R2 UI for a more robust solution; this is a best-effort
+          # CLI prune.
+          CUTOFF=$(date -u -d '30 days ago' +'%Y-%m-%d')
+          aws s3 ls "s3://${R2_BUCKET}/daily/" \
+            --endpoint-url "$R2_ENDPOINT" | \
+            awk -v c="$CUTOFF" '$1 < c {print $4}' | \
+            while read -r key; do
+              [ -z "$key" ] && continue
+              echo "deleting old backup: $key"
+              aws s3 rm "s3://${R2_BUCKET}/daily/${key}" \
+                --endpoint-url "$R2_ENDPOINT" || true
+            done
+
+      - name: Upload as GitHub artifact (fallback when R2 unconfigured)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-snapshot-${{ steps.snapshot.outputs.stamp }}
+          path: circle_llc_*.db
+          retention-days: 7
+          if-no-files-found: warn

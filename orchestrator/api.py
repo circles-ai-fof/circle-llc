@@ -1902,6 +1902,125 @@ def get_scan_queue(request: Request) -> Dict:
 # ---------------------------------------------------------------------------
 
 
+@app.get(
+    "/api/v1/admin/outcome-db-trigger",
+    summary="M11.2 — Watchdog: when should we migrate SQLite -> Postgres+pgvector?",
+    tags=["meta"],
+)
+def outcome_db_trigger(request: Request) -> Dict:
+    """M11.2 — Outcome DB activation watchdog.
+
+    Counts factories (runs that reached gate_decider) and tells the
+    operator whether the SQLite -> Postgres migration should fire.
+
+    Thresholds:
+      - n < 2:  status="ok"     (SQLite is fine for now)
+      - n == 2: status="warning" (start preparing — backup branch ready)
+      - n >= 3: status="action" (run the migration script in next deploy)
+
+    Also exposes the SQLite file size so we can spot it growing past
+    Railway's volume comfort zone (~10GB).
+    """
+    _require_user(request)
+    from .core.storage import runs_store
+
+    factories = 0
+    try:
+        recent = runs_store.list_recent(limit=10000)
+        # A "factory" is a run that reached the gate_decider step.
+        # Anything with a verdict in {pass, kill, iterate} counts.
+        factories = sum(
+            1 for r in recent
+            if (r.get("verdict") in {"pass", "kill", "iterate"})
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("outcome_db_trigger: count failed: %s", e)
+
+    db_path = os.getenv("DATABASE_PATH", "")
+    db_size_bytes = 0
+    try:
+        if db_path and os.path.exists(db_path):
+            db_size_bytes = os.path.getsize(db_path)
+    except OSError:
+        pass
+
+    if factories >= 3:
+        status_ = "action"
+        message = (
+            "Threshold crossed (N>=3). Run the migration script: "
+            "checkout migration/outcome-db branch and follow MIGRATION.md."
+        )
+    elif factories == 2:
+        status_ = "warning"
+        message = (
+            "Pre-trigger (N=2). Prepare migration/outcome-db branch and "
+            "verify the latest R2 backup is fresh (<24h)."
+        )
+    else:
+        status_ = "ok"
+        message = "SQLite is sufficient at current scale."
+
+    return {
+        "status": status_,
+        "current_factories": factories,
+        "trigger_threshold": 3,
+        "message": message,
+        "sqlite_path": db_path or "(in-memory)",
+        "sqlite_size_bytes": db_size_bytes,
+        "sqlite_size_mb": round(db_size_bytes / 1024 / 1024, 2),
+    }
+
+
+@app.get(
+    "/api/v1/admin/db-snapshot",
+    summary="M11.2 — Stream the SQLite file for off-site backup",
+    tags=["meta"],
+)
+def db_snapshot(request: Request):
+    """M11.2 — Download the live SQLite file for off-site backup.
+
+    Designed to be called from a GitHub Actions cron daily (.github/
+    workflows/db-backup.yml) that uploads to Cloudflare R2. The 10GB R2
+    free tier covers years of Circle LLC data even after scaling.
+
+    Returns a streaming binary response. Auth-required (founder-only).
+
+    Implementation: WAL checkpoint first so the .db file is self-contained
+    without needing the -wal/-shm sidecar files.
+    """
+    _require_user(request)
+    from fastapi.responses import StreamingResponse
+    import sqlite3 as _sq
+
+    db_path = os.getenv("DATABASE_PATH", "")
+    if not db_path or not os.path.exists(db_path):
+        raise HTTPException(
+            status_code=404,
+            detail="DATABASE_PATH not set or file missing (memory-only mode)",
+        )
+
+    # WAL checkpoint so the snapshot is consistent without needing the
+    # sidecar files (.wal, .shm). FULL ensures all WAL pages get committed.
+    try:
+        with _sq.connect(db_path) as c:
+            c.execute("PRAGMA wal_checkpoint(FULL)")
+    except _sq.OperationalError as e:
+        logger.warning("db_snapshot: WAL checkpoint failed (non-fatal): %s", e)
+
+    def _stream():
+        with open(db_path, "rb") as f:
+            while chunk := f.read(64 * 1024):
+                yield chunk
+
+    return StreamingResponse(
+        _stream(),
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="circle_llc_snapshot.db"',
+        },
+    )
+
+
 @app.post(
     "/api/v1/signals/{signal_id}/validate-card",
     summary="M11.0 — Run Claude vision on a signal's image to detect mockup vs real app",
