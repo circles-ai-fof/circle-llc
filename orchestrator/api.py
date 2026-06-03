@@ -1903,6 +1903,129 @@ def get_scan_queue(request: Request) -> Dict:
 
 
 @app.post(
+    "/api/v1/admin/auto-analyze",
+    summary="M14.0 — Cron-callable: precompute trend-gap + niche analyses",
+    tags=["meta"],
+)
+def auto_analyze_opportunities(request: Request) -> Dict:
+    """M14.0 — Auto-analyze: precalienta los análisis LLM caros sobre los
+    top-N items detectados heurísticamente, así Oportunidades + Migajas
+    SIEMPRE tienen contenido derivado al refrescar el dashboard sin
+    necesidad de que el founder haga click en "Analizar".
+
+    Body (opcional):
+      {"top_trend_gaps": 3, "top_niches": 3, "dry_run": false}
+
+    Llamable desde el cron `.github/workflows/auto-analyze.yml`. Cada
+    análisis es ~$0.005-0.01 (Haiku/Sonnet single call). Cap default
+    en 3+3 = 6 análisis/día (~$0.05/día, $1.50/mes).
+
+    Devuelve los IDs analizados + costo estimado. NO persiste los
+    resultados todavía (la UI sigue llamando /analyze on-demand). Este
+    endpoint es para validar el ciclo end-to-end y los próximos sprints
+    agregan caché si vale la pena.
+    """
+    _require_user(request)
+    from .core.storage import signals_store
+    import asyncio
+
+    body: Dict = {}
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            body = loop.run_until_complete(request.json()) or {}
+        finally:
+            loop.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+    top_gaps = max(1, min(int(body.get("top_trend_gaps", 3) or 3), 10))
+    top_niches = max(1, min(int(body.get("top_niches", 3) or 3), 10))
+    dry_run = bool(body.get("dry_run", False))
+
+    # Detect heuristically with auto-tuned thresholds (same logic as the
+    # GET endpoints, hard-coded here to avoid an internal HTTP roundtrip).
+    all_signals = signals_store.list()
+    total = len(all_signals)
+    with_feedback = sum(1 for s in all_signals if s.get("feedback"))
+
+    # Niches
+    niche_kwargs = {"min_parent_size": 5, "max_niche_size": 3, "top_parents": top_niches}
+    if total < 30:
+        niche_kwargs["min_parent_size"] = 2
+        niche_kwargs["max_niche_size"] = 1
+    elif total < 100:
+        niche_kwargs["min_parent_size"] = 3
+        niche_kwargs["max_niche_size"] = 2
+    niche_items = signals_store.niche_opportunities(**niche_kwargs)[:top_niches]
+
+    # Trend gaps
+    tg_kwargs = {"min_validation_signals": 2, "min_validation_feedback": 1}
+    if total < 30 or with_feedback < 2:
+        tg_kwargs["min_validation_signals"] = 1
+        tg_kwargs["min_validation_feedback"] = 0
+    tg_items = signals_store.cross_country_gaps(**tg_kwargs)[:top_gaps]
+
+    analyzed_count = 0
+    estimated_cost = 0.0
+    errors: List[str] = []
+
+    if not dry_run:
+        # Precompute analyses by calling the agents directly (skip HTTP).
+        try:
+            from .agents.trend_gap_analyzer import TrendGapAnalyzerAgent
+            from .agents.niche_scout import NicheScoutAgent
+            tg_agent = TrendGapAnalyzerAgent(
+                mock_mode=_workflow._mock_mode,
+                client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+            )
+            niche_agent = NicheScoutAgent(
+                mock_mode=_workflow._mock_mode,
+                client=None if _workflow._mock_mode else _workflow._idea_hunter._client,
+            )
+            for item in tg_items:
+                try:
+                    tg_agent.analyze(
+                        idea_summary=item.get("idea_summary", "")[:300],
+                        validated_in=item.get("validated_in", []) or [],
+                        missing_in=item.get("missing_in", []) or [],
+                        opportunity_score=float(item.get("opportunity_score", 0.5)),
+                    )
+                    analyzed_count += 1
+                    estimated_cost += (0.0 if tg_agent._mock_mode else 0.008)
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"trend_gap analyze failed: {type(e).__name__}: {str(e)[:120]}")
+            for item in niche_items:
+                try:
+                    niche_agent.analyze(
+                        parent_market=item.get("parent_market", "")[:200],
+                        parent_size=int(item.get("parent_size", 0)),
+                        leader_niche=item.get("leader_niche", "")[:200],
+                        underexplored_niches=item.get("underexplored_niches", []) or [],
+                    )
+                    analyzed_count += 1
+                    estimated_cost += (0.0 if niche_agent._mock_mode else 0.008)
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"niche analyze failed: {type(e).__name__}: {str(e)[:120]}")
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"agent init failed: {type(e).__name__}: {str(e)[:120]}")
+
+    return {
+        "total_signals": total,
+        "trend_gaps_detected": len(tg_items),
+        "niches_detected": len(niche_items),
+        "analyzed_count": analyzed_count,
+        "estimated_cost_usd": round(estimated_cost, 4),
+        "dry_run": dry_run,
+        "errors": errors,
+        "auto_tune_thresholds": {
+            "trend_gaps": tg_kwargs,
+            "niche": niche_kwargs,
+        },
+    }
+
+
+@app.post(
     "/api/v1/security/validate-url",
     summary="M13.0 — Heuristic URL safety check (typosquat, homoglyph, TLD, etc.)",
     tags=["meta"],
@@ -2994,9 +3117,10 @@ def signals_bulk_delete_by_ids(
 )
 def niche_opportunities(
     request: Request,
-    min_parent_size: int = 5,
-    max_niche_size: int = 3,
+    min_parent_size: Optional[int] = None,
+    max_niche_size: Optional[int] = None,
     top_parents: int = 10,
+    auto_tune: bool = True,
 ) -> NicheOpportunitiesResponse:
     """Founder del audio: 'recoger las migajas de donde están los gigantes'.
 
@@ -3010,9 +3134,36 @@ def niche_opportunities(
         max_niche_size: max signals en un sub-niche para considerarlo
             sub-explorado. Default 3.
         top_parents: cuántos gigantes retornar. Default 10.
+        auto_tune: M14.0 — si True (default) y hay <30 señales totales,
+            baja los thresholds dinámicamente para que la página NUNCA
+            esté vacía durante el ramp-up del cazador. Apenas el sistema
+            tiene ≥100 señales, vuelve a usar los defaults estrictos.
+            Querying explícito con min_parent_size= override desactiva esto.
     """
     _require_user(request)
     from .core.storage import signals_store
+
+    # M14.0 — Auto-tune: con poca masa crítica, baja los thresholds para
+    # que la dashboard tenga contenido desde el día 1. SOLO se activa si
+    # el caller no pasó ningún threshold explícito.
+    explicit_thresholds = (min_parent_size is not None) or (max_niche_size is not None)
+    if min_parent_size is None:
+        min_parent_size = 5
+    if max_niche_size is None:
+        max_niche_size = 3
+    if auto_tune and not explicit_thresholds:
+        all_signals = signals_store.list()
+        total = len(all_signals)
+        if total < 30:
+            # Modo "early-stage": permite parents de 2 + niches de 1
+            min_parent_size = 2
+            max_niche_size = 1
+        elif total < 100:
+            # Modo "growth": intermedios
+            min_parent_size = 3
+            max_niche_size = 2
+        # else: defaults estrictos (5, 3) cuando hay >=100 señales
+
     if min_parent_size < 2 or min_parent_size > 1000:
         raise HTTPException(status_code=422, detail="min_parent_size must be 2-1000")
     if max_niche_size < 1 or max_niche_size > 100:
@@ -3765,9 +3916,10 @@ def analyze_trend_gap(
 )
 def trend_gaps(
     request: Request,
-    min_validation_signals: int = 2,
-    min_validation_feedback: int = 1,
+    min_validation_signals: Optional[int] = None,
+    min_validation_feedback: Optional[int] = None,
     countries: str = "",
+    auto_tune: bool = True,
 ) -> TrendGapsResponse:
     """Founder del audio: 'si llegas first-mover ahí, eventualmente tienes
     posibilidades de poderla reventar'.
@@ -3782,9 +3934,30 @@ def trend_gaps(
             "validado por el founder". Default 1.
         countries: lista CSV de países a evaluar como huecos. Vacío usa
             default LATAM + USA + España.
+        auto_tune: M14.0 — si True (default) y el cazador está en ramp-up
+            (<30 señales totales O <2 con feedback explícito), baja
+            min_validation_signals=1 y min_validation_feedback=0 para que
+            la página NUNCA quede vacía durante early-stage. Cuando hay
+            volumen, vuelve a defaults estrictos automáticamente.
     """
     _require_user(request)
     from .core.storage import signals_store
+
+    # M14.0 — Auto-tune: con poca masa critica + sin feedback humano todavía,
+    # baja los thresholds. Solo se activa si el caller no pasó override.
+    explicit_thresholds = (min_validation_signals is not None) or (min_validation_feedback is not None)
+    if min_validation_signals is None:
+        min_validation_signals = 2
+    if min_validation_feedback is None:
+        min_validation_feedback = 1
+    if auto_tune and not explicit_thresholds:
+        all_sigs = signals_store.list()
+        total = len(all_sigs)
+        with_feedback = sum(1 for x in all_sigs if x.get("feedback"))
+        if total < 30 or with_feedback < 2:
+            min_validation_signals = 1
+            min_validation_feedback = 0
+
     if min_validation_signals < 1 or min_validation_signals > 50:
         raise HTTPException(status_code=422, detail="min_validation_signals must be 1-50")
     if min_validation_feedback < 0 or min_validation_feedback > 50:

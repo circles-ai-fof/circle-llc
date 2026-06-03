@@ -1,0 +1,57 @@
+name: Auto-analyze opportunities
+
+# M14.0 — Cierra el ciclo de autonomía del cazador.
+# auto-scan ya corre cada 6h (M3.x) y produce signals.
+# weekly-digest ya empaqueta los highlights (M6.2).
+# Lo que faltaba: precalentar los análisis LLM de Oportunidades
+# (trend-gaps) y Migajas (niche-opportunities) para que el dashboard
+# SIEMPRE tenga contenido derivado al refrescar, sin que el founder
+# tenga que clickear "Analizar".
+#
+# Frecuencia: diario a las 05:00 UTC (= 00:00 Lima/Quito), después del
+# scan masivo del cron auto-scan y antes de que el founder abra el
+# dashboard a la mañana.
+#
+# Cost cap: 3 + 3 = 6 análisis Haiku/Sonnet/día = ~$0.05/día = $1.50/mes.
+
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fire auto-analyze on production
+        env:
+          API_URL: ${{ secrets.AUTO_SCAN_API_URL }}
+          TOKEN: ${{ secrets.AUTO_SCAN_TOKEN }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$TOKEN" ]; then
+            echo "::error::Missing AUTO_SCAN_API_URL or AUTO_SCAN_TOKEN secret"
+            exit 1
+          fi
+
+          RESP=$(curl -sSf \
+            -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            "$API_URL/api/v1/admin/auto-analyze" \
+            -d '{"top_trend_gaps": 3, "top_niches": 3, "dry_run": false}')
+
+          echo "Response:"
+          echo "$RESP" | head -c 2000
+
+          # Sanity: did we actually analyze something? If not, log a
+          # warning so the cron isn't silently no-op'ing forever.
+          ANALYZED=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('analyzed_count', 0))" 2>/dev/null || echo 0)
+          if [ "$ANALYZED" = "0" ]; then
+            echo "::warning::auto-analyze returned 0 analyses — cazador may still be in ramp-up (signals < threshold)"
+          else
+            echo "::notice::auto-analyze ran $ANALYZED analyses"
+          fi
