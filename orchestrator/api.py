@@ -1902,6 +1902,71 @@ def get_scan_queue(request: Request) -> Dict:
 # ---------------------------------------------------------------------------
 
 
+@app.post(
+    "/api/v1/admin/adversarial-check",
+    summary="M11.1 — Manually invoke adversarial callback on a verdict (testing/audit)",
+    tags=["meta"],
+)
+def adversarial_check_endpoint(request: Request) -> Dict:
+    """M11.1 — Manual trigger for the adversarial check.
+
+    Useful for: testing the band tuning, auditing a recent gate decision,
+    or running an extra layer of paranoia on a high-stakes PASS.
+
+    Body schema:
+      {"verdict": "pass"|"kill"|"iterate",
+       "confidence": 0.0-1.0,
+       "rationale": "<text>",
+       "evidence": "<text>"}
+
+    Returns AdversarialResult JSON (same shape used in gate_decider).
+    """
+    _require_user(request)
+    from .core.adversarial import run_adversarial_check
+    import asyncio
+
+    body: Dict = {}
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            body = loop.run_until_complete(request.json()) or {}
+        finally:
+            loop.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+    verdict = str(body.get("verdict", "")).strip().lower()
+    if verdict not in {"pass", "kill", "iterate"}:
+        raise HTTPException(
+            status_code=400,
+            detail="verdict must be one of: pass | kill | iterate",
+        )
+    try:
+        confidence = float(body.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="confidence must be a number")
+
+    result = run_adversarial_check(
+        verdict=verdict,
+        confidence=confidence,
+        rationale=str(body.get("rationale", ""))[:1000],
+        evidence=str(body.get("evidence", ""))[:1500],
+    )
+    return {
+        "original_verdict": result.original_verdict,
+        "final_verdict": result.final_verdict,
+        "confidence_in": result.confidence_in,
+        "degraded": result.degraded,
+        "provider": result.provider,
+        "objections": [
+            {"severity": o.severity, "text": o.text}
+            for o in result.objections
+        ],
+        "strong_objection_count": result.strong_objection_count,
+        "error": result.error,
+    }
+
+
 @app.get(
     "/api/v1/admin/outcome-db-trigger",
     summary="M11.2 — Watchdog: when should we migrate SQLite -> Postgres+pgvector?",
