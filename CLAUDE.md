@@ -71,7 +71,7 @@ circle-llc/
 |---|---|
 | Tests verdes | **1078** |
 | Commits en GitHub | en sync con master, firmados Circle LLC <circles.fof.ai@gmail.com> |
-| ADRs | **29** |
+| ADRs | **30** (ADR-030: plan SQLite→Postgres+pgvector) |
 | Reglas R01-R29 | 29 |
 | Endpoints API | **60+** (security, executive-status, ideas/validate, auto-analyze, scan-queue, etc) |
 | Páginas dashboard | **18** (incluye Configuración M9.1 real) |

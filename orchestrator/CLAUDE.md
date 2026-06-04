@@ -42,7 +42,7 @@ orchestrator/
 │   ├── multi_agent_consensus.py  # M6.0
 │   ├── SCOPES.md                 # Tabla de scopes exclusivos por agente
 │   └── _deferred/                # 20+ agentes archivados hasta M18+
-├── decisions/                    # 29 ADRs (ADR-001 → ADR-029)
+├── decisions/                    # 30 ADRs (ADR-001 → ADR-030)
 ├── rulebook.md                   # R01-R29 reglas operativas
 ├── requirements.txt
 └── .env.example
@@ -105,7 +105,7 @@ Provider order: Claude → OpenAI → Gemini → Grok (xAI). Cada uno opcional; 
 ## Estado actual (2026-06-03)
 - 1078 tests verdes
 - 18 agentes activos
-- 29 ADRs
+- 30 ADRs
 - 15 source_kinds
 - 60+ endpoints REST
 - 4 LLM providers (Anthropic + OpenAI + Google + xAI)

@@ -5,6 +5,32 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [M16.x] — Catalogación + plan de migración Postgres (2026-06-03)
+
+Estado del repo: **1078 tests**, **30 ADRs**, **20 agentes activos catalogados**, **60+ endpoints**, **15 source kinds**, **33 fuentes en producción**.
+
+### Added — M16.1: catálogo de agentes + organigrama
+- `AGENTES.md` — catálogo completo de los 20 agentes activos con función, control, operación, LLM y costo por categoría (workflow / defensas / cazador / on-demand). Tabla LLM→agente. Sección R01-R29 + anti-patterns prohibidos.
+- `docs/organigrama.html` — visual auto-contenido con CSS inline (dark theme + print-friendly), 4 capas color-coded, cadena Step 1→4b, cards de los 4 LLM providers, resumen ejecutivo con métricas.
+- `docs/organigrama.docx` — versión Word del organigrama (US Letter, headers + footers + page numbers, 7 tablas, portada).
+- `docs/generate_organigrama_docx.js` — script reproducible docx-js para regenerar el DOCX si cambia el catálogo.
+
+### Added — M16.2: cleanup .gitignore
+- `*.tsbuildinfo` añadido a `.gitignore`.
+- `dashboard/tsconfig.tsbuildinfo` removido del tracking.
+
+### Added — M16.3: ADR-030 plan de migración SQLite → Postgres + pgvector
+- `orchestrator/decisions/ADR-030.md` — pre-condiciones (N≥3 fábricas, pgvector necesario, contention >5%, backup R2 saludable 30d, tests ≥1500), stack target (Postgres 16 + pgvector ≥0.7 + Alembic + psycopg async), migration steps con DUAL_WRITE window de 2h y rollback documentado, multi-tenant via RLS como sub-decisión separada.
+
+### Verified
+- Backend Railway healthy: mode=live, persistent_storage=true, EvidenceGateWorkflow active.
+- 1078 tests verdes (109s wall time).
+
+### Flagged
+- `api.circles-ai.ai` SSL: certificado con wrong principal (SEC_E_WRONG_PRINCIPAL). El dominio Railway directo funciona; el custom domain requiere reconfigurar cert. **Pendiente sprint M16.4**.
+
+---
+
 ## [M15.x] — CEO informado + cazador 100% autónomo (2026-06-03)
 
 Estado del repo: **1078 tests**, **29 ADRs**, **18 agentes active**, **60+ endpoints**, **15 source kinds**, **33 fuentes en producción**.
