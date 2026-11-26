@@ -16,6 +16,10 @@ on:
     - cron: '17 */6 * * *'
   workflow_dispatch:  # manual trigger via the GitHub UI
 
+# Principio de mínimo privilegio para GITHUB_TOKEN (AppSec 2026-11-26)
+permissions:
+  contents: read
+
 jobs:
   scan:
     name: Trigger backend scan + auto-promote
