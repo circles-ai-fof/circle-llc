@@ -9,6 +9,10 @@ on:
       - 'tests/**'
       - 'outcome-db/**'
 
+# Principio de mínimo privilegio para GITHUB_TOKEN (AppSec 2026-11-26)
+permissions:
+  contents: read
+
 jobs:
   code-evals:
     name: Code-based evals + unit tests

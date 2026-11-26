@@ -19,6 +19,10 @@ on:
     - cron: '0 12 * * 1'
   workflow_dispatch:  # manual trigger desde la UI de Actions
 
+# Principio de mínimo privilegio para GITHUB_TOKEN (AppSec 2026-11-26)
+permissions:
+  contents: read
+
 jobs:
   send:
     name: Send weekly digest via SMTP
